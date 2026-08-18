@@ -30,7 +30,7 @@ analytics.subscribe("checkout_completed", async (event) => {
     fbclid: zedyParams.fbclid
   };
 
-  fetch("https://${typeof window !== 'undefined' ? window.location.host : 'sua-api.com'}/api/v1/webhook/sua-loja-id", {
+  fetch("https://${typeof window !== 'undefined' ? window.location.host : 'atmtracking.vercel.app'}/api/v1/webhook/sua-loja-id", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
