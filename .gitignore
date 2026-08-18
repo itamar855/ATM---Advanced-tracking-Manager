@@ -1,0 +1,27 @@
+# Dependencies
+/web/node_modules
+/web/.next
+/web/out
+/web/build
+
+# IDE & system
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# Environment variables
+/web/.env.local
+/web/.env.production
+/web/.env
+.env
+
+# Temporary extraction files
+extract.ps1
+extract.py
+document_extracted.txt
