@@ -75,3 +75,4 @@ Abaixo está o registro de modificações importantes no projeto.
 | **v1.6.0** | 18/08/2026 | **Feature** | Integração com a Meta Marketing API e criação da API Cron de sincronização de gastos. | Antigravity |
 | **v1.7.0** | 18/08/2026 | **Feature** | Implementação do Dashboard-Service e API de cálculo de métricas agregadas e P&L. | Antigravity |
 | **v1.8.0** | 18/08/2026 | **Feature** | Integração de Billing com Mercado Pago (Checkout API, Webhook IPN e tela de planos). | Antigravity |
+| **v1.9.0** | 18/08/2026 | **Feature** | Implementação de UI de integrações do Facebook Ads e módulo instalador de Web Pixel. | Antigravity |

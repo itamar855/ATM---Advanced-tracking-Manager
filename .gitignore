@@ -25,3 +25,6 @@ Thumbs.db
 extract.ps1
 extract.py
 document_extracted.txt
+
+.vercel
+.env*

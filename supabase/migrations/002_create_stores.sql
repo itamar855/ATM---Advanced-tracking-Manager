@@ -50,3 +50,4 @@ CREATE TRIGGER on_stores_updated
     BEFORE UPDATE ON public.stores
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_updated_at();
+ALTER TABLE public.stores ADD COLUMN IF NOT EXISTS shopify_api_key_enc BYTEA, ADD COLUMN IF NOT EXISTS shopify_api_secret_enc BYTEA, ADD COLUMN IF NOT EXISTS mercadopago_token_enc BYTEA;
