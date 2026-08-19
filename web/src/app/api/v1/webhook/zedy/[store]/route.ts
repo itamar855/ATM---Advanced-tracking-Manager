@@ -18,12 +18,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const payload = JSON.parse(rawBody);
 
     // Zedy envia o evento de status. Vamos filtrar apenas transações aprovadas.
-    const eventType = payload.event;
-    if (eventType !== "transaction.approved" && eventType !== "transaction.paid" && payload.status !== "approved") {
-      return NextResponse.json({ ok: true, message: "Ignorado (não aprovado)" }, { status: 200 });
+    // Conforme a documentação: ORDER_PAID ou status === "approved" / "paid"
+    const eventType = payload.eventType;
+    if (eventType !== "ORDER_PAID" && payload.status !== "approved" && payload.status !== "paid") {
+      return NextResponse.json({ ok: true, message: "Ignorado (não é um evento de pedido pago)" }, { status: 200 });
     }
 
-    const orderId = String(payload.id || payload.transaction_id || payload.order_id);
+    const orderId = String(payload.orderId || payload.id);
     if (!orderId) {
       return NextResponse.json({ ok: false, error: "Identificador do pedido ausente" }, { status: 400 });
     }
@@ -50,43 +51,49 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ ok: false, error: "Meta não configurada" }, { status: 400 });
     }
 
-    // 3. Normaliza os dados vindos do Zedy de acordo com a interface do NormalizedOrder
+    // 3. Normaliza os dados vindos do Zedy de acordo com o Schema oficial:
     const customer = payload.customer || {};
-    const address = payload.address || customer.address || {};
+    const address = payload.address || {};
     
-    const metadata = payload.metadata || {};
-    const utmSource = metadata.utm_source || payload.utm_source || "";
-    const utmCampaign = metadata.utm_campaign || payload.utm_campaign || "";
-    const utmMedium = metadata.utm_medium || payload.utm_medium || "";
-    const utmContent = metadata.utm_content || payload.utm_content || "";
-    const utmTerm = metadata.utm_term || payload.utm_term || "";
-    const trackId = metadata.track_id || metadata._ztid || payload.track_id || "";
+    // Zedy envia parâmetros de rastreamento no objeto trackingParameters
+    const trackingParams = payload.trackingParameters || {};
+    const utmSource = trackingParams.utm_source || "";
+    const utmCampaign = trackingParams.utm_campaign || "";
+    const utmMedium = trackingParams.utm_medium || "";
+    const utmContent = trackingParams.utm_content || "";
+    const utmTerm = trackingParams.utm_term || "";
+    const trackId = trackingParams.track_id || trackingParams._ztid || payload.track_id || "";
+
+    // Calcula valor total com base no commission ou somatório de priceInCents
+    const rawValue = payload.commission?.totalPriceInCents || 
+      (payload.products || []).reduce((acc: number, p: any) => acc + (p.priceInCents * (p.quantity || 1)), 0);
+    const orderValue = Number(rawValue || 0) / 100; // Converte centavos para reais
 
     const normalizedOrder: NormalizedOrder = {
       orderId,
       customer: {
         email: customer.email || "",
         phone: customer.phone || "",
-        firstName: customer.first_name || customer.name?.split(" ")[0] || "",
-        lastName: customer.last_name || customer.name?.split(" ").slice(1).join(" ") || "",
-        externalId: customer.id || "",
+        firstName: customer.name?.split(" ")[0] || "",
+        lastName: customer.name?.split(" ").slice(1).join(" ") || "",
+        externalId: customer.email || "",
       },
       address: {
         city: address.city || "",
         state: address.state || "",
-        zip: address.zip_code || address.zipcode || "",
+        zip: address.zipcode || "",
         country: address.country || "BR",
       },
-      products: (payload.items || []).map((item: any) => ({
-        id: String(item.id || item.product_id),
-        name: item.name || item.title || "",
+      products: (payload.products || []).map((item: any) => ({
+        id: String(item.id || item.planId),
+        name: item.name || item.planName || "",
         quantity: Number(item.quantity || 1),
-        price: Number(item.price || item.unit_price || 0) / (payload.amount ? 100 : 1),
+        price: Number(item.priceInCents || 0) / 100,
       })),
-      value: Number(payload.amount || payload.total_price || payload.value || 0) / (payload.amount ? 100 : 1),
+      value: orderValue,
       currency: payload.currency || "BRL",
       timestamps: {
-        paid: payload.paid_at || payload.approved_at || new Date().toISOString(),
+        paid: payload.approvedDate || payload.createdAt || new Date().toISOString(),
       },
       trackingParams: {
         utm_source: utmSource,
