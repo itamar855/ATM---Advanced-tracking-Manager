@@ -20,7 +20,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface NavItem {
   label: string;
@@ -155,28 +155,61 @@ export default function Sidebar() {
       </div>
 
       {/* Footer */}
-      <div className="border-t border-[var(--color-border-default)] p-3">
-        <div className={cn("flex items-center gap-3", collapsed ? "justify-center" : "")}>
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--color-brand-500)] to-[var(--color-accent-500)] flex items-center justify-center text-xs font-bold text-white shrink-0">
-            U
-          </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-[var(--color-text-primary)] truncate">
-                Usuário
-              </p>
-              <p className="text-[10px] text-[var(--color-text-muted)] truncate">
-                Plano Free
-              </p>
-            </div>
-          )}
-          {!collapsed && (
-            <button className="p-1.5 rounded-md hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] hover:text-[var(--color-danger-400)] transition-colors">
-              <LogOut size={14} />
-            </button>
-          )}
-        </div>
-      </div>
+      <SidebarFooter collapsed={collapsed} />
     </aside>
+  );
+}
+
+function SidebarFooter({ collapsed }: { collapsed: boolean }) {
+  const [email, setEmail] = useState("Usuário");
+  const [initial, setInitial] = useState("U");
+
+  useEffect(() => {
+    async function loadUser() {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && user.email) {
+        setEmail(user.email);
+        setInitial(user.email.substring(0, 2).toUpperCase());
+      }
+    }
+    loadUser();
+  }, []);
+
+  const handleLogout = async () => {
+    const { createClient } = await import("@/lib/supabase/client");
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  };
+
+  return (
+    <div className="border-t border-[var(--color-border-default)] p-3">
+      <div className={cn("flex items-center gap-3", collapsed ? "justify-center" : "")}>
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--color-brand-500)] to-[var(--color-accent-500)] flex items-center justify-center text-xs font-bold text-white shrink-0">
+          {initial}
+        </div>
+        {!collapsed && (
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-[var(--color-text-primary)] truncate">
+              {email.split("@")[0]}
+            </p>
+            <p className="text-[10px] text-[var(--color-text-muted)] truncate">
+              {email}
+            </p>
+          </div>
+        )}
+        {!collapsed && (
+          <button
+            onClick={handleLogout}
+            className="p-1.5 rounded-md hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] hover:text-[var(--color-danger-400)] transition-colors"
+            title="Sair"
+          >
+            <LogOut size={14} />
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
