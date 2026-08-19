@@ -1,18 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plug, Zap, CheckCircle2, AlertCircle, Copy, Check, ShieldCheck, Loader2 } from "lucide-react";
+import { Plug, Zap, CheckCircle2, AlertCircle, Copy, Check, ShieldCheck, Loader2, Link } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 export default function IntegrationsPage() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [metaConnected, setMetaConnected] = useState(false);
   const [pixelId, setPixelId] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [adAccountId, setAdAccountId] = useState("");
   const [testEventCode, setTestEventCode] = useState("");
   const [savedConfig, setSavedConfig] = useState<any>(null);
+  const [storeId, setStoreId] = useState("sua-loja-id");
 
   // Script do Web Pixel do ATM para ser colado no Shopify Customer Events
   const pixelScriptCode = `// Web Pixel Extension do ATM — Advanced Tracking Manager
@@ -37,6 +39,8 @@ analytics.subscribe("checkout_completed", async (event) => {
   });
 });`;
 
+  const zedyWebhookUrl = `https://${typeof window !== 'undefined' ? window.location.host : 'atmtracking.vercel.app'}/api/v1/webhook/zedy/${storeId}`;
+
   useEffect(() => {
     async function loadConfig() {
       const supabase = createClient();
@@ -50,6 +54,7 @@ analytics.subscribe("checkout_completed", async (event) => {
           .maybeSingle();
 
         if (store) {
+          setStoreId(store.id);
           // Busca a integração ativa da Meta
           const { data: integration } = await supabase
             .from("integrations")
@@ -77,6 +82,12 @@ analytics.subscribe("checkout_completed", async (event) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleCopyWebhook = () => {
+    navigator.clipboard.writeText(zedyWebhookUrl);
+    setCopiedWebhook(true);
+    setTimeout(() => setCopiedWebhook(false), 2000);
+  };
+
   const handleSaveIntegration = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -102,8 +113,6 @@ analytics.subscribe("checkout_completed", async (event) => {
         return;
       }
 
-      // Em produção, o token de acesso seria enviado de forma segura para uma API
-      // criptografar em AES-256 e salvar no banco de dados. Para fins de interface:
       const { error } = await supabase
         .from("integrations")
         .upsert({
@@ -134,15 +143,53 @@ analytics.subscribe("checkout_completed", async (event) => {
   };
 
   return (
-    <div className="space-y-6 fade-in max-w-4xl mx-auto">
+    <div className="space-y-6 fade-in max-w-4xl mx-auto pb-12">
       {/* Page Header */}
       <div>
         <h1 className="text-2xl font-bold text-[var(--color-text-primary)] tracking-tight">
           Integrações e Setup
         </h1>
         <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          Conecte sua conta do Facebook Ads e configure seu pixel de rastreamento
+          Conecte o checkout do Zedy e gerencie sua integração com o Facebook Ads Manager
         </p>
+      </div>
+
+      {/* Zedy Checkout Integration Card */}
+      <div className="glass-card p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[var(--color-brand-400)]/10 flex items-center justify-center text-[var(--color-brand-300)]">
+            <Link size={20} />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+              Zedy Checkout (Webhooks)
+            </h3>
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Envie eventos de transações aprovadas e pagas direto para a Meta Conversions API (CAPI)
+            </p>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-lg bg-[var(--color-bg-primary)] border border-[var(--color-border-subtle)] space-y-3">
+          <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
+            Copie a URL abaixo e configure na sua conta Zedy em <b>Configurações &gt; Webhooks &gt; Adicionar Webhook</b> para capturar compras automáticas.
+          </p>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              readOnly
+              value={zedyWebhookUrl}
+              className="input text-xs font-mono select-all bg-[var(--color-bg-surface)] py-2"
+            />
+            <button
+              onClick={handleCopyWebhook}
+              className="btn-primary shrink-0 py-2 px-4 text-xs font-semibold"
+            >
+              {copiedWebhook ? <Check size={14} /> : "Copiar"}
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
