@@ -2,6 +2,7 @@
 
 import { Bell, Search, Calendar, ChevronDown } from "lucide-react";
 import { useState } from "react";
+import { StoreSwitcher } from "@/components/layout/StoreSwitcher";
 
 const dateRanges = [
   { label: "Hoje", value: "today" },
@@ -35,6 +36,11 @@ export default function Header() {
             className="input pl-9 py-2 text-sm bg-[var(--color-bg-primary)]/60"
           />
         </div>
+      </div>
+
+      {/* Center: Store Switcher */}
+      <div className="flex items-center justify-center">
+        <StoreSwitcher />
       </div>
 
       {/* Right: Date Range + Notifications */}

@@ -18,6 +18,7 @@ import { CampaignTable } from "@/components/dashboard/CampaignTable";
 import { EventTimeline } from "@/components/dashboard/EventTimeline";
 import { HealthGauge } from "@/components/dashboard/HealthGauge";
 import { createClient } from "@/lib/supabase/client";
+import { useStore } from "@/contexts/StoreContext";
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -25,6 +26,8 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<any>(null);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [recentEvents, setRecentEvents] = useState<any[]>([]);
+
+  const { activeStore } = useStore();
 
   useEffect(() => {
     async function initDashboard() {
@@ -34,24 +37,18 @@ export default function DashboardPage() {
         // 1. Obtém o usuário logado
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
-          // Se não estiver logado no Supabase, usa mocks para visualização
           loadMockData();
           return;
         }
 
-        // 2. Busca a loja vinculada a este tenant
-        const { data: store } = await supabase
-          .from("stores")
-          .select("id")
-          .limit(1)
-          .maybeSingle();
-
-        if (!store) {
+        // 2. Usa a loja ativa do StoreContext (suporte multi-lojas)
+        const storeData = activeStore;
+        if (!storeData) {
           loadMockData();
           return;
         }
 
-        setStoreId(store.id);
+        setStoreId(storeData.id);
 
         // Define a faixa de data dos últimos 7 dias
         const endDate = new Date().toISOString();
@@ -59,7 +56,7 @@ export default function DashboardPage() {
 
         // 3. Faz o fetch das métricas agregadas da nossa API
         const response = await fetch(
-          `/api/v1/dashboard/metrics?store_id=${store.id}&start_date=${startDate}&end_date=${endDate}`
+          `/api/v1/dashboard/metrics?store_id=${storeData.id}&start_date=${startDate}&end_date=${endDate}`
         );
         const data = await response.json();
 
@@ -74,7 +71,7 @@ export default function DashboardPage() {
         const { data: events } = await supabase
           .from("events")
           .select("*")
-          .eq("store_id", store.id)
+          .eq("store_id", storeData.id)
           .order("created_at", { ascending: false })
           .limit(5);
 
@@ -115,7 +112,7 @@ export default function DashboardPage() {
     }
 
     initDashboard();
-  }, []);
+  }, [activeStore]);
 
   function loadMockData() {
     setMetrics({
