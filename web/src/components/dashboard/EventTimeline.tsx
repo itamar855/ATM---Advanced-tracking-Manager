@@ -7,7 +7,12 @@ import {
   Clock,
   ArrowRight,
   ShoppingBag,
+  X,
+  FileCode,
+  Info,
+  Network
 } from "lucide-react";
+import { useState } from "react";
 
 interface Event {
   id: string;
@@ -35,6 +40,8 @@ interface EventTimelineProps {
 }
 
 export function EventTimeline({ events }: EventTimelineProps) {
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+
   return (
     <div className="glass-card">
       <div className="px-5 py-4 border-b border-[var(--color-border-default)]">
@@ -44,7 +51,7 @@ export function EventTimeline({ events }: EventTimelineProps) {
               Eventos Recentes
             </h3>
             <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-              Últimos eventos enviados à Meta
+              Últimos eventos enviados à Meta (clique em um evento para ver detalhes)
             </p>
           </div>
           <button className="btn-secondary py-1.5 px-3 text-xs">
@@ -57,6 +64,7 @@ export function EventTimeline({ events }: EventTimelineProps) {
         {events.map((event) => (
           <div
             key={event.id}
+            onClick={() => setSelectedEvent(event)}
             className="px-5 py-3.5 hover:bg-[var(--color-bg-card-hover)] transition-colors cursor-pointer group"
           >
             <div className="flex items-center gap-4">
@@ -153,6 +161,94 @@ export function EventTimeline({ events }: EventTimelineProps) {
           </div>
         ))}
       </div>
+
+      {/* Slide-over Modal para Detalhes do Evento */}
+      {selectedEvent && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-end fade-in">
+          <div className="w-full max-w-lg bg-[var(--color-bg-card)] border-l border-[var(--color-border-default)] h-full flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-300">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-[var(--color-border-default)] flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-[var(--color-text-primary)] flex items-center gap-2">
+                  <FileCode size={18} className="text-[var(--color-brand-300)]" />
+                  Detalhes do Evento
+                </h3>
+                <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                  ID: {selectedEvent.id}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedEvent(null)}
+                className="p-1.5 rounded-lg hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Event Overview Card */}
+              <div className="p-4 rounded-xl bg-[var(--color-bg-primary)]/80 border border-[var(--color-border-subtle)] space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[var(--color-text-muted)] font-medium">Nome do Evento</span>
+                  <span className="font-bold text-[var(--color-text-primary)] text-sm">{selectedEvent.eventName}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[var(--color-text-muted)] font-medium">Origem do Sinal</span>
+                  <span className="badge badge-info capitalize text-[10px]">{selectedEvent.source}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[var(--color-text-muted)] font-medium">Status CAPI</span>
+                  <span className="badge badge-success capitalize text-[10px]">{selectedEvent.status}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[var(--color-text-muted)] font-medium">Pedido ID</span>
+                  <span className="font-semibold text-[var(--color-text-primary)]">{selectedEvent.orderId}</span>
+                </div>
+              </div>
+
+              {/* Health Score Breakdown */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+                  Qualidade de Correspondência (EMQ)
+                </h4>
+                <div className="p-4 rounded-xl bg-[var(--color-bg-primary)]/80 border border-[var(--color-border-subtle)] flex items-center justify-between">
+                  <span className="text-xs text-[var(--color-text-secondary)]">Score Final</span>
+                  <span className="text-xl font-black text-emerald-400">{selectedEvent.healthScore} / 100</span>
+                </div>
+              </div>
+
+              {/* Payload Signals Detail */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] flex items-center gap-1.5">
+                  <Network size={14} className="text-[var(--color-brand-300)]" />
+                  Sinais Enviados no Payload
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <SignalInfoCard label="fbp (Browser ID)" active={selectedEvent.signals.fbp} />
+                  <SignalInfoCard label="fbc (Click ID)" active={selectedEvent.signals.fbc} />
+                  <SignalInfoCard label="Endereço IP" active={selectedEvent.signals.ip} />
+                  <SignalInfoCard label="User Agent" active={selectedEvent.signals.ua} />
+                  <SignalInfoCard label="E-mail Hasheado" active={selectedEvent.signals.email} />
+                  <SignalInfoCard label="Telefone Hasheado" active={selectedEvent.signals.phone} />
+                  <SignalInfoCard label="External ID Hasheado" active={selectedEvent.signals.externalId} />
+                  <SignalInfoCard label="Localidade / Endereço" active={selectedEvent.signals.address} />
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-[var(--color-border-default)] flex items-center gap-2">
+              <button
+                onClick={() => setSelectedEvent(null)}
+                className="btn-secondary w-full py-2 text-xs font-semibold"
+              >
+                Fechar Painel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -175,6 +271,22 @@ function SignalDot({ active, label }: { active: boolean; label: string }) {
         )}
       />
       {label}
+    </div>
+  );
+}
+
+function SignalInfoCard({ label, active }: { label: string; active: boolean }) {
+  return (
+    <div className={cn(
+      "p-3 rounded-lg border text-xs flex items-center justify-between",
+      active
+        ? "bg-[var(--color-success-500)]/5 border-[var(--color-success-500)]/15 text-[var(--color-success-400)]"
+        : "bg-[var(--color-bg-surface)] border-[var(--color-border-subtle)] text-[var(--color-text-muted)]"
+    )}>
+      <span className="font-medium">{label}</span>
+      <span className="font-bold text-[10px]">
+        {active ? "✓" : "✗"}
+      </span>
     </div>
   );
 }
