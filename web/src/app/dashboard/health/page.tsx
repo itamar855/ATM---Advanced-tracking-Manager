@@ -14,6 +14,8 @@ import {
   Loader2,
   Plug,
   Info,
+  Trophy,
+  TrendingUp,
 } from "lucide-react";
 import { HealthGauge } from "@/components/dashboard/HealthGauge";
 import { createClient } from "@/lib/supabase/client";
@@ -186,7 +188,7 @@ export default function HealthPage() {
                 Trust Score Global
               </span>
               <HealthGauge score={healthData.trust_score} size="lg" />
-              <div className="mt-4">
+              <div className="mt-4 space-y-3">
                 <span
                   className={`badge text-xs font-bold px-2.5 py-1 ${
                     healthData.trust_score >= 85
@@ -197,12 +199,18 @@ export default function HealthPage() {
                   }`}
                 >
                   {healthData.trust_score >= 85
-                    ? "Excelente Reputação"
+                    ? "Excelente Reputção"
                     : healthData.trust_score >= 60
                     ? "Atenção Moderada"
                     : "Alto Risco de Penalidade"}
                 </span>
-                <p className="text-[11px] text-[var(--color-text-muted)] mt-2">
+
+                {/* Trust Tier Badge */}
+                {healthData.inferred_tier && (
+                  <TierBadge tier={healthData.inferred_tier} />
+                )}
+
+                <p className="text-[11px] text-[var(--color-text-muted)]">
                   Conta: <span className="font-semibold text-[var(--color-text-primary)]">{healthData.ad_account_id}</span>
                 </p>
               </div>
@@ -250,6 +258,34 @@ export default function HealthPage() {
               </div>
             </div>
           </div>
+
+          {/* Trust Tier Sinais */}
+          {healthData.tier_signals && healthData.tier_signals.length > 0 && (
+            <div className="glass-card p-6 space-y-4">
+              <h3 className="text-sm font-semibold text-[var(--color-text-primary)] flex items-center gap-2">
+                <TrendingUp size={16} className="text-[var(--color-brand-300)]" />
+                Sinais Usados para Inferir o Trust Tier
+                <span className="text-[10px] font-normal text-[var(--color-text-muted)] ml-1">
+                  (Meta não expõe o Tier — inferido por 5 sinais reais)
+                </span>
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                {healthData.tier_signals.map((s: any) => (
+                  <div key={s.label} className="p-3 rounded-lg bg-[var(--color-bg-primary)]/70 border border-[var(--color-border-subtle)] space-y-2">
+                    <p className="text-[10px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wide leading-tight">{s.label}</p>
+                    <p className="text-xs font-bold text-[var(--color-text-primary)]">{s.value}</p>
+                    <div className="w-full bg-[var(--color-bg-elevated)] rounded-full h-1.5">
+                      <div
+                        className="h-1.5 rounded-full bg-gradient-to-r from-[var(--color-brand-500)] to-[var(--color-accent-500)] transition-all"
+                        style={{ width: `${Math.round((s.points / s.max) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-[var(--color-text-muted)] text-right">{s.points}/{s.max} pts</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Risks & Actionable Insights Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -309,6 +345,21 @@ export default function HealthPage() {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+function TierBadge({ tier }: { tier: 1 | 2 | 3 }) {
+  const config = {
+    1: { label: "Tier 1 — Iniciante", color: "text-amber-400 bg-amber-500/10 border-amber-500/20", icon: "🥉" },
+    2: { label: "Tier 2 — Estabelecida", color: "text-sky-400 bg-sky-500/10 border-sky-500/20", icon: "🥈" },
+    3: { label: "Tier 3 — Consolidada", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: "🥇" },
+  }[tier];
+
+  return (
+    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold ${config.color}`}>
+      <span>{config.icon}</span>
+      <span>{config.label}</span>
     </div>
   );
 }
