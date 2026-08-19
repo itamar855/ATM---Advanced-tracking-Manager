@@ -73,8 +73,16 @@ export default function StoreSettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setErrorMsg("Você precisa estar logado para salvar.");
+        setSaving(false);
         return;
       }
+
+      // Garante que o registro de tenant existe (para usuários criados antes do trigger)
+      await supabase.from("tenants").upsert({
+        id: user.id,
+        name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "Usuário",
+        email: user.email!,
+      }, { onConflict: "id", ignoreDuplicates: true });
 
       if (storeId) {
         // Atualiza a loja existente
