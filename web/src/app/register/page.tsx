@@ -13,10 +13,32 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    // TODO: Supabase Auth register
-    setTimeout(() => {
-      window.location.href = "/dashboard";
-    }, 1000);
+
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: name,
+          },
+        },
+      });
+
+      if (error) {
+        alert("Erro ao criar conta: " + error.message);
+      } else {
+        alert("Conta criada com sucesso! Faça login para prosseguir.");
+        window.location.href = "/login";
+      }
+    } catch (err: any) {
+      alert("Erro na conexão: " + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

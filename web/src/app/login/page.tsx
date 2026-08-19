@@ -12,10 +12,26 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    // TODO: Supabase Auth login
-    setTimeout(() => {
-      window.location.href = "/dashboard";
-    }, 1000);
+    
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        alert("Erro ao fazer login: " + error.message);
+      } else {
+        window.location.href = "/dashboard";
+      }
+    } catch (err: any) {
+      alert("Erro na conexão: " + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
