@@ -14,7 +14,7 @@ export interface MetaEvent {
     ct?: string[];
     st?: string[];
     zp?: string[];
-    country?: string[];
+    co?: string[];
     external_id?: string[];
     client_ip_address?: string;
     client_user_agent?: string;

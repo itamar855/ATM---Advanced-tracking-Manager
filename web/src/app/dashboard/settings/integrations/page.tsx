@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 export default function IntegrationsPage() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedCapture, setCopiedCapture] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [metaConnected, setMetaConnected] = useState(false);
   const [pixelId, setPixelId] = useState("");
@@ -16,7 +17,53 @@ export default function IntegrationsPage() {
   const [savedConfig, setSavedConfig] = useState<any>(null);
   const [storeId, setStoreId] = useState("sua-loja-id");
 
-  // Script do Web Pixel do ATM para ser colado no Shopify Customer Events
+  const host = typeof window !== 'undefined' ? window.location.host : 'atmtracking.vercel.app';
+
+  // Script 1: Session capture theme.liquid header script
+  const captureScriptCode = `<!-- Script de Captura ATM - Cole antes do </head> no theme.liquid -->
+<script>
+(function() {
+  function getCookie(name) {
+    var val = "; " + document.cookie;
+    var parts = val.split("; " + name + "=");
+    if (parts.length === 2) return parts.pop().split(";").shift();
+  }
+  function genUUID() {
+    return 'ztid_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  }
+  try {
+    var params = JSON.parse(localStorage.getItem("zedy_tracking_params") || "{}");
+    if (!params.track_id) {
+      params.track_id = genUUID();
+    }
+    params.fbp = getCookie("_fbp") || params.fbp || null;
+    params.fbc = getCookie("_fbc") || params.fbc || null;
+    var urlParams = new URLSearchParams(window.location.search);
+    var fbclid = urlParams.get("fbclid");
+    if (fbclid) {
+      params.fbclid = fbclid;
+      if (!params.fbc) {
+        params.fbc = "fb.1." + Date.now() + "." + fbclid;
+      }
+    }
+    localStorage.setItem("zedy_tracking_params", JSON.stringify(params));
+    fetch("https://${host}/api/v1/capture", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        track_id: params.track_id,
+        fbp: params.fbp,
+        fbc: params.fbc,
+        fbclid: params.fbclid,
+        landing_page: window.location.href,
+        event_source_url: window.location.origin + window.location.pathname
+      })
+    });
+  } catch(e) {}
+})();
+</script>`;
+
+  // Script 2: Shopify Customer Event Web Pixel script
   const pixelScriptCode = `// Web Pixel Extension do ATM — Advanced Tracking Manager
 analytics.subscribe("checkout_completed", async (event) => {
   const zedyParams = JSON.parse(localStorage.getItem("zedy_tracking_params") || "{}");
@@ -32,14 +79,14 @@ analytics.subscribe("checkout_completed", async (event) => {
     fbclid: zedyParams.fbclid
   };
 
-  fetch("https://${typeof window !== 'undefined' ? window.location.host : 'atmtracking.vercel.app'}/api/v1/webhook/sua-loja-id", {
+  fetch("https://${host}/api/v1/webhook/${storeId}", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
 });`;
 
-  const zedyWebhookUrl = `https://${typeof window !== 'undefined' ? window.location.host : 'atmtracking.vercel.app'}/api/v1/webhook/zedy/${storeId}`;
+  const zedyWebhookUrl = `https://${host}/api/v1/webhook/zedy/${storeId}`;
 
   useEffect(() => {
     async function loadConfig() {
@@ -80,6 +127,12 @@ analytics.subscribe("checkout_completed", async (event) => {
     navigator.clipboard.writeText(pixelScriptCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyCapture = () => {
+    navigator.clipboard.writeText(captureScriptCode);
+    setCopiedCapture(true);
+    setTimeout(() => setCopiedCapture(false), 2000);
   };
 
   const handleCopyWebhook = () => {
@@ -288,49 +341,88 @@ analytics.subscribe("checkout_completed", async (event) => {
           )}
         </div>
 
-        {/* Right: Pixel script installer helper */}
-        <div className="glass-card p-6 flex flex-col justify-between">
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[var(--color-brand-400)]/10 flex items-center justify-center text-[var(--color-brand-300)]">
-                <Zap size={20} />
+        {/* Right: Scripts installation helper */}
+        <div className="space-y-6">
+          {/* Step 1: theme.liquid Header script */}
+          <div className="glass-card p-6 flex flex-col justify-between space-y-4">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[var(--color-brand-400)]/10 flex items-center justify-center text-[var(--color-brand-300)]">
+                  <Zap size={20} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                    1. Script de Atribuição (theme.liquid)
+                  </h3>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Gera o track ID e captura fbp/fbc no cabeçalho do site
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-                  Instalação na Shopify (Web Pixel)
-                </h3>
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Instale nosso Pixel customizado na Shopify em 1 minuto
-                </p>
+
+              <div className="p-3.5 rounded-lg bg-[var(--color-bg-primary)]/80 border border-[var(--color-border-default)]">
+                <ol className="text-xs space-y-2 text-[var(--color-text-secondary)] list-decimal pl-4">
+                  <li>Acesse o painel da sua Shopify e vá em <b>Loja Virtual</b> &gt; <b>Temas</b>.</li>
+                  <li>Clique em <b>Ações (...)</b> &gt; <b>Editar código</b>.</li>
+                  <li>Abra o arquivo <b>theme.liquid</b>.</li>
+                  <li>Cole o código abaixo logo antes da tag de fechamento <b>&lt;/head&gt;</b> (Importante: cole no cabeçalho/topo do arquivo, e não no final, para garantir a captura imediata do tráfego).</li>
+                </ol>
               </div>
-            </div>
 
-            <div className="p-3.5 rounded-lg bg-[var(--color-bg-primary)]/80 border border-[var(--color-border-default)]">
-              <ol className="text-xs space-y-2 text-[var(--color-text-secondary)] list-decimal pl-4">
-                <li>Acesse o painel da sua Shopify.</li>
-                <li>Vá em <b>Configurações</b> &gt; <b>Eventos de Clientes</b>.</li>
-                <li>Clique em <b>Adicionar pixel personalizado</b>.</li>
-                <li>Cole o código abaixo e clique em <b>Salvar</b> e <b>Conectar</b>.</li>
-              </ol>
-            </div>
-
-            <div className="relative">
-              <pre className="text-[10px] leading-relaxed bg-[var(--color-bg-surface)] p-3 rounded-lg overflow-x-auto text-[var(--color-text-secondary)] max-h-40 border border-[var(--color-border-subtle)]">
-                {pixelScriptCode}
-              </pre>
-              <button
-                onClick={handleCopy}
-                className="absolute top-2 right-2 p-1.5 rounded-md bg-[var(--color-bg-card)] border border-[var(--color-border-default)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] transition-colors"
-                title="Copiar código"
-              >
-                {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-              </button>
+              <div className="relative">
+                <pre className="text-[10px] leading-relaxed bg-[var(--color-bg-surface)] p-3 rounded-lg overflow-x-auto text-[var(--color-text-secondary)] max-h-36 border border-[var(--color-border-subtle)]">
+                  {captureScriptCode}
+                </pre>
+                <button
+                  onClick={handleCopyCapture}
+                  className="absolute top-2 right-2 p-1.5 rounded-md bg-[var(--color-bg-card)] border border-[var(--color-border-default)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] transition-colors"
+                  title="Copiar código"
+                >
+                  {copiedCapture ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 mt-4 text-[11px] text-[var(--color-text-muted)]">
-            <AlertCircle size={14} className="text-[var(--color-brand-300)] shrink-0" />
-            <span>Este script garante cookies primários no iOS (Safari)</span>
+          {/* Step 2: Customer Event Web Pixel */}
+          <div className="glass-card p-6 flex flex-col justify-between space-y-4">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[var(--color-brand-400)]/10 flex items-center justify-center text-[var(--color-brand-300)]">
+                  <Zap size={20} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                    2. Script de Conversão (Web Pixel)
+                  </h3>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Rastreia a compra final e inicia o envio da Meta CAPI
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-[var(--color-bg-primary)]/80 border border-[var(--color-border-default)]">
+                <ol className="text-xs space-y-2 text-[var(--color-text-secondary)] list-decimal pl-4">
+                  <li>Vá em <b>Configurações</b> &gt; <b>Eventos de Clientes</b> no painel da Shopify.</li>
+                  <li>Clique em <b>Adicionar pixel personalizado</b>.</li>
+                  <li>Dê o nome <b>ATM Pixel</b> e cole o código abaixo.</li>
+                  <li>Clique em <b>Salvar</b> e depois em <b>Conectar</b>.</li>
+                </ol>
+              </div>
+
+              <div className="relative">
+                <pre className="text-[10px] leading-relaxed bg-[var(--color-bg-surface)] p-3 rounded-lg overflow-x-auto text-[var(--color-text-secondary)] max-h-36 border border-[var(--color-border-subtle)]">
+                  {pixelScriptCode}
+                </pre>
+                <button
+                  onClick={handleCopy}
+                  className="absolute top-2 right-2 p-1.5 rounded-md bg-[var(--color-bg-card)] border border-[var(--color-border-default)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] transition-colors"
+                  title="Copiar código"
+                >
+                  {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

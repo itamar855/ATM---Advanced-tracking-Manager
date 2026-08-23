@@ -77,7 +77,7 @@ export function buildMetaPurchaseEvent(
   }
 
   if (order.address.country) {
-    user_data.country = [sha256Hash(order.address.country)];
+    user_data.co = [sha256Hash(order.address.country)];
   }
 
   // Identificação do cliente (Regra crítica: nunca orderId)
