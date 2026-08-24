@@ -10,12 +10,15 @@ export default function EventsPage() {
   const [events, setEvents] = useState<any[]>([]);
 
   useEffect(() => {
-    async function loadEvents() {
+    let active = true;
+
+    async function loadEvents(silent = false) {
+      if (!silent) setLoading(true);
       try {
         const supabase = createClient();
         const { data: store } = await supabase.from("stores").select("id").limit(1).maybeSingle();
 
-        if (store) {
+        if (store && active) {
           const { data: dbEvents } = await supabase
             .from("events")
             .select("*")
@@ -23,7 +26,7 @@ export default function EventsPage() {
             .order("created_at", { ascending: false })
             .limit(20);
 
-          if (dbEvents && dbEvents.length > 0) {
+          if (dbEvents && dbEvents.length > 0 && active) {
             setEvents(
               dbEvents.map((e) => ({
                 id: e.id,
@@ -51,10 +54,20 @@ export default function EventsPage() {
       } catch (error) {
         console.error(error);
       } finally {
-        setLoading(false);
+        if (active && !silent) setLoading(false);
       }
     }
+
     loadEvents();
+
+    const interval = setInterval(() => {
+      loadEvents(true);
+    }, 4000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   if (loading) {

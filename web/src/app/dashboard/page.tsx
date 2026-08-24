@@ -31,25 +31,28 @@ export default function DashboardPage() {
   const { activeStore } = useStore();
 
   useEffect(() => {
-    async function initDashboard() {
+    let active = true;
+
+    async function initDashboard(silent = false) {
+      if (!silent) setLoading(true);
       try {
         const supabase = createClient();
         
         // 1. Obtém o usuário logado
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
-          loadMockData();
+          if (active) loadMockData();
           return;
         }
 
         // 2. Usa a loja ativa do StoreContext (suporte multi-lojas)
         const storeData = activeStore;
         if (!storeData) {
-          loadMockData();
+          if (active) loadMockData();
           return;
         }
 
-        setStoreId(storeData.id);
+        if (active) setStoreId(storeData.id);
 
         // Define a faixa de data dos últimos 7 dias
         const endDate = new Date().toISOString();
@@ -61,11 +64,11 @@ export default function DashboardPage() {
         );
         const data = await response.json();
 
-        if (data.ok) {
+        if (data.ok && active) {
           setMetrics(data.metrics);
           setCampaigns(data.campaigns);
           setChartData(data.metrics.daily_chart_data || []);
-        } else {
+        } else if (active) {
           loadMockData();
         }
 
@@ -77,7 +80,7 @@ export default function DashboardPage() {
           .order("created_at", { ascending: false })
           .limit(5);
 
-        if (events && events.length > 0) {
+        if (events && events.length > 0 && active) {
           // Normaliza formato do banco para o componente visual
           setRecentEvents(
             events.map((e) => ({
@@ -87,7 +90,7 @@ export default function DashboardPage() {
               source: e.source,
               status: e.status,
               healthScore: e.health_score || 0,
-              value: 0, // Poderia ser cruzado com ordens se necessário
+              value: 0,
               createdAt: e.created_at,
               signals: {
                 fbp: e.user_data_keys?.includes("fbp") || false,
@@ -101,19 +104,28 @@ export default function DashboardPage() {
               },
             }))
           );
-        } else {
+        } else if (active) {
           loadMockEvents();
         }
 
       } catch (error) {
         console.error("Erro ao carregar o dashboard:", error);
-        loadMockData();
+        if (active) loadMockData();
       } finally {
-        setLoading(false);
+        if (active && !silent) setLoading(false);
       }
     }
 
     initDashboard();
+
+    const interval = setInterval(() => {
+      initDashboard(true);
+    }, 15000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [activeStore]);
 
   function loadMockData() {
