@@ -24,6 +24,7 @@ export default function HealthPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [healthData, setHealthData] = useState<any>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
   
   // Facebook OAuth e seleção de conta
   const [storeId, setStoreId] = useState("");
@@ -32,6 +33,7 @@ export default function HealthPage() {
   const [integrating, setIntegrating] = useState(false);
 
   async function loadHealth() {
+    setApiError(null);
     try {
       const supabase = createClient();
       const { data: store } = await supabase.from("stores").select("id").limit(1).maybeSingle();
@@ -44,12 +46,16 @@ export default function HealthPage() {
         if (result.ok && result.data) {
           setHealthData(result.data);
         } else {
+          if (result.error && !result.error.includes("ad_account_id")) {
+            setApiError(result.error);
+          }
           // Caso a conta não esteja associada a uma conta de anúncios ativa ainda, busca a lista
           fetchAdAccounts(store.id);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
+      setApiError(error.message || "Erro desconhecido ao carregar diagnóstico");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -62,9 +68,12 @@ export default function HealthPage() {
       const data = await res.json();
       if (data.ok && data.accounts) {
         setAccounts(data.accounts);
+      } else if (data.error) {
+        setApiError(data.error);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setApiError(err.message || "Erro ao buscar contas de anúncio");
     }
   }
 
@@ -135,6 +144,19 @@ export default function HealthPage() {
           </button>
         )}
       </div>
+
+      {apiError && (
+        <div className="p-4 rounded-lg bg-[var(--color-danger-500)]/10 border border-[var(--color-danger-500)]/20 text-xs text-[var(--color-danger-400)] flex items-start gap-2.5">
+          <ShieldAlert size={16} className="shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold">Erro retornado pela API da Meta:</p>
+            <p className="leading-relaxed opacity-90">{apiError}</p>
+            <p className="text-[10px] opacity-75 mt-1">
+              Dica: Certifique-se de que o seu Access Token possui permissões de leitura da conta de anúncios (ads_management) e que ele foi atribuído à conta de anúncios no seu Gerenciador de Negócios da Meta.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Seção para selecionar Conta de Anúncios Real */}
       <div className="glass-card p-6 space-y-4">
