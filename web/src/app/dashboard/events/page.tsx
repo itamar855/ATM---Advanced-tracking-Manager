@@ -89,7 +89,17 @@ export default function EventsPage() {
         </p>
       </div>
 
-      <EventTimeline events={events.length > 0 ? events : getMockEvents()} />
+      {events.length === 0 ? (
+        <div className="glass-card p-12 text-center flex flex-col items-center justify-center space-y-3">
+          <Database size={40} className="text-[var(--color-text-muted)]" />
+          <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Nenhum evento registrado</h3>
+          <p className="text-xs text-[var(--color-text-muted)] max-w-sm">
+            Os eventos de conversão e atribuição aparecerão aqui em tempo real assim que forem processados na sua loja Shopify.
+          </p>
+        </div>
+      ) : (
+        <EventTimeline events={events} />
+      )}
     </div>
   );
 }
