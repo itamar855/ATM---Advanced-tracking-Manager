@@ -14,7 +14,7 @@ export async function getDashboardPLMetrics(
   // 1. Busca a receita e pedidos aprovados/pagos na tabela de ordens
   const { data: orders, error: ordersError } = await supabase
     .from("orders")
-    .select("value, products")
+    .select("value, products, order_paid_at")
     .eq("store_id", storeId)
     .eq("status", "paid")
     .gte("order_paid_at", startDate)
@@ -51,7 +51,7 @@ export async function getDashboardPLMetrics(
   // 3. Busca o gasto total das campanhas
   const { data: costs, error: costsError } = await supabase
     .from("campaign_costs")
-    .select("spend")
+    .select("spend, date")
     .eq("store_id", storeId)
     .gte("date", startDate)
     .lte("date", endDate);
@@ -77,19 +77,110 @@ export async function getDashboardPLMetrics(
     .gte("created_at", startDate)
     .lte("created_at", endDate);
 
-  // 6. Calcula a média de Health Score
-  const { data: healthData } = await supabase
+  // 6. Calcula a média de Health Score e os sinalizadores reais
+  const { data: healthEvents } = await supabase
     .from("events")
-    .select("health_score")
+    .select("health_score, user_data_keys, status")
     .eq("store_id", storeId)
     .eq("source", "server")
-    .not("health_score", "is", null)
     .gte("created_at", startDate)
     .lte("created_at", endDate);
 
-  const avgHealthScore = healthData && healthData.length > 0
-    ? Math.round(healthData.reduce((acc, h) => acc + (h.health_score || 0), 0) / healthData.length)
-    : 0;
+  let avgHealthScore = 0;
+  let fbpFbcCount = 0;
+  let ipUaCount = 0;
+  let emailPhoneCount = 0;
+  let extIdCount = 0;
+  let addressCount = 0;
+  let dedupCount = 0;
+  const totalEvents = healthEvents?.length || 0;
+
+  if (totalEvents > 0) {
+    let sumScore = 0;
+    healthEvents!.forEach(e => {
+      sumScore += e.health_score || 0;
+      
+      const keys = e.user_data_keys || [];
+      if (keys.includes("fbp") || keys.includes("fbc")) fbpFbcCount++;
+      if (keys.includes("client_ip_address") || keys.includes("client_user_agent")) ipUaCount++;
+      if (keys.includes("em") || keys.includes("ph")) emailPhoneCount++;
+      if (keys.includes("external_id")) extIdCount++;
+      if (keys.includes("ct") || keys.includes("st") || keys.includes("zp") || keys.includes("co") || keys.includes("country")) addressCount++;
+      if (e.status !== "failed" && e.status !== "rejected") dedupCount++;
+    });
+    avgHealthScore = Math.round(sumScore / totalEvents);
+  }
+
+  const health_signals = {
+    fbp_fbc: totalEvents > 0 ? Math.round((fbpFbcCount / totalEvents) * 100) : 0,
+    ip_ua: totalEvents > 0 ? Math.round((ipUaCount / totalEvents) * 100) : 0,
+    email_phone: totalEvents > 0 ? Math.round((emailPhoneCount / totalEvents) * 100) : 0,
+    external_id: totalEvents > 0 ? Math.round((extIdCount / totalEvents) * 100) : 0,
+    address: totalEvents > 0 ? Math.round((addressCount / totalEvents) * 100) : 0,
+    dedup: totalEvents > 0 ? Math.round((dedupCount / totalEvents) * 100) : 0,
+  };
+
+  // 7. Agrupa faturamento e custos diários para o gráfico
+  const dailyMap = new Map<string, { revenue: number; spend: number }>();
+
+  const formatDateKey = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return "";
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      return `${day}/${month}`;
+    } catch {
+      return "";
+    }
+  };
+
+  // Popula faturamento diário
+  (orders || []).forEach(o => {
+    const dateStr = o.order_paid_at;
+    if (!dateStr) return;
+    const key = formatDateKey(dateStr);
+    if (!key) return;
+    const current = dailyMap.get(key) || { revenue: 0, spend: 0 };
+    current.revenue += Number(o.value || 0);
+    dailyMap.set(key, current);
+  });
+
+  // Popula custos diários
+  (costs || []).forEach(c => {
+    if (!c.date) return;
+    const key = formatDateKey(c.date);
+    if (!key) return;
+    const current = dailyMap.get(key) || { revenue: 0, spend: 0 };
+    current.spend += Number(c.spend || 0);
+    dailyMap.set(key, current);
+  });
+
+  const daily_chart_data = Array.from(dailyMap.entries()).map(([date, val]) => ({
+    date,
+    revenue: Math.round(val.revenue),
+    spend: Math.round(val.spend),
+    profit: Math.round(val.revenue - val.spend)
+  })).sort((a, b) => {
+    const [dayA, monthA] = a.date.split('/');
+    const [dayB, monthB] = b.date.split('/');
+    return new Date(2026, Number(monthA)-1, Number(dayA)).getTime() - new Date(2026, Number(monthB)-1, Number(dayB)).getTime();
+  });
+
+  // Garante preenchimento mínimo para o gráfico não quebrar se vazio
+  if (daily_chart_data.length === 0) {
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400000);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      daily_chart_data.push({
+        date: `${day}/${month}`,
+        revenue: 0,
+        spend: 0,
+        profit: 0
+      });
+    }
+  }
 
   return {
     total_revenue: totalRevenue,
@@ -101,10 +192,12 @@ export async function getDashboardPLMetrics(
     margin,
     events_sent: eventsCount || 0,
     avg_health_score: avgHealthScore,
-    revenue_change: 0, // Calculado comparando período anterior na API se necessário
+    revenue_change: 0,
     spend_change: 0,
     profit_change: 0,
     orders_change: 0,
+    daily_chart_data,
+    health_signals
   };
 }
 

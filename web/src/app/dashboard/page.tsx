@@ -26,6 +26,7 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<any>(null);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [recentEvents, setRecentEvents] = useState<any[]>([]);
+  const [chartData, setChartData] = useState<any[]>([]);
 
   const { activeStore } = useStore();
 
@@ -63,6 +64,7 @@ export default function DashboardPage() {
         if (data.ok) {
           setMetrics(data.metrics);
           setCampaigns(data.campaigns);
+          setChartData(data.metrics.daily_chart_data || []);
         } else {
           loadMockData();
         }
@@ -115,44 +117,42 @@ export default function DashboardPage() {
   }, [activeStore]);
 
   function loadMockData() {
+    // Carrega estados zerados reais em vez de mocks fictícios
     setMetrics({
-      total_revenue: 90500,
-      total_spend: 20000,
-      total_profit: 49100,
-      total_orders: 75,
-      roas: 4.525,
-      cpa: 266,
-      margin: 54.2,
-      events_sent: 312,
-      avg_health_score: 87,
+      total_revenue: 0,
+      total_spend: 0,
+      total_profit: 0,
+      total_orders: 0,
+      roas: 0,
+      cpa: 0,
+      margin: 0,
+      events_sent: 0,
+      avg_health_score: 0,
+      health_signals: {
+        fbp_fbc: 0,
+        ip_ua: 0,
+        email_phone: 0,
+        external_id: 0,
+        address: 0,
+        dedup: 0
+      }
     });
 
-    setCampaigns([
-      {
-        campaign_id: "1",
-        campaign_name: "[BROAD] Campanha Topo - Interesse CBD",
-        status: "active",
-        spend: 1240,
-        revenue: 5820,
-        profit: 2980,
-        roas: 4.69,
-        conversions: 23,
-        cpa: 54,
-        healthScore: 92,
-      },
-      {
-        campaign_id: "2",
-        campaign_name: "[RETARGETING] Visitantes 7D - Carrinho",
-        status: "active",
-        spend: 680,
-        revenue: 3200,
-        profit: 1520,
-        roas: 4.71,
-        conversions: 14,
-        cpa: 49,
-        healthScore: 88,
-      },
-    ]);
+    setCampaigns([]);
+
+    const emptyChart = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400000);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      emptyChart.push({
+        date: `${day}/${month}`,
+        revenue: 0,
+        spend: 0,
+        profit: 0
+      });
+    }
+    setChartData(emptyChart);
   }
 
   function loadMockEvents() {
@@ -187,16 +187,6 @@ export default function DashboardPage() {
       </div>
     );
   }
-
-  const chartData = [
-    { date: "12/08", revenue: 8400, spend: 2100, profit: 4200 },
-    { date: "13/08", revenue: 12600, spend: 2800, profit: 6800 },
-    { date: "14/08", revenue: 9800, spend: 2400, profit: 5100 },
-    { date: "15/08", revenue: 15200, spend: 3200, profit: 8400 },
-    { date: "16/08", revenue: 11400, spend: 2600, profit: 6200 },
-    { date: "17/08", revenue: 18900, spend: 3800, profit: 10800 },
-    { date: "18/08", revenue: 14200, spend: 3100, profit: 7600 },
-  ];
 
   return (
     <div className="space-y-6 fade-in">
@@ -291,12 +281,12 @@ export default function DashboardPage() {
           </h3>
           <HealthGauge score={metrics.avg_health_score} size="lg" />
           <div className="mt-6 w-full space-y-2">
-            <HealthBar label="fbp/fbc" value={92} />
-            <HealthBar label="IP + User-Agent" value={96} />
-            <HealthBar label="Email + Phone" value={88} />
-            <HealthBar label="External ID" value={78} />
-            <HealthBar label="Endereço" value={72} />
-            <HealthBar label="Deduplicação" value={100} />
+            <HealthBar label="fbp/fbc" value={metrics?.health_signals?.fbp_fbc || 0} />
+            <HealthBar label="IP + User-Agent" value={metrics?.health_signals?.ip_ua || 0} />
+            <HealthBar label="Email + Phone" value={metrics?.health_signals?.email_phone || 0} />
+            <HealthBar label="External ID" value={metrics?.health_signals?.external_id || 0} />
+            <HealthBar label="Endereço" value={metrics?.health_signals?.address || 0} />
+            <HealthBar label="Deduplicação" value={metrics?.health_signals?.dedup || 0} />
           </div>
         </div>
       </div>

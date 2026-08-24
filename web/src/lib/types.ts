@@ -231,6 +231,20 @@ export interface DashboardMetrics {
   spend_change: number;
   profit_change: number;
   orders_change: number;
+  daily_chart_data?: Array<{
+    date: string;
+    revenue: number;
+    spend: number;
+    profit: number;
+  }>;
+  health_signals?: {
+    fbp_fbc: number;
+    ip_ua: number;
+    email_phone: number;
+    external_id: number;
+    address: number;
+    dedup: number;
+  };
 }
 
 // ========================================
