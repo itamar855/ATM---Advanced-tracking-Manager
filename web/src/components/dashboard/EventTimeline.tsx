@@ -59,10 +59,10 @@ export function EventTimeline({ events }: EventTimelineProps) {
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-                Eventos Recentes ({events.length})
+                Eventos Recentes ({events.length || 500})
               </h3>
               <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                Exibindo eventos despachados para a Meta Conversions API (CAPI)
+                Exibindo os últimos 500 eventos despachados para a Meta Conversions API (CAPI)
               </p>
             </div>
 

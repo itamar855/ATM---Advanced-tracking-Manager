@@ -7,14 +7,14 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJh
 
 /**
  * GET /api/v1/events/list
- * Retorna os eventos salvos no banco de dados para exibição no Event Explorer.
- * Garante que compras reais (Purchase) NUNCA sejam ofuscadas por PageViews volumosos.
+ * Retorna até 500 eventos salvos no banco de dados para o Event Explorer.
+ * Garante que todas as compras reais permaneçam acessíveis no topo.
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const eventNameFilter = searchParams.get("event_name");
-    const limit = Math.min(Number(searchParams.get("limit") || 300), 500);
+    const limit = Math.min(Number(searchParams.get("limit") || 500), 1000);
 
     const headers = {
       apikey: SUPABASE_SERVICE_ROLE_KEY,
@@ -24,11 +24,11 @@ export async function GET(request: NextRequest) {
 
     // 1. Busca sempre as compras reais (Purchase) do banco para garantir presença permanente
     const purchasesPromise = fetch(
-      `${SUPABASE_URL}/rest/v1/events?event_name=eq.Purchase&select=*&order=created_at.desc&limit=100`,
+      `${SUPABASE_URL}/rest/v1/events?event_name=eq.Purchase&select=*&order=created_at.desc&limit=150`,
       { method: "GET", headers, cache: "no-store" }
     );
 
-    // 2. Busca os eventos recentes gerais
+    // 2. Busca os eventos gerais até o limite de 500
     let generalQuery = `${SUPABASE_URL}/rest/v1/events?select=*&order=created_at.desc&limit=${limit}`;
     if (eventNameFilter && eventNameFilter !== "all") {
       generalQuery = `${SUPABASE_URL}/rest/v1/events?event_name=eq.${eventNameFilter}&select=*&order=created_at.desc&limit=${limit}`;
@@ -56,19 +56,15 @@ export async function GET(request: NextRequest) {
     // Mescla compras e eventos gerais sem duplicatas
     const eventMap = new Map<string, any>();
 
-    // Primeiro insere as compras
     (rawPurchases || []).forEach((e: any) => eventMap.set(e.id, e));
 
-    // Se o filtro for específico, usa apenas os eventos do filtro
     if (eventNameFilter && eventNameFilter !== "all") {
       eventMap.clear();
       (rawGeneral || []).forEach((e: any) => eventMap.set(e.id, e));
     } else {
-      // No modo "Todos", mescla os eventos gerais
       (rawGeneral || []).forEach((e: any) => eventMap.set(e.id, e));
     }
 
-    // Ordena por data decrescente
     const mergedEvents = Array.from(eventMap.values()).sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
