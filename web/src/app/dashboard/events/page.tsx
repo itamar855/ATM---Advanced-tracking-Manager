@@ -18,15 +18,19 @@ export default function EventsPage() {
         const supabase = createClient();
         const { data: store } = await supabase.from("stores").select("id").limit(1).maybeSingle();
 
-        if (store && active) {
-          const { data: dbEvents } = await supabase
-            .from("events")
-            .select("*")
-            .eq("store_id", store.id)
-            .order("created_at", { ascending: false })
-            .limit(20);
+        let query = supabase
+          .from("events")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(20);
 
-          if (dbEvents && dbEvents.length > 0 && active) {
+        if (store?.id) {
+          query = query.or(`store_id.eq.${store.id},store_id.eq.dckb5g-7d`);
+        }
+
+        const { data: dbEvents } = await query;
+
+        if (dbEvents && dbEvents.length > 0 && active) {
             setEvents(
               dbEvents.map((e) => ({
                 id: e.id,
@@ -50,7 +54,6 @@ export default function EventsPage() {
               }))
             );
           }
-        }
       } catch (error) {
         console.error(error);
       } finally {
