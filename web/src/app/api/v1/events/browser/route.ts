@@ -168,43 +168,20 @@ export async function POST(request: NextRequest) {
     const status = capiResult.ok ? "accepted" : "rejected";
     const userDataKeys = getUserDataKeys(metaEvent.user_data);
 
-    let dbErrorMsg = null;
-    try {
-      const eventPayload = {
-        store_id: store_id || "dckb5g-7d",
-        event_name,
-        event_id,
-        source: "browser",
-        status,
-        user_data_keys: userDataKeys,
-        health_score: 95,
-        meta_response: capiResult.response || null,
-        latency_ms: latencyMs,
-        sent_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      const dbRes = await fetch(`${SUPABASE_URL}/rest/v1/events`, {
-        method: "POST",
-        headers: {
-          "apikey": SUPABASE_SERVICE_ROLE_KEY,
-          "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-          "Content-Type": "application/json",
-          "Prefer": "return=minimal",
-        },
-        body: JSON.stringify(eventPayload),
-      });
-
-      if (!dbRes.ok) {
-        dbErrorMsg = await dbRes.text();
-      }
-    } catch (e: any) {
-      dbErrorMsg = e.message;
-    }
+    await updateEventResult(
+      store_id || "dckb5g-7d",
+      event_id,
+      "browser",
+      status,
+      capiResult.response || null,
+      latencyMs,
+      userDataKeys,
+      event_name
+    );
 
     if (!capiResult.ok) {
       return NextResponse.json(
-        { ok: false, error: capiResult.error, dbError: dbErrorMsg },
+        { ok: false, error: capiResult.error },
         { status: 400 }
       );
     }
