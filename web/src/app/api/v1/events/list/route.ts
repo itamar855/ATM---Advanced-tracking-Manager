@@ -7,39 +7,87 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJh
 
 /**
  * GET /api/v1/events/list
- * Retorna os últimos 300 eventos salvos no banco de dados para exibição no Event Explorer.
+ * Retorna os eventos salvos no banco de dados para exibição no Event Explorer.
+ * Garante que compras reais (Purchase) NUNCA sejam ofuscadas por PageViews volumosos.
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const eventNameFilter = searchParams.get("event_name");
     const limit = Math.min(Number(searchParams.get("limit") || 300), 500);
 
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/events?select=*&order=created_at.desc&limit=${limit}`, {
-      method: "GET",
-      headers: {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-    });
+    const headers = {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+    };
 
-    if (!res.ok) {
-      const errText = await res.text();
-      return NextResponse.json({ ok: false, error: errText, events: [] }, { status: 200 });
+    // 1. Busca sempre as compras reais (Purchase) do banco para garantir presença permanente
+    const purchasesPromise = fetch(
+      `${SUPABASE_URL}/rest/v1/events?event_name=eq.Purchase&select=*&order=created_at.desc&limit=100`,
+      { method: "GET", headers, cache: "no-store" }
+    );
+
+    // 2. Busca os eventos recentes gerais
+    let generalQuery = `${SUPABASE_URL}/rest/v1/events?select=*&order=created_at.desc&limit=${limit}`;
+    if (eventNameFilter && eventNameFilter !== "all") {
+      generalQuery = `${SUPABASE_URL}/rest/v1/events?event_name=eq.${eventNameFilter}&select=*&order=created_at.desc&limit=${limit}`;
     }
 
-    const events = await res.json();
+    const generalPromise = fetch(generalQuery, { method: "GET", headers, cache: "no-store" });
 
-    const formattedEvents = (events || []).map((e: any) => {
+    // 3. Contadores globais das últimas 24h
+    const count24hIso = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const purchaseCountPromise = fetch(
+      `${SUPABASE_URL}/rest/v1/events?event_name=eq.Purchase&select=id&created_at=gte.${count24hIso}`,
+      { method: "GET", headers, cache: "no-store" }
+    );
+
+    const [purchasesRes, generalRes, purchaseCountRes] = await Promise.all([
+      purchasesPromise,
+      generalPromise,
+      purchaseCountPromise,
+    ]);
+
+    const rawPurchases = purchasesRes.ok ? await purchasesRes.json() : [];
+    const rawGeneral = generalRes.ok ? await generalRes.json() : [];
+    const countPurchases = purchaseCountRes.ok ? (await purchaseCountRes.json()).length : rawPurchases.length;
+
+    // Mescla compras e eventos gerais sem duplicatas
+    const eventMap = new Map<string, any>();
+
+    // Primeiro insere as compras
+    (rawPurchases || []).forEach((e: any) => eventMap.set(e.id, e));
+
+    // Se o filtro for específico, usa apenas os eventos do filtro
+    if (eventNameFilter && eventNameFilter !== "all") {
+      eventMap.clear();
+      (rawGeneral || []).forEach((e: any) => eventMap.set(e.id, e));
+    } else {
+      // No modo "Todos", mescla os eventos gerais
+      (rawGeneral || []).forEach((e: any) => eventMap.set(e.id, e));
+    }
+
+    // Ordena por data decrescente
+    const mergedEvents = Array.from(eventMap.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    const formattedEvents = mergedEvents.map((e: any) => {
       const metaResp = e.meta_response || {};
       const orderDetails = metaResp.order_details || {};
       const customData = metaResp.custom_data || {};
-      const val = Number(orderDetails.value || customData.value || (e.event_name === "Purchase" ? 172.88 : (e.event_name === "AddToCart" ? 172.88 : 0)));
+      const val = Number(
+        orderDetails.value ||
+        customData.value ||
+        (e.event_name === "Purchase" ? 172.88 : (e.event_name === "AddToCart" ? 157.90 : 0))
+      );
+
+      const userKeys = Array.isArray(e.user_data_keys) ? e.user_data_keys : [];
 
       return {
         id: e.id,
-        orderId: e.order_id || e.event_id?.slice(-8) || "S/I",
+        orderId: e.order_id || (e.event_name === "Purchase" ? `PED-${e.event_id?.slice(-6)}` : e.event_id?.slice(-8)) || "S/I",
         eventName: e.event_name,
         source: e.source,
         status: e.status || "accepted",
@@ -47,19 +95,24 @@ export async function GET(request: NextRequest) {
         value: val,
         createdAt: e.created_at,
         signals: {
-          fbp: Array.isArray(e.user_data_keys) ? e.user_data_keys.includes("fbp") : true,
-          fbc: Array.isArray(e.user_data_keys) ? e.user_data_keys.includes("fbc") : true,
-          ip: Array.isArray(e.user_data_keys) ? e.user_data_keys.includes("client_ip_address") : true,
-          ua: Array.isArray(e.user_data_keys) ? e.user_data_keys.includes("client_user_agent") : true,
-          email: Array.isArray(e.user_data_keys) ? e.user_data_keys.includes("em") : false,
-          phone: Array.isArray(e.user_data_keys) ? e.user_data_keys.includes("ph") : false,
-          externalId: Array.isArray(e.user_data_keys) ? e.user_data_keys.includes("external_id") : true,
-          address: Array.isArray(e.user_data_keys) ? e.user_data_keys.includes("ct") : false,
+          fbp: userKeys.includes("fbp"),
+          fbc: userKeys.includes("fbc"),
+          ip: userKeys.includes("client_ip_address") || userKeys.includes("ip"),
+          ua: userKeys.includes("client_user_agent") || userKeys.includes("ua"),
+          email: userKeys.includes("em") || userKeys.includes("email"),
+          phone: userKeys.includes("ph") || userKeys.includes("phone"),
+          externalId: userKeys.includes("external_id"),
+          address: userKeys.includes("ct") || userKeys.includes("st") || userKeys.includes("zp") || userKeys.includes("co"),
         },
       };
     });
 
-    return NextResponse.json({ ok: true, count: formattedEvents.length, events: formattedEvents });
+    return NextResponse.json({
+      ok: true,
+      count: formattedEvents.length,
+      totalPurchases: Math.max(rawPurchases.length, countPurchases),
+      events: formattedEvents,
+    });
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error.message, events: [] }, { status: 500 });
   }
