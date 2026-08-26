@@ -169,18 +169,22 @@ export async function POST(request: NextRequest) {
     try {
       const { error: dbErr } = await supabase
         .from("events")
-        .insert({
-          store_id: store_id || "dckb5g-7d",
-          event_name,
-          event_id,
-          source: "browser",
-          status,
-          user_data_keys: userDataKeys,
-          health_score: 95,
-          meta_response: capiResult.response || null,
-          latency_ms: latencyMs,
-          sent_at: new Date().toISOString(),
-        });
+        .upsert(
+          {
+            store_id: store_id || "dckb5g-7d",
+            event_name,
+            event_id,
+            source: "browser",
+            status,
+            user_data_keys: userDataKeys,
+            health_score: 95,
+            meta_response: capiResult.response || null,
+            latency_ms: latencyMs,
+            sent_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "store_id,event_id,source" }
+        );
       if (dbErr) dbErrorMsg = dbErr.message;
     } catch (e: any) {
       dbErrorMsg = e.message;
