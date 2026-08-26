@@ -190,8 +190,9 @@ export function buildMetaPurchaseEvent(
   if (order.customer.firstName) {
     user_data.fn = [hashName(order.customer.firstName)];
   }
-  if (order.customer.lastName) {
-    user_data.ln = [hashName(order.customer.lastName)];
+  const lastNameToUse = order.customer.lastName || order.customer.firstName || "";
+  if (lastNameToUse) {
+    user_data.ln = [hashName(lastNameToUse)];
   }
   if (order.address.city) {
     user_data.ct = [hashCity(order.address.city)];
@@ -202,12 +203,18 @@ export function buildMetaPurchaseEvent(
   if (order.address.zip) {
     user_data.zp = [hashZip(order.address.zip)];
   }
-  if (order.address.country) {
-    user_data.co = [hashCountry(order.address.country)];
-  }
+  
+  // País sempre garantido (padrão Brasil BR)
+  const countryToUse = order.address.country || "BR";
+  user_data.co = [hashCountry(countryToUse)];
 
-  // External ID estável (representa o comprador, nunca a transação)
-  const stableId = getStableCustomerId(order);
+  // External ID universal garantido em 100% das compras
+  const stableId =
+    getStableCustomerId(order) ||
+    (order.customer.email ? `customer:${order.customer.email.toLowerCase().trim()}` : null) ||
+    (order.customer.phone ? `customer:${order.customer.phone.replace(/\D/g, "")}` : null) ||
+    `customer:${order.orderId}`;
+
   if (stableId) {
     user_data.external_id = [sha256Hash(stableId)];
   }

@@ -178,20 +178,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       price: Number(item.price || item.unit_price || 0),
     }));
 
+    const rawAddress =
+      payload.address ||
+      payload.customer?.address ||
+      payload.shipping_address ||
+      payload.billing_address ||
+      payload.shippingAddress ||
+      payload.billingAddress ||
+      {};
+
     const normalizedOrder: NormalizedOrder = {
       orderId,
       customer: {
         email: customer.email || payload.email || "",
-        phone: customer.phone || customer.cellphone || payload.phone || "",
-        firstName: (customer.name || customer.first_name || "").split(" ")[0] || "",
-        lastName: (customer.name || "").split(" ").slice(1).join(" ") || customer.last_name || "",
-        externalId: customer.email || customer.document || String(customer.id || ""),
+        phone: customer.phone || customer.cellphone || payload.phone || payload.telephone || "",
+        firstName: (customer.name || customer.first_name || payload.name || "").split(" ")[0] || "",
+        lastName: (customer.name || customer.first_name || payload.name || "").split(" ").slice(1).join(" ") || customer.last_name || "",
+        externalId: customer.email || customer.document || customer.cpf || String(customer.id || ""),
       },
       address: {
-        city: address.city || "",
-        state: address.state || address.province || "",
-        zip: (address.zipcode || address.zip || "").replace(/\D/g, ""),
-        country: address.country || "BR",
+        city: rawAddress.city || rawAddress.cidade || customer.city || payload.city || "",
+        state: rawAddress.state || rawAddress.estado || rawAddress.province || customer.state || payload.state || "",
+        zip: String(rawAddress.zipcode || rawAddress.zip || rawAddress.cep || customer.zipcode || payload.zipcode || "").replace(/\D/g, ""),
+        country: rawAddress.country || rawAddress.pais || "BR",
       },
       products,
       value: orderValue,
