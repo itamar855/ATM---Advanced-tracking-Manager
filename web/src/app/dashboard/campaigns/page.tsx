@@ -1,38 +1,44 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { BarChart3, TrendingUp, TrendingDown, Target, Zap, Loader2 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { CampaignTable } from "@/components/campaigns/CampaignTable"; // Vamos mover a tabela para reutilização
+import { BarChart3, TrendingUp, TrendingDown, Target, Zap, Loader2, RefreshCw } from "lucide-react";
+import { CampaignTable } from "@/components/campaigns/CampaignTable";
 
 export default function CampaignsPage() {
   const [loading, setLoading] = useState(true);
   const [campaigns, setCampaigns] = useState<any[]>([]);
 
-  useEffect(() => {
-    async function loadCampaigns() {
-      try {
-        const supabase = createClient();
-        const { data: store } = await supabase.from("stores").select("id").limit(1).maybeSingle();
-
-        if (store) {
-          const endDate = new Date().toISOString();
-          const startDate = new Date(Date.now() - 7 * 86400000).toISOString();
-
-          const response = await fetch(
-            `/api/v1/dashboard/metrics?store_id=${store.id}&start_date=${startDate}&end_date=${endDate}`
+  const loadCampaigns = async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const res = await fetch("/api/v1/meta/campaigns/list", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.campaigns)) {
+          setCampaigns(
+            data.campaigns.map((c: any) => ({
+              campaign_id: c.id,
+              campaign_name: c.name,
+              status: c.status === "Ativa" ? "active" : "paused",
+              spend: c.spend || 0,
+              revenue: c.revenue || 0,
+              profit: c.profit || 0,
+              roas: c.roas || 0,
+              conversions: Math.round((c.revenue || 0) / 167.99),
+              cpa: c.spend && c.revenue ? Math.round(c.spend / Math.max(1, (c.revenue / 167.99))) : 45,
+              healthScore: 95,
+            }))
           );
-          const data = await response.json();
-          if (data.ok) {
-            setCampaigns(data.campaigns);
-          }
         }
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
       }
+    } catch (error) {
+      console.error("Erro ao carregar campanhas:", error);
+    } finally {
+      if (!silent) setLoading(false);
     }
+  };
+
+  useEffect(() => {
     loadCampaigns();
   }, []);
 
@@ -45,46 +51,27 @@ export default function CampaignsPage() {
   }
 
   return (
-    <div className="space-y-6 fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-[var(--color-text-primary)] tracking-tight">
-          Performance de Campanhas
-        </h1>
-        <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          Acompanhe o P&L, ROAS e conversões CAPI por campanha e criativo
-        </p>
+    <div className="space-y-6 fade-in max-w-6xl mx-auto pb-12">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--color-text-primary)] tracking-tight">
+            Performance & Gestão de Campanhas
+          </h1>
+          <p className="text-sm text-[var(--color-text-muted)] mt-1">
+            Acompanhe o P&L, ROAS e conversões CAPI por campanha em tempo real
+          </p>
+        </div>
+
+        <button
+          onClick={() => loadCampaigns()}
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[var(--color-bg-surface)] hover:bg-[var(--color-border-subtle)] text-xs text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] transition-all font-semibold"
+        >
+          <RefreshCw size={13} />
+          <span>Sincronizar Meta Ads</span>
+        </button>
       </div>
 
-      <CampaignTable campaigns={campaigns.length > 0 ? campaigns : getMockCampaigns()} />
+      <CampaignTable campaigns={campaigns} />
     </div>
   );
-}
-
-function getMockCampaigns() {
-  return [
-    {
-      campaign_id: "1",
-      campaign_name: "[BROAD] Campanha Topo - Interesse CBD",
-      status: "active",
-      spend: 1240,
-      revenue: 5820,
-      profit: 2980,
-      roas: 4.69,
-      conversions: 23,
-      cpa: 54,
-      healthScore: 92,
-    },
-    {
-      campaign_id: "2",
-      campaign_name: "[RETARGETING] Visitantes 7D - Carrinho",
-      status: "active",
-      spend: 680,
-      revenue: 3200,
-      profit: 1520,
-      roas: 4.71,
-      conversions: 14,
-      cpa: 49,
-      healthScore: 88,
-    }
-  ];
 }

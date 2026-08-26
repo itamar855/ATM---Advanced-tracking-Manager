@@ -1,39 +1,43 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ShoppingCart, ShoppingBag, DollarSign, Calendar, Loader2 } from "lucide-react";
+import { ShoppingCart, ShoppingBag, DollarSign, Calendar, Loader2, PackageCheck } from "lucide-react";
 import { formatCurrency, formatRelativeTime } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
 
 export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<any[]>([]);
 
   useEffect(() => {
-    async function loadOrders() {
+    let active = true;
+
+    async function loadOrders(silent = false) {
+      if (!silent) setLoading(true);
       try {
-        const supabase = createClient();
-        const { data: store } = await supabase.from("stores").select("id").limit(1).maybeSingle();
-
-        if (store) {
-          const { data: dbOrders } = await supabase
-            .from("orders")
-            .select("*")
-            .eq("store_id", store.id)
-            .order("order_paid_at", { ascending: false })
-            .limit(20);
-
-          if (dbOrders) {
-            setOrders(dbOrders);
+        const res = await fetch("/api/v1/orders/list", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ok && Array.isArray(data.orders) && active) {
+            setOrders(data.orders);
           }
         }
       } catch (error) {
-        console.error(error);
+        console.error("Erro ao carregar pedidos:", error);
       } finally {
-        setLoading(false);
+        if (active && !silent) setLoading(false);
       }
     }
+
     loadOrders();
+
+    const interval = setInterval(() => {
+      loadOrders(true);
+    }, 4000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   if (loading) {
@@ -47,14 +51,21 @@ export default function OrdersPage() {
   const list = orders.length > 0 ? orders : getMockOrders();
 
   return (
-    <div className="space-y-6 fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-[var(--color-text-primary)] tracking-tight">
-          Pedidos Rastreados
-        </h1>
-        <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          Histórico e atribuição em tempo real de vendas vinculadas a campanhas
-        </p>
+    <div className="space-y-6 fade-in max-w-6xl mx-auto pb-12">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--color-text-primary)] tracking-tight">
+            Pedidos Rastreados & Atribuição CAPI
+          </h1>
+          <p className="text-sm text-[var(--color-text-muted)] mt-1">
+            Histórico e atribuição em tempo real de vendas vinculadas à Meta Conversions API
+          </p>
+        </div>
+
+        <div className="px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold flex items-center gap-1.5">
+          <PackageCheck size={14} />
+          <span>{orders.length} Pedido(s) Sincronizado(s)</span>
+        </div>
       </div>
 
       <div className="glass-card overflow-hidden">
@@ -74,42 +85,42 @@ export default function OrdersPage() {
             <tbody>
               {list.map((order) => (
                 <tr key={order.id}>
-                  <td className="font-semibold text-[var(--color-text-primary)]">
-                    {order.order_id}
+                  <td className="font-semibold text-[var(--color-text-primary)] font-mono text-xs">
+                    {order.orderId}
                   </td>
                   <td>
                     <div className="flex flex-col">
                       <span className="text-xs font-medium text-[var(--color-text-primary)]">
-                        {order.customer_name || "Comprador Anonimizado"}
+                        {order.customerName || "Cliente Identificado"}
                       </span>
                       <span className="text-[10px] text-[var(--color-text-muted)]">
-                        {order.customer_email || "PII Hasheado"}
+                        {order.customerEmail || "cliente@***.com"}
                       </span>
                     </div>
                   </td>
                   <td>
-                    <span className="badge badge-success text-[10px]">
-                      {order.status === "paid" ? "Pago" : order.status}
+                    <span className="badge badge-success text-[10px] uppercase font-bold">
+                      {order.status}
                     </span>
                   </td>
-                  <td className="text-right font-medium text-[var(--color-text-primary)]">
+                  <td className="text-right font-bold text-[var(--color-text-primary)]">
                     {formatCurrency(Number(order.value || 0))}
                   </td>
-                  <td className="capitalize text-xs">
-                    {order.payment_method || "pix"}
+                  <td className="capitalize text-xs text-[var(--color-text-secondary)]">
+                    {order.paymentMethod || "Pix"}
                   </td>
                   <td>
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-[var(--color-brand-300)]">
-                        {order.utm_source || "Direto / Orgânico"}
+                      <span className="text-xs font-semibold text-purple-400">
+                        {order.utmSource || "facebook"}
                       </span>
                       <span className="text-[10px] text-[var(--color-text-muted)]">
-                        {order.utm_campaign || "-"}
+                        {order.utmCampaign || "[CAPI] Direto"}
                       </span>
                     </div>
                   </td>
-                  <td className="text-xs">
-                    {formatRelativeTime(order.order_paid_at || order.created_at)}
+                  <td className="text-xs text-[var(--color-text-muted)]">
+                    {formatRelativeTime(order.createdAt)}
                   </td>
                 </tr>
               ))}
@@ -124,28 +135,28 @@ export default function OrdersPage() {
 function getMockOrders() {
   return [
     {
-      id: "o1",
-      order_id: "Z-095DQ08FPS2634690",
-      customer_name: "Guilherme Silva",
-      customer_email: "g***@gmail.com",
-      status: "paid",
-      value: 297.0,
-      payment_method: "pix",
-      utm_source: "facebook",
-      utm_campaign: "[BROAD] CBD",
-      order_paid_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+      id: "ord_1",
+      orderId: "VEGA-95821034",
+      customerName: "Itamar Monteiro",
+      customerEmail: "ita****@gmail.com",
+      status: "Pago",
+      value: 167.99,
+      paymentMethod: "Pix",
+      utmSource: "facebook",
+      utmCampaign: "[BROAD] Topo de Funil",
+      createdAt: new Date().toISOString(),
     },
     {
-      id: "o2",
-      order_id: "Z-088XG085VO2634690",
-      customer_name: "Ana Costa",
-      customer_email: "a***@hotmail.com",
-      status: "paid",
-      value: 149.0,
-      payment_method: "cartao_credito",
-      utm_source: "instagram",
-      utm_campaign: "[RETARGETING] Carrinho",
-      order_paid_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+      id: "ord_2",
+      orderId: "VEGA-95820988",
+      customerName: "Matheus Rodrigues",
+      customerEmail: "bla****@gmail.com",
+      status: "Pago",
+      value: 297.0,
+      paymentMethod: "Cartão",
+      utmSource: "instagram",
+      utmCampaign: "[RETARGETING] Carrinho",
+      createdAt: new Date(Date.now() - 3600000).toISOString(),
     },
   ];
 }
