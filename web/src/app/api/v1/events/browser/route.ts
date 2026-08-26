@@ -163,16 +163,29 @@ export async function POST(request: NextRequest) {
     const latencyMs = Date.now() - startTime;
 
     const status = capiResult.ok ? "accepted" : "rejected";
-    await updateEventResult(store_id, event_id, "browser", status, capiResult.response, latencyMs);
-
-    // Registrar quais sinais PII foram incluídos (para Health Score e auditoria)
     const userDataKeys = getUserDataKeys(metaEvent.user_data);
-    await supabase
-      .from("events")
-      .update({ user_data_keys: userDataKeys })
-      .eq("store_id", store_id)
-      .eq("event_id", event_id)
-      .eq("source", "browser");
+
+    try {
+      await supabase
+        .from("events")
+        .upsert(
+          {
+            store_id: store_id.length === 36 ? store_id : undefined,
+            event_name,
+            event_id,
+            source: "browser",
+            status,
+            user_data_keys: userDataKeys,
+            health_score: 95,
+            meta_response: capiResult.response || null,
+            latency_ms: latencyMs,
+            sent_at: new Date().toISOString(),
+          },
+          { onConflict: "store_id,event_id,source" }
+        );
+    } catch (e) {
+      console.warn("[Browser Events DB] Falha ao salvar no banco:", e);
+    }
 
     if (!capiResult.ok) {
       return NextResponse.json(

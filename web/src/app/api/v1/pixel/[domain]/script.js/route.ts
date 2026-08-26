@@ -190,38 +190,49 @@ function generateATMScript(storeId: string, apiBase: string): string {
     });
   }
 
-  // AddToCart — formulário de carrinho + Shopify Web Pixels API
-  document.addEventListener("DOMContentLoaded", function () {
-    document.querySelectorAll("form[action='/cart/add']").forEach(function (form) {
-      form.addEventListener("submit", function () {
-        if (!_ctx.product) return;
-        sendEvent("AddToCart", {
-          content_ids: [String(_ctx.product.variantId || _ctx.product.id)],
-          content_name: _ctx.product.title,
-          content_type: "product",
-          value: _ctx.product.price,
-          currency: _currency,
-          num_items: 1,
-        });
-      });
+  // AddToCart — Interceptação universal de botões de compra + AJAX/Fetch
+  function triggerAddToCart() {
+    if (!_ctx.product) return;
+    sendEvent("AddToCart", {
+      content_ids: [String(_ctx.product.variantId || _ctx.product.id)],
+      content_name: _ctx.product.title,
+      content_type: "product",
+      value: _ctx.product.price,
+      currency: _currency,
+      num_items: 1,
     });
+  }
 
-    // Shopify Web Pixels API (se disponível)
-    if (window.Shopify && window.Shopify.analytics && window.Shopify.analytics.subscribe) {
-      window.Shopify.analytics.subscribe("cart:item_added", function (event) {
-        var item = event.data && event.data.cartLine && event.data.cartLine.merchandise;
-        if (!item) return;
-        sendEvent("AddToCart", {
-          content_ids: [String(item.id || item.sku)],
-          content_name: item.product && item.product.title,
-          content_type: "product",
-          value: item.price && item.price.amount ? parseFloat(item.price.amount) : null,
-          currency: item.price && item.price.currencyCode || _currency,
-          num_items: (event.data.cartLine && event.data.cartLine.quantity) || 1,
-        });
-      });
+  // 1. Interceptação global de cliques em botões de compra
+  document.addEventListener("click", function (e) {
+    var target = e.target;
+    var btn = target.closest ? target.closest("button, a, input[type='submit']") : null;
+    if (!btn) return;
+
+    var text = (btn.innerText || btn.value || "").toLowerCase();
+    var isBuyBtn =
+      text.includes("comprar") ||
+      text.includes("adicionar") ||
+      text.includes("carrinho") ||
+      btn.getAttribute("name") === "add" ||
+      (btn.className && typeof btn.className === "string" && (btn.className.includes("buy") || btn.className.includes("cart")));
+
+    if (isBuyBtn) {
+      triggerAddToCart();
     }
-  });
+  }, true);
+
+  // 2. Interceptação de requisições AJAX / Fetch para /cart/add
+  if (window.fetch) {
+    var origFetch = window.fetch;
+    window.fetch = function () {
+      var url = arguments[0];
+      if (typeof url === "string" && (url.includes("/cart/add") || url.includes("/cart/add.js"))) {
+        triggerAddToCart();
+      }
+      return origFetch.apply(this, arguments);
+    };
+  }
 
   // InitiateCheckout — entrada no /checkout
   if (/^\\/checkout|^\\/checkouts\\//.test(_path)) {
