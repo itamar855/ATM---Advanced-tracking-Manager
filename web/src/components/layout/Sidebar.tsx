@@ -9,207 +9,153 @@ import {
   Activity,
   HeartPulse,
   AlertTriangle,
-  Settings,
   Store,
   Plug,
   DollarSign,
   CreditCard,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Zap,
   LogOut,
+  FolderTree,
+  Tag,
+  Sliders,
+  FileText,
+  Bell
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ElementType;
   badge?: string;
+  color?: string;
 }
 
-const mainNav: NavItem[] = [
-  { label: "Visão Geral", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Campanhas", href: "/dashboard/campaigns", icon: BarChart3 },
-  { label: "Pedidos", href: "/dashboard/orders", icon: ShoppingCart },
-  { label: "Eventos", href: "/dashboard/events", icon: Activity },
-];
-
-const trackingNav: NavItem[] = [
-  { label: "Health Score", href: "/dashboard/health", icon: HeartPulse },
-  { label: "Diagnósticos", href: "/dashboard/diagnostics", icon: AlertTriangle, badge: "3" },
-];
-
-const settingsNav: NavItem[] = [
-  { label: "Loja", href: "/dashboard/settings/store", icon: Store },
+const dashboardItems: NavItem[] = [
+  { label: "Resumo", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Meta Ads", href: "/dashboard/campaigns", icon: BarChart3, color: "text-blue-400" },
+  { label: "Eventos CAPI", href: "/dashboard/events", icon: Activity, color: "text-emerald-400" },
+  { label: "Pedidos & Vendas", href: "/dashboard/orders", icon: ShoppingCart },
+  { label: "Construtor UTMs", href: "/dashboard/utms", icon: Tag },
   { label: "Integrações", href: "/dashboard/settings/integrations", icon: Plug },
-  { label: "Custos", href: "/dashboard/settings/costs", icon: DollarSign },
-  { label: "Plano", href: "/dashboard/settings/billing", icon: CreditCard },
+  { label: "Custos & Taxas", href: "/dashboard/settings/costs", icon: DollarSign },
+  { label: "Health Score", href: "/dashboard/health", icon: HeartPulse },
+  { label: "Plano & Assinatura", href: "/dashboard/settings/billing", icon: CreditCard },
 ];
-
-function NavSection({
-  title,
-  items,
-  collapsed,
-  pathname,
-}: {
-  title: string;
-  items: NavItem[];
-  collapsed: boolean;
-  pathname: string;
-}) {
-  return (
-    <div className="mb-6">
-      {!collapsed && (
-        <p className="px-4 mb-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
-          {title}
-        </p>
-      )}
-      <nav className="flex flex-col gap-0.5 px-2">
-        {items.map((item) => {
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href));
-          const Icon = item.icon;
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "nav-item relative group",
-                isActive && "nav-item-active"
-              )}
-              title={collapsed ? item.label : undefined}
-            >
-              <Icon
-                size={18}
-                className={cn(
-                  "shrink-0 transition-colors",
-                  isActive
-                    ? "text-[var(--color-brand-300)]"
-                    : "text-[var(--color-text-muted)] group-hover:text-[var(--color-text-secondary)]"
-                )}
-              />
-              {!collapsed && (
-                <>
-                  <span className="truncate">{item.label}</span>
-                  {item.badge && (
-                    <span className="ml-auto badge badge-warning text-[10px] px-1.5 py-0.5">
-                      {item.badge}
-                    </span>
-                  )}
-                </>
-              )}
-            </Link>
-          );
-        })}
-      </nav>
-    </div>
-  );
-}
 
 export default function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [activeOffer, setActiveOffer] = useState("Oferta BR - Gaiolas 🚀");
 
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 h-screen flex flex-col border-r border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] z-40 transition-all duration-300",
-        collapsed ? "w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]"
+        "fixed left-0 top-0 h-screen flex flex-col border-r border-[#1E2330] bg-[#0E1118] z-40 transition-all duration-300 select-none",
+        collapsed ? "w-[68px]" : "w-[240px]"
       )}
     >
-      {/* Logo */}
-      <div className="flex items-center justify-between h-16 px-4 border-b border-[var(--color-border-default)]">
+      {/* Logo ATM Tracking */}
+      <div className="flex items-center justify-between h-16 px-4 border-b border-[#1E2330]">
         <Link href="/dashboard" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--color-brand-400)] to-[var(--color-accent-400)] flex items-center justify-center shadow-lg">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
             <Zap size={16} className="text-white" />
           </div>
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="text-sm font-bold tracking-tight text-gradient">
-                ATM
+              <span className="text-sm font-black tracking-tight text-white flex items-center gap-1">
+                ATM <span className="text-[10px] px-1 py-0.2 rounded bg-blue-500/20 text-blue-400 font-mono">PRO</span>
               </span>
-              <span className="text-[9px] text-[var(--color-text-muted)] uppercase tracking-wider leading-none">
+              <span className="text-[9px] text-zinc-500 uppercase tracking-wider leading-none">
                 Tracking Manager
               </span>
             </div>
           )}
         </Link>
-
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="p-1.5 rounded-md hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+          className="p-1 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors"
         >
           {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
       </div>
 
-      {/* Navigation */}
-      <div className="flex-1 overflow-y-auto py-4">
-        <NavSection title="Principal" items={mainNav} collapsed={collapsed} pathname={pathname} />
-        <NavSection title="Tracking" items={trackingNav} collapsed={collapsed} pathname={pathname} />
-        <NavSection title="Configurações" items={settingsNav} collapsed={collapsed} pathname={pathname} />
-      </div>
-
-      {/* Footer */}
-      <SidebarFooter collapsed={collapsed} />
-    </aside>
-  );
-}
-
-function SidebarFooter({ collapsed }: { collapsed: boolean }) {
-  const [email, setEmail] = useState("Usuário");
-  const [initial, setInitial] = useState("U");
-
-  useEffect(() => {
-    async function loadUser() {
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user && user.email) {
-        setEmail(user.email);
-        setInitial(user.email.substring(0, 2).toUpperCase());
-      }
-    }
-    loadUser();
-  }, []);
-
-  const handleLogout = async () => {
-    const { createClient } = await import("@/lib/supabase/client");
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    window.location.href = "/login";
-  };
-
-  return (
-    <div className="border-t border-[var(--color-border-default)] p-3">
-      <div className={cn("flex items-center gap-3", collapsed ? "justify-center" : "")}>
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--color-brand-500)] to-[var(--color-accent-500)] flex items-center justify-center text-xs font-bold text-white shrink-0">
-          {initial}
-        </div>
-        {!collapsed && (
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-[var(--color-text-primary)] truncate">
-              {email.split("@")[0]}
-            </p>
-            <p className="text-[10px] text-[var(--color-text-muted)] truncate">
-              {email}
-            </p>
+      {/* Seletor de Ofertas / Dashboards */}
+      {!collapsed && (
+        <div className="px-3 pt-3 pb-1">
+          <div className="bg-[#141824] border border-zinc-800/80 rounded-xl p-2.5 flex items-center justify-between text-xs text-zinc-300 cursor-pointer hover:border-zinc-700 transition-colors">
+            <div className="flex items-center gap-2 truncate">
+              <FolderTree size={14} className="text-blue-400 shrink-0" />
+              <span className="font-bold truncate text-[11px] text-white">{activeOffer}</span>
+            </div>
+            <ChevronDown size={12} className="text-zinc-500 shrink-0" />
           </div>
-        )}
+        </div>
+      )}
+
+      {/* Navegação Principal */}
+      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
         {!collapsed && (
-          <button
-            onClick={handleLogout}
-            className="p-1.5 rounded-md hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] hover:text-[var(--color-danger-400)] transition-colors"
-            title="Sair"
-          >
-            <LogOut size={14} />
-          </button>
+          <p className="px-3 mb-1.5 text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+            Menu de Navegação
+          </p>
         )}
+        <nav className="space-y-0.5">
+          {dashboardItems.map((item) => {
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/dashboard" && pathname.startsWith(item.href));
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all group",
+                  isActive
+                    ? "bg-blue-600 text-white font-bold shadow-[0_2px_10px_rgba(37,99,235,0.3)]"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-[#161B26]"
+                )}
+                title={collapsed ? item.label : undefined}
+              >
+                <Icon
+                  size={16}
+                  className={cn(
+                    "shrink-0 transition-colors",
+                    isActive
+                      ? "text-white"
+                      : item.color || "text-zinc-400 group-hover:text-zinc-200"
+                  )}
+                />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </Link>
+            );
+          })}
+        </nav>
       </div>
-    </div>
+
+      {/* Perfil & Status do Usuário */}
+      <div className="p-3 border-t border-[#1E2330]">
+        <div className="flex items-center gap-2.5 p-1.5 rounded-lg bg-[#141824] border border-zinc-800/60">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-blue-600 to-emerald-500 flex items-center justify-center font-bold text-white text-[10px] shrink-0">
+            IT
+          </div>
+          {!collapsed && (
+            <div className="flex flex-col min-w-0 flex-1">
+              <span className="text-[11px] font-bold text-white truncate">Itamar Almeida</span>
+              <span className="text-[9px] text-emerald-400 flex items-center gap-1 font-medium leading-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Plano PRO Ativo
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    </aside>
   );
 }

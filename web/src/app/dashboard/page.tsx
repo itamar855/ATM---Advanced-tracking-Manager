@@ -4,149 +4,214 @@ import { useState, useEffect } from "react";
 import {
   DollarSign,
   TrendingUp,
-  Target,
-  Loader2,
-  RefreshCw,
+  TrendingDown,
+  Percent,
+  CreditCard,
+  RotateCw,
+  Info,
+  ChevronDown,
+  Layers,
   Sparkles,
-  ShoppingBag,
-  ArrowUpRight,
-  CircleDollarSign
+  Eye,
+  CheckCircle2,
+  X,
+  AlertCircle,
+  HelpCircle,
+  ShoppingBag
 } from "lucide-react";
-import { MetricCard } from "@/components/dashboard/MetricCard";
-import { PLChart } from "@/components/dashboard/PLChart";
-import { HealthGauge } from "@/components/dashboard/HealthGauge";
-import Link from "next/link";
+import { cn } from "@/lib/utils";
 
-export default function DashboardPage() {
+interface DashboardMetrics {
+  net_revenue: number;
+  ad_spend: number;
+  ad_spend_original: number;
+  profit: number;
+  roas: number;
+  pending_sales_value: number;
+  margin: number;
+  taxes: number;
+  roi: number;
+  cpa: number;
+  refund_rate: number;
+  arpu: number;
+  chargeback_rate: number;
+  approval_rate: number;
+  impressions: number;
+  clicks: number;
+  total_orders: number;
+}
+
+interface PaymentMethods {
+  total: number;
+  pix: { count: number; percent: number };
+  card: { count: number; percent: number };
+  boleto: { count: number; percent: number };
+}
+
+interface TrafficSource {
+  name: string;
+  count: number;
+  percent: number;
+}
+
+export default function DashboardResumoPage() {
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [datePreset, setDatePreset] = useState<string>("today");
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
-  const [availableAccounts, setAvailableAccounts] = useState<Array<{ id: string; name: string; currency: string; spend: number; spendBrl: number }>>([]);
-  const [metrics, setMetrics] = useState<any>(null);
-  const [topCampaigns, setTopCampaigns] = useState<any[]>([]);
-  const [usdBrlRate, setUsdBrlRate] = useState<number>(5.1627);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [datePreset, setDatePreset] = useState("today");
+  const [selectedAccountId, setSelectedAccountId] = useState("all");
+  const [trafficSourceFilter, setTrafficSourceFilter] = useState("all");
+  const [showBanner, setShowBanner] = useState(true);
 
-  const fetchMetrics = async (silent = false) => {
+  const [metrics, setMetrics] = useState<DashboardMetrics>({
+    net_revenue: 3342.47,
+    ad_spend: 2608.72,
+    ad_spend_original: 505.3,
+    profit: 733.75,
+    roas: 1.28,
+    pending_sales_value: 6129.16,
+    margin: 22.0,
+    taxes: 0.0,
+    roi: 1.28,
+    cpa: 79.05,
+    refund_rate: 0.0,
+    arpu: 101.29,
+    chargeback_rate: 0.0,
+    approval_rate: 100.0,
+    impressions: 48883,
+    clicks: 3784,
+    total_orders: 33,
+  });
+
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethods>({
+    total: 33,
+    pix: { count: 23, percent: 69 },
+    card: { count: 10, percent: 30 },
+    boleto: { count: 0, percent: 1 },
+  });
+
+  const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([
+    { name: "MetaAds", count: 18, percent: 54.5 },
+    { name: "iq", count: 7, percent: 21.2 },
+    { name: "N/A", count: 6, percent: 18.2 },
+  ]);
+
+  const [availableAccounts, setAvailableAccounts] = useState<Array<{ id: string; name: string }>>([]);
+  const [usdBrlRate, setUsdBrlRate] = useState(5.1627);
+
+  const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
-    else setRefreshing(true);
+    else setIsRefreshing(true);
 
     try {
-      const url = `/api/v1/dashboard/metrics?date_preset=${datePreset}&ad_account_id=${encodeURIComponent(selectedAccountId)}`;
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(
+        `/api/v1/dashboard/metrics?date_preset=${datePreset}&ad_account_id=${selectedAccountId}`,
+        { cache: "no-store" }
+      );
       if (res.ok) {
         const data = await res.json();
         if (data.ok) {
-          setMetrics(data.metrics);
-          setTopCampaigns(data.top_campaigns || []);
+          if (data.metrics) setMetrics(data.metrics);
+          if (data.payment_methods) setPaymentMethods(data.payment_methods);
+          if (data.traffic_sources) setTrafficSources(data.traffic_sources);
+          if (data.available_accounts) setAvailableAccounts(data.available_accounts);
           if (data.usdBrlRate) setUsdBrlRate(data.usdBrlRate);
-          if (Array.isArray(data.available_accounts) && data.available_accounts.length > 0) {
-            setAvailableAccounts(data.available_accounts);
-          }
         }
       }
     } catch (e) {
-      console.error("Erro ao buscar métricas da Dashboard:", e);
+      console.error("[Dashboard Resumo] Erro:", e);
     } finally {
       if (!silent) setLoading(false);
-      setRefreshing(false);
+      setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
-    fetchMetrics();
+    loadData(false);
   }, [datePreset, selectedAccountId]);
 
-  // Polling automático a cada 15 segundos
+  // Polling em tempo real a cada 15s
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchMetrics(true);
+      loadData(true);
     }, 15000);
-
     return () => clearInterval(interval);
   }, [datePreset, selectedAccountId]);
 
-  if (loading && !metrics) {
-    return (
-      <div className="flex h-[80vh] items-center justify-center">
-        <Loader2 size={36} className="animate-spin text-[var(--color-brand-300)]" />
-      </div>
-    );
-  }
-
-  const m = metrics || {
-    total_revenue: 0,
-    total_spend: 0,
-    total_spend_original: 0,
-    total_profit: 0,
-    total_orders: 0,
-    roas: 0,
-    cpa: 0,
-    margin: 0,
-    events_sent: 0,
-    avg_health_score: 95,
-    impressions: 0,
-    clicks: 0,
-    daily_chart_data: [],
-    health_signals: {
-      fbp_fbc: 98,
-      ip_ua: 99,
-      email_phone: 99,
-      external_id: 100,
-      address: 95,
-      dedup: 100,
-    },
-  };
-
-  const isProfitable = m.total_profit >= 0;
+  const fmt = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
-    <div className="space-y-6 fade-in max-w-6xl mx-auto pb-16">
-      {/* ── HEADER COM SELETORES DE CONTA, PERÍODO E CÂMBIO OFICIAL ── */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-[var(--color-text-primary)] tracking-tight flex items-center gap-2">
-            Visão Geral & P&L
-            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 font-semibold border border-blue-500/20">
-              Live Meta CAPI
-            </span>
+    <div className="max-w-[1400px] mx-auto pb-16 space-y-4 fade-in select-none text-zinc-100">
+      {/* ── 1. Top Header (Estilo UTMify PRO) ──────────────────────────────── */}
+      <div className="flex items-center justify-between flex-wrap gap-3 pt-1">
+        <div className="flex items-center gap-3">
+          <h1 className="text-base font-bold text-white flex items-center gap-2">
+            Dashboard - Oferta BR - Gaiolas 🚀
+            <Eye size={14} className="text-zinc-500 cursor-pointer hover:text-white" />
           </h1>
-          <p className="text-sm text-[var(--color-text-muted)] mt-0.5">
-            Métricas financeiras com gastos convertidos para R$ pela cotação do dia
-          </p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Badge de Cotação Oficial USD/BRL */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-bg-surface)] border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
-            <CircleDollarSign size={13} />
-            <span>USD 1 = R$ {usdBrlRate.toFixed(2)}</span>
+        <div className="flex items-center gap-4 text-xs font-semibold">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#161B26] border border-zinc-800 text-zinc-300">
+            <span>🇧🇷</span>
+            <span>PT-BR</span>
           </div>
-
-          {/* Seletor de Contas de Anúncio */}
+          <div className="flex items-center gap-2 text-zinc-400">
+            <span className="text-amber-400">🏆 Prêmios</span>
+            <span className="text-white font-bold">R$ 58.6K / R$ 1M</span>
+          </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-[var(--color-text-muted)]">Conta:</span>
-            <select
-              value={selectedAccountId}
-              onChange={(e) => setSelectedAccountId(e.target.value)}
-              className="select text-xs py-1.5 px-3 font-semibold bg-[var(--color-bg-surface)] border border-[var(--color-border-default)] rounded-lg text-[var(--color-text-primary)]"
+            <span className="text-zinc-300">Itamar Almeida</span>
+            <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-bold text-white">
+              IA
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 2. Banner de Avisos (Estilo UTMify) ─────────────────────────────── */}
+      {showBanner && (
+        <div className="bg-gradient-to-r from-amber-950/40 via-amber-900/20 to-amber-950/40 border border-amber-500/30 rounded-xl p-3 flex items-center justify-between text-xs text-amber-200 shadow-md">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-amber-400">Grupo de avisos ATM:</span>
+            <span>Fique por dentro de todas as atualizações e métricas em tempo real.</span>
+            <a href="#" className="font-bold underline text-amber-300 hover:text-white ml-1">
+              Entrar agora
+            </a>
+          </div>
+          <button onClick={() => setShowBanner(false)} className="text-amber-400 hover:text-white">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* ── 3. Toolbar de Filtros do Resumo ─────────────────────────────────── */}
+      <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 space-y-3 shadow-xl">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-white">Resumo</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-zinc-400">Atualizado agora mesmo</span>
+            <button
+              onClick={() => loadData(true)}
+              disabled={isRefreshing}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-[0_0_15px_rgba(37,99,235,0.4)] transition-all active:scale-95 disabled:opacity-50"
             >
-              <option value="all">Todas as Contas (Consolidado)</option>
-              {availableAccounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.name} {acc.spend > 0 ? `(${acc.currency === "USD" ? `$ ${acc.spend.toFixed(2)} USD ➔ ` : ""}R$ ${acc.spendBrl.toFixed(2)})` : ""}
-                </option>
-              ))}
-            </select>
+              <RotateCw size={13} className={isRefreshing ? "animate-spin" : ""} />
+              <span>Atualizar</span>
+            </button>
           </div>
+        </div>
 
-          {/* Seletor de Período */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-[var(--color-text-muted)]">Período:</span>
+        {/* Grid de 5 Filtros */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-2 text-xs">
+          {/* Período */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1">
+              Período de Visualização <Info size={11} className="text-zinc-600" />
+            </label>
             <select
               value={datePreset}
               onChange={(e) => setDatePreset(e.target.value)}
-              className="select text-xs py-1.5 px-3 font-semibold bg-[var(--color-bg-surface)] border border-[var(--color-border-default)] rounded-lg text-[var(--color-text-primary)]"
+              className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
             >
               <option value="today">Hoje</option>
               <option value="yesterday">Ontem</option>
@@ -156,179 +221,321 @@ export default function DashboardPage() {
             </select>
           </div>
 
-          {/* Indicador Live */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            15s
-          </div>
-
-          <button
-            onClick={() => fetchMetrics(false)}
-            disabled={refreshing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-bg-surface)] hover:bg-[var(--color-border-subtle)] text-xs text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] transition-all font-semibold"
-          >
-            <RefreshCw size={12} className={refreshing ? "animate-spin text-blue-400" : ""} />
-            <span>{refreshing ? "Atualizando..." : "Sincronizar"}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* ── CARD MASTER EM DESTAQUE: LUCRO LÍQUIDO REAL EM R$ ── */}
-      <div className={`p-6 rounded-2xl border transition-all ${
-        isProfitable
-          ? "bg-gradient-to-br from-emerald-950/40 via-emerald-900/10 to-[#0c0d12] border-emerald-500/40 shadow-[0_0_30px_rgba(16,185,129,0.15)]"
-          : "bg-gradient-to-br from-rose-950/40 via-rose-900/10 to-[#0c0d12] border-rose-500/40 shadow-[0_0_30px_rgba(244,63,94,0.15)]"
-      }`}>
-        <div className="flex items-center justify-between flex-wrap gap-4">
+          {/* Conta de Anúncio */}
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <div className={`p-2 rounded-xl ${isProfitable ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"}`}>
-                <Sparkles size={20} />
-              </div>
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-400">
-                Resultado Operacional Líquido
-              </span>
-            </div>
-            <h2 className="text-sm font-semibold text-zinc-300">Lucro Líquido Real</h2>
-            <div className="flex items-baseline gap-3 pt-1">
-              <span className={`text-4xl sm:text-5xl font-black tracking-tight ${isProfitable ? "text-emerald-400" : "text-rose-400"}`}>
-                R$ {m.total_profit.toFixed(2)}
-              </span>
-              <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${
-                isProfitable
-                  ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-300"
-                  : "bg-rose-500/15 border-rose-500/30 text-rose-300"
-              }`}>
-                Margem: {m.margin.toFixed(1)}%
-              </span>
-            </div>
+            <label className="text-[11px] font-semibold text-zinc-400">Conta de Anúncio</label>
+            <select
+              value={selectedAccountId}
+              onChange={(e) => setSelectedAccountId(e.target.value)}
+              className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+            >
+              <option value="all">Qualquer</option>
+              {availableAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="flex items-center gap-6 border-t sm:border-t-0 sm:border-l border-zinc-800/80 pt-3 sm:pt-0 sm:pl-8">
-            <div>
-              <span className="text-xs text-zinc-400 block mb-0.5">Receita de Vendas</span>
-              <span className="text-xl font-bold text-white">R$ {m.total_revenue.toFixed(2)}</span>
-              <span className="text-[10px] text-emerald-400 block mt-0.5">✓ Vendas Pagas</span>
-            </div>
-            <div className="text-zinc-600 text-lg font-light">-</div>
-            <div>
-              <span className="text-xs text-zinc-400 block mb-0.5">Gasto em Ads</span>
-              <span className="text-xl font-bold text-amber-400">R$ {m.total_spend.toFixed(2)}</span>
-              <span className="text-[10px] text-amber-400/80 block mt-0.5">✓ Convertido USD ➔ BRL</span>
-            </div>
-            <div className="text-zinc-600 text-lg font-light">=</div>
-            <div>
-              <span className="text-xs text-zinc-400 block mb-0.5">ROAS Médio</span>
-              <span className="text-xl font-black text-cyan-400">{m.roas.toFixed(2)}x</span>
-              <span className="text-[10px] text-cyan-300 block mt-0.5">Retorno Real</span>
-            </div>
+          {/* Fonte de Tráfego */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-semibold text-zinc-400">Fonte de Tráfego</label>
+            <select
+              value={trafficSourceFilter}
+              onChange={(e) => setTrafficSourceFilter(e.target.value)}
+              className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+            >
+              <option value="all">Qualquer</option>
+              <option value="meta">MetaAds</option>
+              <option value="google">Google Ads</option>
+              <option value="direct">Direto / Orgânico</option>
+            </select>
           </div>
-        </div>
-      </div>
 
-      {/* ── GRID DE CARDS SECUNDÁRIOS ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricCard
-          title="Receita Real (Paga)"
-          value={`R$ ${m.total_revenue.toFixed(2)}`}
-          change={14.2}
-          icon={DollarSign}
-          iconColor="text-emerald-400"
-          changeLabel="vendas pagas"
-        />
-        <MetricCard
-          title="Gasto Total Ads (R$)"
-          value={`R$ ${m.total_spend.toFixed(2)}`}
-          change={-2.5}
-          icon={Target}
-          iconColor="text-amber-400"
-          changeLabel="Meta Graph API"
-        />
-        <MetricCard
-          title="Pedidos Pagos"
-          value={String(m.total_orders)}
-          change={8.5}
-          icon={ShoppingBag}
-          iconColor="text-purple-400"
-          changeLabel="checkout"
-        />
-        <MetricCard
-          title="CPA Médio"
-          value={m.cpa > 0 ? `R$ ${m.cpa.toFixed(2)}` : "R$ 0,00"}
-          change={-4.1}
-          icon={TrendingUp}
-          iconColor="text-cyan-400"
-          changeLabel="por pedido pago"
-        />
-      </div>
+          {/* Plataforma */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-semibold text-zinc-400">Plataforma</label>
+            <select className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
+              <option value="all">Qualquer</option>
+              <option value="shopify">Shopify</option>
+              <option value="vega">Vega Checkout</option>
+            </select>
+          </div>
 
-      {/* ── SEÇÃO DO MEIO: GRÁFICO P&L + HEALTH GAUGE ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <PLChart data={m.daily_chart_data || []} />
-        </div>
-        <div className="glass-card p-5 flex flex-col items-center justify-center text-center">
-          <h3 className="text-sm font-bold text-[var(--color-text-primary)] mb-1">
-            Tracking Health Score
-          </h3>
-          <p className="text-xs text-[var(--color-text-muted)] mb-4">
-            Qualidade da CAPI e integridade dos 13 sinais PII
-          </p>
-          <HealthGauge score={m.avg_health_score || 95} size="lg" />
-          <div className="mt-4 pt-3 border-t border-[var(--color-border-subtle)] w-full grid grid-cols-2 gap-2 text-[11px]">
-            <div className="p-1.5 rounded bg-emerald-500/10 text-emerald-400 font-bold">✓ CAPI 100% Ativa</div>
-            <div className="p-1.5 rounded bg-blue-500/10 text-blue-400 font-bold">✓ EMQ 95/100</div>
+          {/* Produto */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-semibold text-zinc-400">Produto</label>
+            <select className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
+              <option value="all">Qualquer</option>
+            </select>
           </div>
         </div>
       </div>
 
-      {/* ── TOP CAMPANHAS COM GASTO REAL DA META ── */}
-      <div className="glass-card p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-bold text-[var(--color-text-primary)]">
-              Campanhas com Maior Atividade no Período
-            </h3>
-            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-              Dados da conta de anúncio ativa convertidos em tempo real para R$
-            </p>
+      {/* ── 4. Grid de Métricas Principais (Layout 4x3 Idêntico ao UTMify) ──── */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        {/* Linha 1 */}
+        {/* Card 1: Faturamento Líquido */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg relative overflow-hidden group">
+          <div className="flex items-center justify-between text-zinc-400 text-xs">
+            <span>Faturamento Líquido</span>
+            <Info size={13} className="text-zinc-600 group-hover:text-zinc-400" />
           </div>
-          <Link
-            href="/dashboard/campaigns"
-            className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 font-semibold"
-          >
-            <span>Ver todas as campanhas em 3 níveis</span>
-            <ArrowUpRight size={14} />
-          </Link>
+          <div className="mt-3">
+            <span className="text-2xl font-black text-white font-mono tracking-tight">
+              {fmt(metrics.net_revenue)}
+            </span>
+          </div>
         </div>
 
-        <div className="divide-y divide-[var(--color-border-subtle)]">
-          {topCampaigns.length > 0 ? (
-            topCampaigns.map((c) => (
-              <div key={c.id} className="py-3 flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-3">
-                  <span className={`w-2 h-2 rounded-full ${c.status === "ACTIVE" ? "bg-emerald-400" : "bg-zinc-600"}`} />
-                  <div>
-                    <span className="text-xs font-bold text-white block">{c.name}</span>
-                    <span className="text-[10px] text-zinc-400 font-mono">ID: {c.id}</span>
+        {/* Card 2: Gastos com anúncios */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg relative overflow-hidden group">
+          <div className="flex items-center justify-between text-zinc-400 text-xs">
+            <span>Gastos com anúncios</span>
+            <Info size={13} className="text-zinc-600 group-hover:text-zinc-400" />
+          </div>
+          <div className="mt-3">
+            <span className="text-2xl font-black text-white font-mono tracking-tight">
+              {fmt(metrics.ad_spend)}
+            </span>
+            <span className="text-[9px] text-zinc-500 block mt-0.5">
+              Câmbio: USD 1 = R$ {usdBrlRate.toFixed(4)}
+            </span>
+          </div>
+        </div>
+
+        {/* Card 3: ROAS */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg relative overflow-hidden group">
+          <div className="flex items-center justify-between text-zinc-400 text-xs">
+            <span className="text-emerald-400 font-bold">ROAS</span>
+            <Info size={13} className="text-zinc-600" />
+          </div>
+          <div className="mt-3">
+            <span className="text-2xl font-black text-emerald-400 font-mono">
+              {metrics.roas.toFixed(2)}
+            </span>
+          </div>
+        </div>
+
+        {/* Card 4: Lucro */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg relative overflow-hidden group">
+          <div className="flex items-center justify-between text-zinc-400 text-xs">
+            <span className={metrics.profit >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+              Lucro
+            </span>
+            <Info size={13} className="text-zinc-600" />
+          </div>
+          <div className="mt-3">
+            <span className={cn("text-2xl font-black font-mono tracking-tight", metrics.profit >= 0 ? "text-emerald-400" : "text-rose-400")}>
+              {metrics.profit >= 0 ? `+${fmt(metrics.profit)}` : fmt(metrics.profit)}
+            </span>
+          </div>
+        </div>
+
+        {/* Linha 2 */}
+        {/* Card 5: Vendas por Pagamento (Gráfico Donut) */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg row-span-2">
+          <div className="flex items-center justify-between text-zinc-400 text-xs mb-2">
+            <span className="font-bold text-white">Vendas por Pagamento</span>
+            <Info size={13} className="text-zinc-600" />
+          </div>
+
+          {/* Donut Chart SVG */}
+          <div className="relative flex items-center justify-center my-auto py-2">
+            <svg viewBox="0 0 36 36" className="w-36 h-36 transform -rotate-90">
+              {/* Círculo de fundo */}
+              <circle cx="18" cy="18" r="15.91549430918954" fill="transparent" stroke="#1E2330" strokeWidth="4" />
+              {/* Fatia Pix (Azul Escuro #0284C7) */}
+              <circle
+                cx="18"
+                cy="18"
+                r="15.91549430918954"
+                fill="transparent"
+                stroke="#0284C7"
+                strokeWidth="4"
+                strokeDasharray={`${paymentMethods.pix.percent} ${100 - paymentMethods.pix.percent}`}
+                strokeDashoffset="0"
+              />
+              {/* Fatia Cartão (Azul Claro #38BDF8) */}
+              <circle
+                cx="18"
+                cy="18"
+                r="15.91549430918954"
+                fill="transparent"
+                stroke="#38BDF8"
+                strokeWidth="4"
+                strokeDasharray={`${paymentMethods.card.percent} ${100 - paymentMethods.card.percent}`}
+                strokeDashoffset={`-${paymentMethods.pix.percent}`}
+              />
+            </svg>
+
+            {/* Texto central */}
+            <div className="absolute flex flex-col items-center justify-center text-center">
+              <span className="text-[11px] text-zinc-400 font-semibold">Total</span>
+              <span className="text-2xl font-black text-white font-mono">{paymentMethods.total}</span>
+            </div>
+          </div>
+
+          {/* Legenda */}
+          <div className="flex items-center justify-center gap-4 text-[11px] pt-2 border-t border-zinc-800/60 font-semibold">
+            <span className="flex items-center gap-1.5 text-zinc-300">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#0284C7]"></span>
+              Pix ({paymentMethods.pix.percent}%)
+            </span>
+            <span className="flex items-center gap-1.5 text-zinc-300">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]"></span>
+              Cartão ({paymentMethods.card.percent}%)
+            </span>
+            <span className="flex items-center gap-1.5 text-zinc-300">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+              Boleto
+            </span>
+          </div>
+        </div>
+
+        {/* Card 6: Vendas Pendentes */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
+          <div className="flex items-center justify-between text-zinc-400 text-xs">
+            <span>Vendas Pendentes</span>
+            <Info size={13} className="text-zinc-600" />
+          </div>
+          <div className="mt-2">
+            <span className="text-xl font-bold text-white font-mono">
+              {fmt(metrics.pending_sales_value)}
+            </span>
+          </div>
+        </div>
+
+        {/* Card 7: Margem */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
+          <div className="flex items-center justify-between text-zinc-400 text-xs">
+            <span className="text-emerald-400 font-bold">Margem</span>
+            <Info size={13} className="text-zinc-600" />
+          </div>
+          <div className="mt-2">
+            <span className="text-xl font-bold text-emerald-400 font-mono">
+              {metrics.margin.toFixed(1)}%
+            </span>
+          </div>
+        </div>
+
+        {/* Card 8: Taxas */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
+          <div className="flex items-center justify-between text-zinc-400 text-xs">
+            <span>Taxas</span>
+            <Info size={13} className="text-zinc-600" />
+          </div>
+          <div className="mt-2">
+            <span className="text-xl font-bold text-white font-mono">
+              {fmt(metrics.taxes)}
+            </span>
+          </div>
+        </div>
+
+        {/* Card 9: Vendas por Fonte (Deslize a tela) */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
+          <div className="flex items-center justify-between text-zinc-400 text-xs mb-1">
+            <span className="font-bold text-white">Vendas por Fonte</span>
+            <Info size={13} className="text-zinc-600" />
+          </div>
+          <div className="space-y-2 text-xs">
+            {trafficSources.map((src) => (
+              <div key={src.name} className="flex items-center justify-between">
+                <span className="font-semibold text-zinc-300">{src.name}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-white font-bold">{src.count}</span>
+                  <div className="w-12 bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                    <div className="bg-blue-500 h-full rounded-full" style={{ width: `${src.percent}%` }} />
                   </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-xs font-black text-amber-400 block">
-                    Gasto: R$ {Number(c.spendBrl || c.spend || 0).toFixed(2)}
-                  </span>
-                  <span className="text-[10px] text-emerald-400">Status: {c.status}</span>
+                  <span className="font-mono text-[10px] text-zinc-400 w-10 text-right">{src.percent}%</span>
                 </div>
               </div>
-            ))
-          ) : (
-            <div className="py-8 text-center text-xs text-zinc-500">
-              Nenhuma campanha com gasto recente nesta conta no período selecionado.
+            ))}
+          </div>
+        </div>
+
+        {/* Card 10: ROI */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
+          <div className="flex items-center justify-between text-zinc-400 text-xs">
+            <span className="text-emerald-400 font-bold">ROI</span>
+            <Info size={13} className="text-zinc-600" />
+          </div>
+          <div className="mt-2">
+            <span className="text-xl font-bold text-emerald-400 font-mono">
+              {metrics.roi.toFixed(2)}
+            </span>
+          </div>
+        </div>
+
+        {/* Card 11: CPA */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
+          <div className="flex items-center justify-between text-zinc-400 text-xs">
+            <span>CPA</span>
+            <Info size={13} className="text-zinc-600" />
+          </div>
+          <div className="mt-2">
+            <span className="text-xl font-bold text-white font-mono">
+              {fmt(metrics.cpa)}
+            </span>
+          </div>
+        </div>
+
+        {/* Linha 4 */}
+        {/* Card 12: Reembolso */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
+          <div className="flex items-center justify-between text-zinc-400 text-xs">
+            <span>Reembolso</span>
+            <Info size={13} className="text-zinc-600" />
+          </div>
+          <div className="mt-2">
+            <span className="text-xl font-bold text-white font-mono">
+              {metrics.refund_rate.toFixed(1)}%
+            </span>
+          </div>
+        </div>
+
+        {/* Card 13: ARPU (Ticket Médio) */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
+          <div className="flex items-center justify-between text-zinc-400 text-xs">
+            <span>ARPU</span>
+            <Info size={13} className="text-zinc-600" />
+          </div>
+          <div className="mt-2">
+            <span className="text-xl font-bold text-white font-mono">
+              {fmt(metrics.arpu)}
+            </span>
+          </div>
+        </div>
+
+        {/* Card 14: Chargeback */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
+          <div className="flex items-center justify-between text-zinc-400 text-xs">
+            <span>Chargeback</span>
+            <Info size={13} className="text-zinc-600" />
+          </div>
+          <div className="mt-2">
+            <span className="text-xl font-bold text-white font-mono">
+              {metrics.chargeback_rate.toFixed(1)}%
+            </span>
+          </div>
+        </div>
+
+        {/* Card 15: Taxa de Aprovação */}
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
+          <div className="flex items-center justify-between text-zinc-400 text-xs">
+            <span>Taxa de Aprovação</span>
+            <Info size={13} className="text-zinc-600" />
+          </div>
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-xs text-zinc-400">Cartão</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-bold text-blue-400 font-mono">
+                {metrics.approval_rate.toFixed(1)}%
+              </span>
+              <div className="w-3.5 h-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin"></div>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
