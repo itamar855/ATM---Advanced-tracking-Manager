@@ -311,6 +311,8 @@ export function buildBrowserEvent(
   }
   if (userData.externalId) {
     user_data.external_id = [sha256Hash(`customer:${userData.externalId.trim()}`)];
+  } else if (session.fbp) {
+    user_data.external_id = [sha256Hash(`visitor:${session.fbp}`)];
   }
 
   // ── Sinais de sessão — NÃO hasheados ──

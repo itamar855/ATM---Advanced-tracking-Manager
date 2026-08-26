@@ -145,12 +145,17 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 4. Construir evento com qualificação máxima de PII ──
+    const enrichedUserData = {
+      ...(rawUserData || {}),
+      externalId: (rawUserData && rawUserData.externalId) || track_id || undefined,
+    };
+
     const metaEvent = buildBrowserEvent(
       event_name,
       event_id,
       event_source_url || "",
       sessionData,
-      rawUserData || {},
+      enrichedUserData,
       rawCustomData
     );
 
