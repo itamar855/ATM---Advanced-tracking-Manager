@@ -15,47 +15,14 @@ export default function EventsPage() {
     async function loadEvents(silent = false) {
       if (!silent) setLoading(true);
       try {
-        const supabase = createClient();
-        const { data: store } = await supabase.from("stores").select("id").limit(1).maybeSingle();
+        const res = await fetch("/api/v1/events/list");
+        const data = await res.json();
 
-        let query = supabase
-          .from("events")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(20);
-
-        if (store?.id) {
-          query = query.or(`store_id.eq.${store.id},store_id.eq.dckb5g-7d`);
+        if (data.ok && Array.isArray(data.events) && active) {
+          setEvents(data.events);
         }
-
-        const { data: dbEvents } = await query;
-
-        if (dbEvents && dbEvents.length > 0 && active) {
-            setEvents(
-              dbEvents.map((e) => ({
-                id: e.id,
-                orderId: e.order_id || "S/I",
-                eventName: e.event_name,
-                source: e.source,
-                status: e.status,
-                healthScore: e.health_score || 0,
-                value: 0,
-                createdAt: e.created_at,
-                signals: {
-                  fbp: e.user_data_keys?.includes("fbp") || false,
-                  fbc: e.user_data_keys?.includes("fbc") || false,
-                  ip: e.user_data_keys?.includes("client_ip_address") || false,
-                  ua: e.user_data_keys?.includes("client_user_agent") || false,
-                  email: e.user_data_keys?.includes("em") || false,
-                  phone: e.user_data_keys?.includes("ph") || false,
-                  externalId: e.user_data_keys?.includes("external_id") || false,
-                  address: e.user_data_keys?.includes("ct") || false,
-                },
-              }))
-            );
-          }
       } catch (error) {
-        console.error(error);
+        console.error("[Events Page] Erro ao carregar eventos:", error);
       } finally {
         if (active && !silent) setLoading(false);
       }
