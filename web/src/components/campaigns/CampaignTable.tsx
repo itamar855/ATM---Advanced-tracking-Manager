@@ -13,11 +13,14 @@ import {
   ChevronDown,
   ChevronRight,
   Sparkles,
-  Info
+  Layers,
+  Sparkle,
+  Radio,
+  FileText
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
-interface Ad {
+export interface Ad {
   id: string;
   name: string;
   status: "active" | "paused" | "error";
@@ -29,7 +32,7 @@ interface Ad {
   cpa: number;
 }
 
-interface AdSet {
+export interface AdSet {
   id: string;
   name: string;
   status: "active" | "paused" | "error";
@@ -44,12 +47,12 @@ interface AdSet {
   ads: Ad[];
 }
 
-interface Campaign {
+export interface Campaign {
   campaign_id: string;
   campaign_name: string;
   status: "active" | "paused" | "error";
   budgetType: "CBO" | "ABO";
-  budget?: number; // CBO orçamento fica na campanha
+  budget?: number;
   spend: number;
   revenue: number;
   profit: number;
@@ -62,16 +65,20 @@ interface Campaign {
 
 interface CampaignTableProps {
   campaigns: Campaign[];
+  onRefresh?: () => void;
 }
 
-export function CampaignTable({ campaigns: initialCampaigns }: CampaignTableProps) {
+export function CampaignTable({ campaigns: initialCampaigns, onRefresh }: CampaignTableProps) {
   const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
   const [expandedCampaigns, setExpandedCampaigns] = useState<Record<string, boolean>>({});
   const [expandedAdsets, setExpandedAdsets] = useState<Record<string, boolean>>({});
-  
-  // Controle de Seleção Multi-Nível
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+
+  // Sincroniza sempre que a prop mudar
+  useEffect(() => {
+    setCampaigns(initialCampaigns);
+  }, [initialCampaigns]);
 
   const toggleCampaign = (id: string) => {
     setExpandedCampaigns((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -81,23 +88,20 @@ export function CampaignTable({ campaigns: initialCampaigns }: CampaignTableProp
     setExpandedAdsets((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  // Seleção individual
   const handleSelectId = (id: string) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
   };
 
-  // Seleção de todos os itens visíveis
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
       const allIds: string[] = [];
       campaigns.forEach((c) => {
         allIds.push(c.campaign_id);
-        const adsets = c.adsets || getMockAdsets(c.campaign_id);
-        adsets.forEach((as) => {
+        (c.adsets || []).forEach((as) => {
           allIds.push(as.id);
-          as.ads.forEach((ad) => allIds.push(ad.id));
+          (as.ads || []).forEach((ad) => allIds.push(ad.id));
         });
       });
       setSelectedIds(allIds);
@@ -106,95 +110,87 @@ export function CampaignTable({ campaigns: initialCampaigns }: CampaignTableProp
     }
   };
 
-  // Ações em massa e individuais
   const handleAction = async (action: string, ids: string[], value?: string) => {
     if (ids.length === 0) return;
-    
-    const confirmDelete = action === "delete" && !confirm(`Deseja realmente excluir os ${ids.length} itens selecionados?`);
-    if (confirmDelete) return;
-
     setLoadingAction(`${action}-${ids.join(",")}`);
+
     try {
-      // Mapeamento e disparo dinâmico
       const response = await fetch("/api/v1/meta/campaigns/actions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          store_id: "store-dummy",
           action,
-          campaign_id: ids[0], // Envia o lote
+          campaign_id: ids[0],
           value,
-          extra_ids: ids
+          extra_ids: ids,
         }),
       });
 
       const data = await response.json();
       if (data.ok) {
-        alert(`${action.toUpperCase()} processado com sucesso para ${ids.length} itens.`);
-        setSelectedIds([]);
+        alert(`Ação [${action.toUpperCase()}] aplicada com sucesso na Meta.`);
+        if (onRefresh) onRefresh();
       } else {
-        alert("Erro ao realizar operação: " + data.error);
+        alert("Erro na Meta: " + (data.error || "Ação não processada"));
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      alert("Erro ao executar ação: " + err.message);
     } finally {
       setLoadingAction(null);
     }
   };
 
+  if (campaigns.length === 0) {
+    return (
+      <div className="glass-card p-12 text-center flex flex-col items-center justify-center space-y-3">
+        <Layers size={36} className="text-[var(--color-text-muted)]" />
+        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+          Nenhuma campanha encontrada nesta conta de anúncios
+        </h3>
+        <p className="text-xs text-[var(--color-text-muted)] max-w-sm">
+          Selecione outra conta de anúncios no seletor acima ou crie novas campanhas no Gerenciador do Meta Ads.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="glass-card overflow-hidden">
-      {/* Bulk actions header panel */}
+      {/* Painel de Ações em Massa */}
       {selectedIds.length > 0 && (
-        <div className="px-5 py-3.5 bg-[var(--color-brand-500)]/10 border-b border-[var(--color-brand-400)]/30 flex items-center justify-between fade-in">
-          <div className="flex items-center gap-2 text-xs text-[var(--color-brand-300)] font-semibold">
+        <div className="px-5 py-3.5 bg-blue-500/10 border-b border-blue-500/20 flex items-center justify-between flex-wrap gap-2 fade-in">
+          <div className="flex items-center gap-2 text-xs text-blue-300 font-semibold">
             <Sparkles size={14} className="animate-pulse" />
-            <span>{selectedIds.length} itens selecionados para edição em lote</span>
+            <span>{selectedIds.length} item(ns) selecionado(s)</span>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => handleAction("activate", selectedIds)}
-              className="btn-secondary py-1 px-2.5 text-[10px] gap-1 font-bold hover:bg-emerald-500/10 hover:text-emerald-400"
+              disabled={!!loadingAction}
+              className="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1 hover:bg-emerald-500/30"
             >
-              <Play size={10} /> Ativar Lote
+              <Play size={11} /> Ativar
             </button>
             <button
               onClick={() => handleAction("pause", selectedIds)}
-              className="btn-secondary py-1 px-2.5 text-[10px] gap-1 font-bold hover:bg-amber-500/10 hover:text-amber-400"
+              disabled={!!loadingAction}
+              className="px-2.5 py-1 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-bold flex items-center gap-1 hover:bg-amber-500/30"
             >
-              <Pause size={10} /> Pausar Lote
+              <Pause size={11} /> Pausar
             </button>
             <button
               onClick={() => {
-                const budget = prompt("Alterar orçamento diário em massa para (R$):");
-                if (budget) handleAction("update_budget", selectedIds, budget);
+                const b = prompt("Novo orçamento diário em R$:");
+                if (b) handleAction("update_budget", selectedIds, b);
               }}
-              className="btn-secondary py-1 px-2.5 text-[10px] gap-1 font-bold hover:bg-cyan-500/10 hover:text-cyan-400"
+              disabled={!!loadingAction}
+              className="px-2.5 py-1 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[11px] font-bold flex items-center gap-1 hover:bg-blue-500/30"
             >
-              <DollarSign size={10} /> Orçamento Lote
-            </button>
-            <button
-              onClick={() => handleAction("delete", selectedIds)}
-              className="btn-secondary py-1 px-2.5 text-[10px] gap-1 font-bold hover:bg-red-500/10 hover:text-red-400"
-            >
-              <Trash2 size={10} /> Excluir Lote
+              <DollarSign size={11} /> Orçamento
             </button>
           </div>
         </div>
       )}
-
-      <div className="px-5 py-4 border-b border-[var(--color-border-default)]">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-              Métricas e Orçamentos ABO / CBO
-            </h3>
-            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-              Visualização de orçamentos consolidados e edição individual e em massa.
-            </p>
-          </div>
-        </div>
-      </div>
 
       <div className="overflow-x-auto">
         <table className="data-table">
@@ -204,244 +200,236 @@ export function CampaignTable({ campaigns: initialCampaigns }: CampaignTableProp
                 <input
                   type="checkbox"
                   onChange={handleSelectAll}
-                  className="rounded border-[var(--color-border-default)] bg-[var(--color-bg-surface)] text-[var(--color-brand-400)] focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                  checked={selectedIds.length > 0}
+                  className="rounded border-[var(--color-border-subtle)] text-blue-500 focus:ring-0 cursor-pointer"
                 />
               </th>
               <th className="w-8"></th>
-              <th>Nome</th>
+              <th>Estrutura (Campanha / Conjunto / Anúncio)</th>
               <th>Status</th>
-              <th>Tipo Orçamento</th>
-              <th className="text-right">Orçamento</th>
+              <th>Orçamento</th>
               <th className="text-right">Gasto</th>
-              <th className="text-right">Receita</th>
+              <th className="text-right">Receita ATM</th>
               <th className="text-right">Lucro</th>
               <th className="text-right">ROAS</th>
-              <th className="text-center w-28">Ações</th>
+              <th className="text-right">Conv. / CPA</th>
+              <th className="text-center w-24">Ações</th>
             </tr>
           </thead>
           <tbody>
             {campaigns.map((campaign) => {
               const isExpanded = expandedCampaigns[campaign.campaign_id];
-              const adsets = campaign.adsets || getMockAdsets(campaign.campaign_id);
               const isChecked = selectedIds.includes(campaign.campaign_id);
+              const adsets = campaign.adsets || [];
 
               return (
-                <>
-                  {/* Campaign Row */}
-                  <tr key={campaign.campaign_id} className={cn("hover:bg-[var(--color-bg-card-hover)] transition-colors", isChecked && "bg-[var(--color-brand-500)]/5")}>
+                <div key={campaign.campaign_id} style={{ display: "contents" }}>
+                  {/* Linha 1: CAMPANHA */}
+                  <tr className={cn("hover:bg-blue-500/5 transition-colors font-medium", isChecked && "bg-blue-500/10")}>
                     <td className="text-center">
                       <input
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => handleSelectId(campaign.campaign_id)}
-                        className="rounded border-[var(--color-border-default)] bg-[var(--color-bg-surface)] text-[var(--color-brand-400)] focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                        className="rounded border-[var(--color-border-subtle)] text-blue-500 focus:ring-0 cursor-pointer"
                       />
                     </td>
                     <td>
-                      <button onClick={() => toggleCampaign(campaign.campaign_id)} className="p-1">
-                        {isExpanded ? <ChevronDown size={14} className="text-[var(--color-text-muted)]" /> : <ChevronRight size={14} className="text-[var(--color-text-muted)]" />}
-                      </button>
+                      {adsets.length > 0 && (
+                        <button onClick={() => toggleCampaign(campaign.campaign_id)} className="p-1 text-[var(--color-text-muted)] hover:text-white">
+                          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </button>
+                      )}
                     </td>
-                    <td className="font-semibold text-[var(--color-text-primary)]">
+                    <td className="font-bold text-[var(--color-text-primary)]">
                       <div className="flex items-center gap-2">
-                        <span className="truncate max-w-[200px]">{campaign.campaign_name}</span>
+                        <span className="text-blue-400 text-xs">🎯</span>
+                        <span className="truncate max-w-[280px]" title={campaign.campaign_name}>
+                          {campaign.campaign_name}
+                        </span>
                         <button
                           onClick={() => {
-                            const newName = prompt("Mudar nome da campanha:", campaign.campaign_name);
-                            if (newName) handleAction("rename", [campaign.campaign_id], newName);
+                            const newN = prompt("Renomear Campanha:", campaign.campaign_name);
+                            if (newN) handleAction("rename", [campaign.campaign_id], newN);
                           }}
-                          className="p-1 hover:text-[var(--color-brand-300)] text-[var(--color-text-muted)]"
+                          className="text-[var(--color-text-muted)] hover:text-blue-400 p-0.5"
                         >
                           <Edit2 size={10} />
                         </button>
                       </div>
                     </td>
                     <td>
-                      <span className={cn("badge text-[10px]", campaign.status === "active" ? "badge-success" : "badge-warning")}>
+                      <span className={cn("px-2 py-0.5 text-[9px] font-bold rounded-full border uppercase", campaign.status === "active" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-zinc-500/10 text-zinc-400 border-zinc-500/20")}>
                         {campaign.status === "active" ? "Ativa" : "Pausada"}
                       </span>
                     </td>
                     <td>
-                      <span className="text-[10px] font-bold text-[var(--color-text-secondary)] bg-[var(--color-bg-surface)] px-1.5 py-0.5 rounded border border-[var(--color-border-subtle)]">
-                        {campaign.budgetType}
+                      <span className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                        {campaign.budget ? `R$ ${campaign.budget.toFixed(2)} (${campaign.budgetType})` : "Sob Adset (ABO)"}
                       </span>
                     </td>
-                    <td className="text-right font-medium text-[var(--color-text-primary)]">
-                      {campaign.budgetType === "CBO" && campaign.budget ? (
-                        <div className="flex items-center justify-end gap-1.5">
-                          <span>R$ {campaign.budget.toLocaleString("pt-BR")}</span>
-                          <button
-                            onClick={() => {
-                              const budget = prompt("Alterar orçamento CBO para:", String(campaign.budget));
-                              if (budget) handleAction("update_budget", [campaign.campaign_id], budget);
-                            }}
-                            className="p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-brand-300)]"
-                            title="Editar Orçamento"
-                          >
-                            <Edit2 size={10} />
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-[10px] text-[var(--color-text-muted)] italic">Sob ABO (Adset)</span>
-                      )}
+                    <td className="text-right text-xs font-semibold text-[var(--color-text-primary)]">
+                      R$ {campaign.spend.toFixed(2)}
                     </td>
-                    <td className="text-right font-medium">R$ {campaign.spend.toLocaleString("pt-BR")}</td>
-                    <td className="text-right font-medium text-[var(--color-text-primary)]">R$ {campaign.revenue.toLocaleString("pt-BR")}</td>
-                    <td className="text-right font-semibold">
-                      <span className={campaign.profit >= 0 ? "text-[var(--color-success-400)]" : "text-[var(--color-danger-400)]"}>
-                        R$ {campaign.profit.toLocaleString("pt-BR")}
+                    <td className="text-right text-xs font-bold text-purple-400">
+                      R$ {campaign.revenue.toFixed(2)}
+                    </td>
+                    <td className="text-right text-xs font-bold">
+                      <span className={campaign.profit >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                        R$ {campaign.profit.toFixed(2)}
                       </span>
                     </td>
-                    <td className="text-right font-bold">{campaign.roas.toFixed(2)}x</td>
+                    <td className="text-right text-xs font-extrabold text-blue-400">
+                      {campaign.roas.toFixed(2)}x
+                    </td>
+                    <td className="text-right text-xs text-[var(--color-text-muted)]">
+                      <span className="font-bold text-[var(--color-text-primary)]">{campaign.conversions}</span> | R$ {campaign.cpa.toFixed(2)}
+                    </td>
                     <td className="text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           onClick={() => handleAction(campaign.status === "active" ? "pause" : "activate", [campaign.campaign_id])}
-                          className="p-1 rounded bg-[var(--color-bg-elevated)] hover:bg-[var(--color-border-accent)] text-[var(--color-text-secondary)]"
+                          className="p-1 rounded bg-[var(--color-bg-surface)] hover:bg-blue-500/20 text-[var(--color-text-secondary)] hover:text-blue-400"
                         >
-                          {campaign.status === "active" ? <Pause size={10} /> : <Play size={10} />}
-                        </button>
-                        <button
-                          onClick={() => handleAction("duplicate", [campaign.campaign_id])}
-                          className="p-1 rounded bg-[var(--color-bg-elevated)] hover:bg-[var(--color-border-accent)] text-[var(--color-text-secondary)]"
-                        >
-                          <Copy size={10} />
-                        </button>
-                        <button
-                          onClick={() => handleAction("delete", [campaign.campaign_id])}
-                          className="p-1 rounded bg-[var(--color-bg-elevated)] hover:bg-red-500/20 text-[var(--color-text-secondary)] hover:text-red-400"
-                        >
-                          <Trash2 size={10} />
+                          {campaign.status === "active" ? <Pause size={12} /> : <Play size={12} />}
                         </button>
                       </div>
                     </td>
                   </tr>
 
-                  {/* Expanded Adsets */}
+                  {/* Linha 2: CONJUNTOS DE ANÚNCIO (ADSETS) */}
                   {isExpanded &&
                     adsets.map((adset) => {
                       const isAdsetExpanded = expandedAdsets[adset.id];
                       const isAdsetChecked = selectedIds.includes(adset.id);
+                      const ads = adset.ads || [];
+
                       return (
-                        <>
-                          <tr key={adset.id} className={cn("bg-[var(--color-bg-secondary)]/50", isAdsetChecked && "bg-[var(--color-brand-500)]/5")}>
+                        <div key={adset.id} style={{ display: "contents" }}>
+                          <tr className={cn("bg-[var(--color-bg-surface)]/40 hover:bg-blue-500/5 transition-colors text-xs border-l-2 border-l-purple-500/40", isAdsetChecked && "bg-blue-500/10")}>
                             <td className="text-center">
                               <input
                                 type="checkbox"
                                 checked={isAdsetChecked}
                                 onChange={() => handleSelectId(adset.id)}
-                                className="rounded border-[var(--color-border-default)] bg-[var(--color-bg-surface)] text-[var(--color-brand-400)] focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                                className="rounded border-[var(--color-border-subtle)] text-blue-500 focus:ring-0 cursor-pointer ml-2"
                               />
                             </td>
-                            <td></td>
-                            <td className="pl-6 text-xs text-[var(--color-text-secondary)]">
-                              <div className="flex items-center gap-2">
-                                <button onClick={() => toggleAdset(adset.id)} className="p-1">
-                                  {isAdsetExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                            <td>
+                              {ads.length > 0 && (
+                                <button onClick={() => toggleAdset(adset.id)} className="p-1 text-[var(--color-text-muted)] hover:text-white ml-2">
+                                  {isAdsetExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                                 </button>
-                                <span>📦 {adset.name}</span>
-                              </div>
-                            </td>
-                            <td>
-                              <span className="text-[10px] text-[var(--color-text-muted)] capitalize">{adset.status}</span>
-                            </td>
-                            <td>
-                              <span className="text-[10px] text-[var(--color-text-muted)]">{campaign.budgetType}</span>
-                            </td>
-                            <td className="text-right text-xs font-medium text-[var(--color-text-primary)]">
-                              {campaign.budgetType === "ABO" ? (
-                                <div className="flex items-center justify-end gap-1">
-                                  <span>R$ {adset.budget.toLocaleString("pt-BR")}</span>
-                                  <button
-                                    onClick={() => {
-                                      const budget = prompt("Alterar orçamento ABO para:", String(adset.budget));
-                                      if (budget) handleAction("update_budget", [adset.id], budget);
-                                    }}
-                                    className="p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-brand-300)]"
-                                  >
-                                    <Edit2 size={8} />
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="text-[10px] text-[var(--color-text-muted)] italic">Sob CBO</span>
                               )}
                             </td>
-                            <td className="text-right text-xs">R$ {adset.spend.toLocaleString("pt-BR")}</td>
-                            <td className="text-right text-xs">R$ {adset.revenue.toLocaleString("pt-BR")}</td>
-                            <td className="text-right text-xs font-semibold">
-                              <span className={adset.profit >= 0 ? "text-[var(--color-success-400)]" : "text-[var(--color-danger-400)]"}>
-                                R$ {adset.profit.toLocaleString("pt-BR")}
-                              </span>
-                            </td>
-                            <td className="text-right text-xs">{adset.roas.toFixed(2)}x</td>
-                            <td className="text-center">
-                              <div className="flex items-center justify-center gap-1.5">
+                            <td className="pl-6 text-[var(--color-text-secondary)]">
+                              <div className="flex items-center gap-2">
+                                <span className="text-purple-400 text-xs">📂</span>
+                                <span className="truncate max-w-[240px]" title={adset.name}>{adset.name}</span>
                                 <button
-                                  onClick={() => handleAction(adset.status === "active" ? "pause" : "activate", [adset.id])}
-                                  className="p-1 rounded bg-[var(--color-bg-elevated)] hover:bg-[var(--color-border-accent)] text-[var(--color-text-secondary)]"
+                                  onClick={() => {
+                                    const newN = prompt("Renomear Conjunto:", adset.name);
+                                    if (newN) handleAction("rename", [adset.id], newN);
+                                  }}
+                                  className="text-[var(--color-text-muted)] hover:text-purple-400 p-0.5"
                                 >
-                                  {adset.status === "active" ? <Pause size={10} /> : <Play size={10} />}
-                                </button>
-                                <button
-                                  onClick={() => handleAction("delete", [adset.id])}
-                                  className="p-1 rounded bg-[var(--color-bg-elevated)] hover:bg-red-500/20 text-[var(--color-text-secondary)]"
-                                >
-                                  <Trash2 size={10} />
+                                  <Edit2 size={9} />
                                 </button>
                               </div>
+                            </td>
+                            <td>
+                              <span className={cn("px-1.5 py-0.2 text-[8px] font-bold rounded border uppercase", adset.status === "active" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-zinc-500/10 text-zinc-400 border-zinc-500/20")}>
+                                {adset.status === "active" ? "Ativo" : "Pausado"}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="flex items-center gap-1">
+                                <span>R$ {adset.budget > 0 ? adset.budget.toFixed(2) : "CBO"}</span>
+                                <button
+                                  onClick={() => {
+                                    const b = prompt("Alterar orçamento diário do conjunto (R$):", String(adset.budget || "50"));
+                                    if (b) handleAction("update_budget", [adset.id], b);
+                                  }}
+                                  className="text-[var(--color-text-muted)] hover:text-blue-400"
+                                >
+                                  <Edit2 size={9} />
+                                </button>
+                              </div>
+                            </td>
+                            <td className="text-right">R$ {adset.spend.toFixed(2)}</td>
+                            <td className="text-right text-purple-300">R$ {adset.revenue.toFixed(2)}</td>
+                            <td className="text-right">
+                              <span className={adset.profit >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                                R$ {adset.profit.toFixed(2)}
+                              </span>
+                            </td>
+                            <td className="text-right text-blue-300 font-bold">{adset.roas.toFixed(2)}x</td>
+                            <td className="text-right text-[11px] text-[var(--color-text-muted)]">
+                              {adset.conversions} | R$ {adset.cpa.toFixed(2)}
+                            </td>
+                            <td className="text-center">
+                              <button
+                                onClick={() => handleAction(adset.status === "active" ? "pause" : "activate", [adset.id])}
+                                className="p-1 rounded bg-[var(--color-bg-surface)] hover:bg-purple-500/20 text-[var(--color-text-secondary)] hover:text-purple-300"
+                              >
+                                {adset.status === "active" ? <Pause size={10} /> : <Play size={10} />}
+                              </button>
                             </td>
                           </tr>
 
-                          {/* Expanded Ads */}
+                          {/* Linha 3: ANÚNCIOS (ADS / CRIATIVOS) */}
                           {isAdsetExpanded &&
-                            adset.ads.map((ad) => {
+                            ads.map((ad) => {
                               const isAdChecked = selectedIds.includes(ad.id);
                               return (
-                                <tr key={ad.id} className={cn("bg-[var(--color-bg-primary)]/80 text-[var(--color-text-muted)]", isAdChecked && "bg-[var(--color-brand-500)]/5")}>
+                                <tr key={ad.id} className={cn("bg-[var(--color-bg-primary)]/70 hover:bg-blue-500/5 transition-colors text-[11px] border-l-4 border-l-blue-400/60", isAdChecked && "bg-blue-500/10")}>
                                   <td className="text-center">
                                     <input
                                       type="checkbox"
                                       checked={isAdChecked}
                                       onChange={() => handleSelectId(ad.id)}
-                                      className="rounded border-[var(--color-border-default)] bg-[var(--color-bg-surface)] text-[var(--color-brand-400)] focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                                      className="rounded border-[var(--color-border-subtle)] text-blue-500 focus:ring-0 cursor-pointer ml-4"
                                     />
                                   </td>
                                   <td></td>
-                                  <td className="pl-14 text-[11px]">
-                                    <span>🖼️ {ad.name}</span>
+                                  <td className="pl-12 text-[var(--color-text-muted)] font-mono">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-blue-400">🎨</span>
+                                      <span className="truncate max-w-[220px]" title={ad.name}>{ad.name}</span>
+                                    </div>
                                   </td>
                                   <td>
-                                    <span className="text-[9px] uppercase">{ad.status}</span>
+                                    <span className={cn("px-1 py-0.2 text-[8px] font-bold rounded uppercase", ad.status === "active" ? "text-emerald-400" : "text-zinc-500")}>
+                                      {ad.status === "active" ? "Ativo" : "Pausado"}
+                                    </span>
                                   </td>
-                                  <td>-</td>
-                                  <td className="text-right text-[11px] italic">-</td>
-                                  <td className="text-right text-[11px]">R$ {ad.spend.toLocaleString("pt-BR")}</td>
-                                  <td className="text-right text-[11px]">R$ {ad.revenue.toLocaleString("pt-BR")}</td>
-                                  <td className="text-right text-[11px] font-semibold text-emerald-500/80">R$ {ad.profit.toLocaleString("pt-BR")}</td>
-                                  <td className="text-right text-[11px]">{ad.roas.toFixed(2)}x</td>
+                                  <td>—</td>
+                                  <td className="text-right">R$ {ad.spend.toFixed(2)}</td>
+                                  <td className="text-right text-purple-300">R$ {ad.revenue.toFixed(2)}</td>
+                                  <td className="text-right">
+                                    <span className={ad.profit >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                                      R$ {ad.profit.toFixed(2)}
+                                    </span>
+                                  </td>
+                                  <td className="text-right text-blue-300">{ad.roas.toFixed(2)}x</td>
+                                  <td className="text-right text-[10px] text-[var(--color-text-muted)]">
+                                    {ad.conversions} | R$ {ad.cpa.toFixed(2)}
+                                  </td>
                                   <td className="text-center">
-                                    <div className="flex items-center justify-center gap-1.5">
-                                      <button
-                                        onClick={() => handleAction(ad.status === "active" ? "pause" : "activate", [ad.id])}
-                                        className="p-1 rounded bg-[var(--color-bg-elevated)] hover:bg-[var(--color-border-accent)] text-[var(--color-text-secondary)]"
-                                      >
-                                        {ad.status === "active" ? <Pause size={10} /> : <Play size={10} />}
-                                      </button>
-                                      <button
-                                        onClick={() => handleAction("delete", [ad.id])}
-                                        className="p-1 rounded bg-[var(--color-bg-elevated)] hover:bg-red-500/20 text-[var(--color-text-secondary)]"
-                                      >
-                                        <Trash2 size={10} />
-                                      </button>
-                                    </div>
+                                    <button
+                                      onClick={() => handleAction(ad.status === "active" ? "pause" : "activate", [ad.id])}
+                                      className="p-1 rounded bg-[var(--color-bg-surface)] hover:bg-blue-500/20 text-[var(--color-text-secondary)] hover:text-blue-300"
+                                    >
+                                      {ad.status === "active" ? <Pause size={9} /> : <Play size={9} />}
+                                    </button>
                                   </td>
                                 </tr>
                               );
                             })}
-                        </>
+                        </div>
                       );
                     })}
-                </>
+                </div>
               );
             })}
           </tbody>
@@ -449,46 +437,4 @@ export function CampaignTable({ campaigns: initialCampaigns }: CampaignTableProp
       </div>
     </div>
   );
-}
-
-function getMockAdsets(campaignId: string) {
-  return [
-    {
-      id: `as1-${campaignId}`,
-      name: "Conjunto 01 - Lookalike Compradores",
-      status: "active" as const,
-      budgetType: "CBO" as const,
-      budget: 150,
-      spend: 800,
-      revenue: 4200,
-      profit: 2600,
-      roas: 5.25,
-      conversions: 18,
-      cpa: 44,
-      ads: [
-        {
-          id: `ad1-${campaignId}`,
-          name: "Criativo 01 - Imagem CBD Pote",
-          status: "active" as const,
-          spend: 500,
-          revenue: 3000,
-          profit: 1800,
-          roas: 6.0,
-          conversions: 12,
-          cpa: 41,
-        },
-        {
-          id: `ad2-${campaignId}`,
-          name: "Criativo 02 - Video Explicativo Anvisa",
-          status: "active" as const,
-          spend: 300,
-          revenue: 1200,
-          profit: 800,
-          roas: 4.0,
-          conversions: 6,
-          cpa: 50,
-        },
-      ],
-    },
-  ];
 }
