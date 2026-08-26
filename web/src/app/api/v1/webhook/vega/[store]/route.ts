@@ -51,9 +51,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     } else if (
       eventType === "order_waiting_payment" ||
       eventType === "waiting_payment" ||
+      eventType === "pix_created" ||
+      eventType === "boleto_created" ||
+      eventType === "pix" ||
       eventType.includes("waiting") ||
+      eventType.includes("pix") ||
       status === "waiting_payment" ||
       status === "pending" ||
+      status === "pix_created" ||
       status === "aguardando_pagamento"
     ) {
       metaEventName = "AddPaymentInfo";
