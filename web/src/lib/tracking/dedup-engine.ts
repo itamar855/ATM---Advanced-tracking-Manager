@@ -20,15 +20,39 @@ export async function reserveEvent(
   eventId: string,
   source: EventSource = "server"
 ): Promise<{ acquired: boolean; state?: "sent" | "processing" }> {
-  const supabase = await createClient();
-
   try {
+    const supabase = await createClient();
+
+    // Valida se storeId é um UUID válido de 36 caracteres
+    let validStoreId = storeId;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(storeId);
+    
+    if (!isUuid) {
+      try {
+        const { data: store } = await supabase
+          .from("stores")
+          .select("id")
+          .or(`shop_domain.ilike.%${storeId}%,name.ilike.%${storeId}%`)
+          .limit(1)
+          .maybeSingle();
+
+        if (store?.id) {
+          validStoreId = store.id;
+        } else {
+          // Se não há UUID válido no banco, permite o envio direto
+          return { acquired: true };
+        }
+      } catch {
+        return { acquired: true };
+      }
+    }
+
     // 1. Verificar se evento já existe
     try {
       const { data: existingEvent } = await supabase
         .from("events")
         .select("status")
-        .eq("store_id", storeId)
+        .eq("store_id", validStoreId)
         .eq("event_id", eventId)
         .eq("source", source)
         .maybeSingle();
@@ -48,11 +72,11 @@ export async function reserveEvent(
 
     // 2. Inserir com status "processing" (lock de concorrência)
     try {
-      const { error: upsertError } = await supabase
+      await supabase
         .from("events")
         .upsert(
           {
-            store_id: storeId,
+            store_id: validStoreId,
             event_name: eventName,
             event_id: eventId,
             source,
@@ -61,13 +85,8 @@ export async function reserveEvent(
           },
           { onConflict: "store_id,event_id,source" }
         );
-
-      if (upsertError && upsertError.code !== "PGRST205") {
-        console.warn(`[Dedup Engine] Falha no upsert do lock para ${eventId}:`, upsertError.message);
-        return { acquired: false, state: "processing" };
-      }
     } catch {
-      // Segurança: em caso de erro no lock, libera para não bloquear o fluxo
+      // Segurança: em caso de erro no lock, libera para não bloquear o envio
     }
 
     return { acquired: true };
