@@ -277,28 +277,71 @@ function generateATMScript(storeId: string, apiBase: string): string {
     }
   }, true);
 
+  var _lastSentCheckoutTime = 0;
+
+  function dispatchInitiateCheckout() {
+    var now = Date.now();
+    if (now - _lastSentCheckoutTime < 2500) return; // Debounce 2.5s
+    _lastSentCheckoutTime = now;
+
+    var val = Number((_ctx.cart && _ctx.cart.total_price ? _ctx.cart.total_price / 100 : (_ctx.product ? _ctx.product.price : 0)) || 0);
+    var contentIds = (_ctx.cart && Array.isArray(_ctx.cart.items))
+      ? _ctx.cart.items.map(function (i) { return String(i.id || i.variant_id); })
+      : [String(_ctx.product ? (_ctx.product.variantId || _ctx.product.id) : "CART")];
+
+    sendEvent("InitiateCheckout", {
+      content_ids: contentIds,
+      content_type: "product",
+      value: val > 0 ? val : 172.88,
+      currency: _currency,
+      num_items: (_ctx.cart && _ctx.cart.item_count) || 1,
+    });
+  }
+
+  // Interceptação de cliques em botões de compra, carrinho e checkout
   document.addEventListener("click", function (e) {
     var target = e.target;
     var btn = target.closest ? target.closest("button, a, input[type='submit']") : null;
     if (!btn) return;
 
     var text = (btn.innerText || btn.value || "").toLowerCase();
+    var href = (btn.getAttribute("href") || "").toLowerCase();
+    var name = (btn.getAttribute("name") || "").toLowerCase();
+    var cls = (btn.className && typeof btn.className === "string" ? btn.className.toLowerCase() : "");
+
+    var isCheckout =
+      text.includes("finalizar") ||
+      text.includes("checkout") ||
+      text.includes("pagamento") ||
+      text.includes("comprar agora") ||
+      href.includes("/checkout") ||
+      href.includes("checkout.") ||
+      name === "checkout" ||
+      cls.includes("checkout") ||
+      cls.includes("btn-checkout");
+
+    if (isCheckout) {
+      dispatchInitiateCheckout();
+      return;
+    }
+
     var isBuy =
       text.includes("comprar") ||
       text.includes("adicionar") ||
       text.includes("carrinho") ||
-      btn.getAttribute("name") === "add" ||
-      (btn.className && typeof btn.className === "string" && (btn.className.includes("buy") || btn.className.includes("cart")));
+      name === "add" ||
+      cls.includes("buy") ||
+      cls.includes("cart");
 
     if (isBuy && _ctx.product) {
       dispatchAddToCart(_ctx.product.variantId, _ctx.product.title, _ctx.product.price, 1);
     }
   }, true);
 
-  // ── Checkout & Purchase ──────────────────────────────────────────────────
+  // ── Checkout & Payment Page Detection ───────────────────────────────────
 
   if (/^\\/checkout|^\\/checkouts\\//.test(_path)) {
-    sendEvent("InitiateCheckout", { content_type: "product", currency: _currency });
+    dispatchInitiateCheckout();
   }
 
   if (/payment/.test(window.location.search) || /payment/.test(_path)) {

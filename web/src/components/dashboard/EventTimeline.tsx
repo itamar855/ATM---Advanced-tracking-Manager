@@ -91,6 +91,17 @@ export function EventTimeline({ events }: EventTimelineProps) {
                 💰 Compras ({events.filter((e) => e.eventName === "Purchase").length})
               </button>
               <button
+                onClick={() => setActiveFilter("InitiateCheckout")}
+                className={cn(
+                  "px-2.5 py-1 text-xs rounded-lg font-medium transition-all flex items-center gap-1",
+                  activeFilter === "InitiateCheckout"
+                    ? "bg-amber-500 text-white font-bold"
+                    : "bg-[var(--color-bg-surface)] text-amber-400 hover:bg-[var(--color-border-subtle)]"
+                )}
+              >
+                🚀 Checkouts ({events.filter((e) => e.eventName === "InitiateCheckout").length})
+              </button>
+              <button
                 onClick={() => setActiveFilter("AddToCart")}
                 className={cn(
                   "px-2.5 py-1 text-xs rounded-lg font-medium transition-all",

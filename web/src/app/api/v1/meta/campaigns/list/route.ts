@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
+import { getUsdBrlRate, convertToBrl } from "@/lib/currency";
 
 export const dynamic = "force-dynamic";
 
@@ -61,7 +62,18 @@ export async function GET(request: NextRequest) {
       }
     } catch {}
 
-    // 4. Chamada de Hierarquia Completa de 3 Níveis na Graph API da Meta
+    // 4. Chamada de Hierarquia Completa de 3 Níveis na Graph API da Meta + Moeda da Conta
+    const usdBrlRate = await getUsdBrlRate();
+    let accountCurrency = "USD";
+
+    try {
+      const accInfoRes = await fetch(`https://graph.facebook.com/v23.0/${formattedAccountId}?fields=currency&access_token=${token}`);
+      if (accInfoRes.ok) {
+        const accInfo = await accInfoRes.json();
+        if (accInfo.currency) accountCurrency = accInfo.currency.toUpperCase();
+      }
+    } catch {}
+
     const metaUrl = `https://graph.facebook.com/v23.0/${formattedAccountId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget,objective,insights{spend,actions},adsets{id,name,status,daily_budget,lifetime_budget,insights{spend,actions},ads{id,name,status,insights{spend,actions}}}&access_token=${token}&limit=30`;
 
     // 5. Busca todas as compras pagas reais no banco para atribuição de receita
@@ -111,7 +123,8 @@ export async function GET(request: NextRequest) {
       if (Array.isArray(data.data)) {
         campaigns = data.data.map((c: any) => {
           const cInsights = c.insights?.data?.[0] || {};
-          const cSpend = Number(cInsights.spend || 0);
+          const rawSpend = Number(cInsights.spend || 0);
+          const cSpend = convertToBrl(rawSpend, accountCurrency, usdBrlRate);
 
           // Receita e conversões REAIS pagas do checkout
           const cPaidData = paidPurchasesByCampaign.get(c.id) || { totalValue: 0, count: 0 };
@@ -122,10 +135,14 @@ export async function GET(request: NextRequest) {
           const cRoas = cSpend > 0 ? cRevenue / cSpend : (cRevenue > 0 ? 99.9 : 0);
           const cCpa = cPurchases > 0 ? cSpend / cPurchases : 0;
 
+          const rawBudget = c.daily_budget ? Number(c.daily_budget) / 100 : Number(c.lifetime_budget || 0) / 100;
+          const convertedBudget = convertToBrl(rawBudget, accountCurrency, usdBrlRate);
+
           // Processa Adsets (Conjuntos)
           const adsets = (c.adsets?.data || []).map((as: any) => {
             const asInsights = as.insights?.data?.[0] || {};
-            const asSpend = Number(asInsights.spend || 0);
+            const asRawSpend = Number(asInsights.spend || 0);
+            const asSpend = convertToBrl(asRawSpend, accountCurrency, usdBrlRate);
 
             const asPaidData = paidPurchasesByAdset.get(as.id) || { totalValue: 0, count: 0 };
             const asRevenue = asPaidData.totalValue;
@@ -135,10 +152,14 @@ export async function GET(request: NextRequest) {
             const asRoas = asSpend > 0 ? asRevenue / asSpend : (asRevenue > 0 ? 99.9 : 0);
             const asCpa = asPurchases > 0 ? asSpend / asPurchases : 0;
 
+            const asRawBudget = as.daily_budget ? Number(as.daily_budget) / 100 : Number(as.lifetime_budget || 0) / 100;
+            const asConvertedBudget = convertToBrl(asRawBudget, accountCurrency, usdBrlRate);
+
             // Processa Ads (Anúncios/Criativos)
             const ads = (as.ads?.data || []).map((ad: any) => {
               const adInsights = ad.insights?.data?.[0] || {};
-              const adSpend = Number(adInsights.spend || 0);
+              const adRawSpend = Number(adInsights.spend || 0);
+              const adSpend = convertToBrl(adRawSpend, accountCurrency, usdBrlRate);
 
               const adPaidData = paidPurchasesByAd.get(ad.id) || { totalValue: 0, count: 0 };
               const adRevenue = adPaidData.totalValue;
@@ -166,7 +187,7 @@ export async function GET(request: NextRequest) {
               name: as.name || `Conjunto #${as.id.slice(-6)}`,
               status: as.status === "ACTIVE" ? "active" : "paused",
               budgetType: as.daily_budget ? "ABO" : "CBO",
-              budget: as.daily_budget ? Number(as.daily_budget) / 100 : Number(as.lifetime_budget || 0) / 100,
+              budget: Math.round(asConvertedBudget * 100) / 100,
               spend: Math.round(asSpend * 100) / 100,
               revenue: Math.round(asRevenue * 100) / 100,
               profit: Math.round(asProfit * 100) / 100,
@@ -182,7 +203,7 @@ export async function GET(request: NextRequest) {
             campaign_name: c.name,
             status: c.status === "ACTIVE" ? "active" : "paused",
             budgetType: c.daily_budget ? "CBO" : "ABO",
-            budget: c.daily_budget ? Number(c.daily_budget) / 100 : Number(c.lifetime_budget || 0) / 100,
+            budget: Math.round(convertedBudget * 100) / 100,
             spend: Math.round(cSpend * 100) / 100,
             revenue: Math.round(cRevenue * 100) / 100,
             profit: Math.round(cProfit * 100) / 100,
