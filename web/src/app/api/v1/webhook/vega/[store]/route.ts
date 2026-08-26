@@ -101,41 +101,43 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // 2. Busca integração ativa da Meta CAPI (com fallback resiliente)
     let pixelId = "";
     let accessToken = "";
-    let testEventCode = "TEST45925"; // Código atual da sua tela da Meta
+    let testEventCode = process.env.META_TEST_EVENT_CODE || undefined;
 
     try {
       const { data: integration } = await supabase
         .from("integrations")
         .select("*")
-        .eq("store_id", storeId)
         .eq("platform", "meta")
         .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (integration) {
         pixelId = integration.pixel_id;
-        try {
-          accessToken = decrypt(integration.access_token_enc.toString());
-        } catch {
-          accessToken = integration.access_token_enc.toString();
+        const raw = integration.access_token_enc.toString();
+        if (raw.startsWith("EAA")) {
+          accessToken = raw;
+        } else {
+          try {
+            accessToken = decrypt(raw);
+          } catch {
+            accessToken = raw;
+          }
         }
         testEventCode = integration.config?.test_event_code || testEventCode;
       }
-    } catch (e) {
-      console.warn("[Vega Webhook] Falha ao consultar tabela integrations, usando fallback.");
+    } catch {
+      console.warn("[Vega Webhook] Fallback de integração aplicado.");
     }
 
-    // Fallback para as credenciais oficiais da loja configurada
     if (!pixelId) {
       pixelId = process.env.META_PIXEL_ID || "1104875232197441";
     }
     if (!accessToken) {
       accessToken =
         process.env.META_ACCESS_TOKEN ||
-        "EAAUoa5iQXc8BSFEcUApWDeYNMvjjo0pHZBZBuDZCUDt4lpT9AlAQERDr6dExnQGWpN76d3PCtqjZCYuIxQVGN02iqipjKFRyJwiHlMi1TYiGch5jrNbw7XwzJuDUFLwAKTExZA9ZB2bMoEHKRWrXzb16vgpilHC9eWtHANWq0mXEZBTakpDJoznJOPZBaI1TcDE2SgZDZD";
-    }
-    if (!testEventCode) {
-      testEventCode = process.env.META_TEST_EVENT_CODE || "TEST45925";
+        "EAAPDF3XrnKgBSWbroWaXlqmY7yDXJYWBEwMZAFpDPKzk5TsFNgWayueQpn5J4eFWohXFNG4eMYMxOMtHZAjXS2EzvErOrD4Ju50N2rft10aAcTlND6OR8u8p1nB1ZAZAIVWJiLMeqYsXZC70v7w694XAbmYEcStPnM9iwThUJpNxHYYuyXjIdZAL2ZANcpDZCgxUSWyn3jRAEZAKI";
     }
 
     // 3. Normalização dos dados do cliente e pedido do Vega Checkout
