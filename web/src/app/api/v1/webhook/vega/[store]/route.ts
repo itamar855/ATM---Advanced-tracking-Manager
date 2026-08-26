@@ -29,37 +29,31 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     let metaEventName: "Purchase" | "InitiateCheckout" | "AddPaymentInfo" = "Purchase";
     let isTrackable = false;
 
+    const eventStr = `${eventType} ${status}`.toLowerCase();
+
     if (
-      eventType === "order_paid" ||
-      eventType === "order_approved" ||
-      eventType === "purchase" ||
-      status === "paid" ||
-      status === "approved" ||
-      status === "pago"
+      eventStr.includes("paid") ||
+      eventStr.includes("approved") ||
+      eventStr.includes("aprovad") ||
+      eventStr.includes("pago") ||
+      eventStr.includes("purchase") ||
+      eventStr.includes("venda_aprovada")
     ) {
       metaEventName = "Purchase";
       isTrackable = true;
     } else if (
-      eventType === "abandoned_cart" ||
-      eventType === "cart_abandoned" ||
-      eventType === "checkout_abandoned" ||
-      eventType.includes("abandon") ||
-      status.includes("abandon")
+      eventStr.includes("abandon") ||
+      eventStr.includes("carrinho_abandonado")
     ) {
       metaEventName = "InitiateCheckout";
       isTrackable = true;
     } else if (
-      eventType === "order_waiting_payment" ||
-      eventType === "waiting_payment" ||
-      eventType === "pix_created" ||
-      eventType === "boleto_created" ||
-      eventType === "pix" ||
-      eventType.includes("waiting") ||
-      eventType.includes("pix") ||
-      status === "waiting_payment" ||
-      status === "pending" ||
-      status === "pix_created" ||
-      status === "aguardando_pagamento"
+      eventStr.includes("waiting") ||
+      eventStr.includes("aguardando") ||
+      eventStr.includes("pix") ||
+      eventStr.includes("boleto") ||
+      eventStr.includes("pending") ||
+      eventStr.includes("venda_aguardando_pagamento")
     ) {
       metaEventName = "AddPaymentInfo";
       isTrackable = true;
