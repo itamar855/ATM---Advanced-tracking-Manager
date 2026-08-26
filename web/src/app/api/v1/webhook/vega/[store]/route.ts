@@ -135,6 +135,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         process.env.META_ACCESS_TOKEN ||
         "EAAUoa5iQXc8BSFEcUApWDeYNMvjjo0pHZBZBuDZCUDt4lpT9AlAQERDr6dExnQGWpN76d3PCtqjZCYuIxQVGN02iqipjKFRyJwiHlMi1TYiGch5jrNbw7XwzJuDUFLwAKTExZA9ZB2bMoEHKRWrXzb16vgpilHC9eWtHANWq0mXEZBTakpDJoznJOPZBaI1TcDE2SgZDZD";
     }
+    if (!testEventCode) {
+      testEventCode = process.env.META_TEST_EVENT_CODE || "TEST45925";
+    }
 
     // 3. Normalização dos dados do cliente e pedido do Vega Checkout
     const customer = payload.customer || payload.buyer || payload.client || {};
