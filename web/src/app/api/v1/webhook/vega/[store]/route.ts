@@ -88,8 +88,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ ok: false, error: "Identificador do pedido/carrinho ausente" }, { status: 400 });
     }
 
-    // 1. Lock de Idempotência (para Purchase)
-    if (metaEventName === "Purchase") {
+    // 1. Lock de Idempotência (para Purchase em produção real)
+    const isTestMode = Boolean(payload.test_mode || payload.is_test || orderId.startsWith("VEGA_TEST_"));
+    if (metaEventName === "Purchase" && !isTestMode) {
       const lock = await reservePurchase(storeId, orderId);
       if (!lock.acquired) {
         return NextResponse.json({ ok: true, message: "Pedido duplicado ignorado" }, { status: 200 });
