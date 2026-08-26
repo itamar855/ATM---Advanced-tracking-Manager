@@ -17,20 +17,24 @@ export async function GET(request: NextRequest) {
 
     let accessToken = rawToken || "";
 
-    if (!accessToken && storeId) {
+    if (!accessToken) {
       const supabase = createAdminClient();
-      const { data: integration } = await supabase
-        .from("integrations")
-        .select("*")
-        .eq("store_id", storeId)
-        .eq("platform", "meta")
-        .maybeSingle();
+      let query = supabase.from("integrations").select("*").eq("platform", "meta");
+      if (storeId) {
+        query = query.eq("store_id", storeId);
+      }
+      const { data: integration } = await query.order("updated_at", { ascending: false }).limit(1).maybeSingle();
 
-      if (integration) {
-        try {
-          accessToken = decrypt(integration.access_token_enc.toString());
-        } catch {
-          accessToken = integration.access_token_enc.toString();
+      if (integration && integration.access_token_enc) {
+        const raw = integration.access_token_enc.toString();
+        if (raw.startsWith("EAA")) {
+          accessToken = raw;
+        } else {
+          try {
+            accessToken = decrypt(raw);
+          } catch {
+            accessToken = raw;
+          }
         }
       }
     }
