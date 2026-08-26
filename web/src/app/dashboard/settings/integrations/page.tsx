@@ -1,108 +1,84 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plug, Zap, CheckCircle2, AlertCircle, Copy, Check, ShieldCheck, Loader2, Link } from "lucide-react";
+import { Plug, Zap, CheckCircle2, AlertCircle, Copy, Check, ShieldCheck, Loader2, Link, Code2, ExternalLink, Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 export default function IntegrationsPage() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [copiedCapture, setCopiedCapture] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
+  const [copiedSnippet, setCopiedSnippet] = useState(false);
   const [metaConnected, setMetaConnected] = useState(false);
   const [pixelId, setPixelId] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [adAccountId, setAdAccountId] = useState("");
   const [testEventCode, setTestEventCode] = useState("");
   const [savedConfig, setSavedConfig] = useState<any>(null);
-  const [storeId, setStoreId] = useState("sua-loja-id");
+  const [storeId, setStoreId] = useState("");
+  const [shopDomain, setShopDomain] = useState("");
 
-  const host = typeof window !== 'undefined' ? window.location.host : 'atmtracking.vercel.app';
+  const host = typeof window !== 'undefined' ? window.location.origin : 'https://atmtracking.vercel.app';
 
-  // Script 1: Session capture theme.liquid header script
-  const captureScriptCode = `<!-- Script de Captura ATM - Cole antes do </head> no theme.liquid -->
+  // ── Snippet de instalação auto-configurado (gerado com domínio real da loja) ──
+  const atmScriptUrl = shopDomain
+    ? `${host}/api/v1/pixel/${shopDomain}/script.js`
+    : `${host}/api/v1/pixel/sua-loja.myshopify.com/script.js`;
+
+  const installSnippet = `{% comment %} ATM Pixel — Cole antes de </head> no theme.liquid {% endcomment %}
 <script>
-(function() {
-  function getCookie(name) {
-    var val = "; " + document.cookie;
-    var parts = val.split("; " + name + "=");
-    if (parts.length === 2) return parts.pop().split(";").shift();
-  }
-  function genUUID() {
-    return 'ztid_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-  }
-  try {
-    var params = JSON.parse(localStorage.getItem("zedy_tracking_params") || "{}");
-    if (!params.track_id) {
-      params.track_id = genUUID();
-    }
-    params.fbp = getCookie("_fbp") || params.fbp || null;
-    params.fbc = getCookie("_fbc") || params.fbc || null;
-    var urlParams = new URLSearchParams(window.location.search);
-    var fbclid = urlParams.get("fbclid");
-    if (fbclid) {
-      params.fbclid = fbclid;
-      if (!params.fbc) {
-        params.fbc = "fb.1." + Date.now() + "." + fbclid;
-      }
-    }
-    localStorage.setItem("zedy_tracking_params", JSON.stringify(params));
-    fetch("https://${host}/api/v1/capture", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        track_id: params.track_id,
-        fbp: params.fbp,
-        fbc: params.fbc,
-        fbclid: params.fbclid,
-        landing_page: window.location.href,
-        event_source_url: window.location.origin + window.location.pathname
-      })
-    });
-  } catch(e) {}
-})();
-</script>`;
-
-  // Script 2: Shopify Customer Event Web Pixel script
-  const pixelScriptCode = `// Web Pixel Extension do ATM — Advanced Tracking Manager
-analytics.subscribe("checkout_completed", async (event) => {
-  const zedyParams = JSON.parse(localStorage.getItem("zedy_tracking_params") || "{}");
-  
-  const payload = {
-    event_type: "orders/paid",
-    order_id: event.data.checkout.order.id,
-    value: event.data.checkout.totalPrice.amount,
-    currency: event.data.checkout.totalPrice.currencyCode,
-    track_id: zedyParams.track_id,
-    fbp: zedyParams.fbp,
-    fbc: zedyParams.fbc,
-    fbclid: zedyParams.fbclid
+  window.__ATM_CTX__ = {
+    shop: { domain: {{ shop.permanent_domain | json }}, currency: {{ shop.currency | json }} },
+    template: {{ template.name | json }},
+    customer: {{% if customer %}
+      email: {{ customer.email | json }},
+      phone: {{ customer.phone | default: '' | json }},
+      firstName: {{ customer.first_name | json }},
+      lastName: {{ customer.last_name | json }},
+      externalId: {{ customer.id | json }}
+    {%- endif %}},
+    product: {%- if template.name == 'product' -%}{
+      id: {{ product.id }},
+      variantId: {{ product.selected_or_first_available_variant.id }},
+      title: {{ product.title | json }},
+      price: {{ product.selected_or_first_available_variant.price | divided_by: 100.0 }},
+      currency: {{ shop.currency | json }}
+    }{%- else -%}null{%- endif -%},
+    checkout: {%- if checkout -%}{
+      orderId: {{ checkout.order_id }},
+      email: {{ checkout.email | json }},
+      totalPrice: {{ checkout.total_price | divided_by: 100.0 }},
+      currency: {{ shop.currency | json }},
+      billingAddress: {
+        firstName: {{ checkout.billing_address.first_name | json }},
+        lastName: {{ checkout.billing_address.last_name | json }},
+        city: {{ checkout.billing_address.city | json }},
+        provinceCode: {{ checkout.billing_address.province_code | json }},
+        zip: {{ checkout.billing_address.zip | json }},
+        countryCode: {{ checkout.billing_address.country_code | json }}
+      },
+      lineItems: [{%- for l in checkout.line_items -%}{id:"{{l.variant_id}}",quantity:{{l.quantity}},price:{{l.final_price|divided_by:100.0}}}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}]
+    }{%- else -%}null{%- endif -%}
   };
+</script>
+<script src="${atmScriptUrl}" defer></script>`;
 
-  fetch("https://${host}/api/v1/webhook/${storeId}", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-});`;
-
-  const zedyWebhookUrl = `https://${host}/api/v1/webhook/zedy/${storeId}`;
+  const zedyWebhookUrl = `${host}/api/v1/webhook/zedy/${storeId}`;
 
   useEffect(() => {
     async function loadConfig() {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        // Busca a loja do tenant
         const { data: store } = await supabase
           .from("stores")
-          .select("id")
+          .select("id, shop_domain")
           .limit(1)
           .maybeSingle();
 
         if (store) {
           setStoreId(store.id);
-          // Busca a integração ativa da Meta
+          setShopDomain(store.shop_domain || "");
           const { data: integration } = await supabase
             .from("integrations")
             .select("*")
@@ -124,21 +100,21 @@ analytics.subscribe("checkout_completed", async (event) => {
   }, []);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(pixelScriptCode);
+    navigator.clipboard.writeText(testEventCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleCopyCapture = () => {
-    navigator.clipboard.writeText(captureScriptCode);
-    setCopiedCapture(true);
-    setTimeout(() => setCopiedCapture(false), 2000);
   };
 
   const handleCopyWebhook = () => {
     navigator.clipboard.writeText(zedyWebhookUrl);
     setCopiedWebhook(true);
     setTimeout(() => setCopiedWebhook(false), 2000);
+  };
+
+  const handleCopySnippet = () => {
+    navigator.clipboard.writeText(installSnippet);
+    setCopiedSnippet(true);
+    setTimeout(() => setCopiedSnippet(false), 3000);
   };
 
   const handleSaveIntegration = async (e: React.FormEvent) => {
@@ -385,90 +361,75 @@ analytics.subscribe("checkout_completed", async (event) => {
             </div>
           )}
         </div>
+      </div>{/* end grid */}
 
-        {/* Right: Scripts installation helper */}
-        <div className="space-y-6">
-          {/* Step 1: theme.liquid Header script */}
-          <div className="glass-card p-6 flex flex-col justify-between space-y-4">
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[var(--color-brand-400)]/10 flex items-center justify-center text-[var(--color-brand-300)]">
-                  <Zap size={20} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-                    1. Script de Atribuição (theme.liquid)
-                  </h3>
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    Gera o track ID e captura fbp/fbc no cabeçalho do site
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-lg bg-[var(--color-bg-primary)]/80 border border-[var(--color-border-default)]">
-                <ol className="text-xs space-y-2 text-[var(--color-text-secondary)] list-decimal pl-4">
-                  <li>Acesse o painel da sua Shopify e vá em <b>Loja Virtual</b> &gt; <b>Temas</b>.</li>
-                  <li>Clique em <b>Ações (...)</b> &gt; <b>Editar código</b>.</li>
-                  <li>Abra o arquivo <b>theme.liquid</b>.</li>
-                  <li>Cole o código abaixo logo antes da tag de fechamento <b>&lt;/head&gt;</b> (Importante: cole no cabeçalho/topo do arquivo, e não no final, para garantir a captura imediata do tráfego).</li>
-                </ol>
-              </div>
-
-              <div className="relative">
-                <pre className="text-[10px] leading-relaxed bg-[var(--color-bg-surface)] p-3 rounded-lg overflow-x-auto text-[var(--color-text-secondary)] max-h-36 border border-[var(--color-border-subtle)]">
-                  {captureScriptCode}
-                </pre>
-                <button
-                  onClick={handleCopyCapture}
-                  className="absolute top-2 right-2 p-1.5 rounded-md bg-[var(--color-bg-card)] border border-[var(--color-border-default)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] transition-colors"
-                  title="Copiar código"
-                >
-                  {copiedCapture ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                </button>
-              </div>
-            </div>
+      {/* ── Instalação do Pixel Shopify (snippet único, auto-configurado) ── */}
+      <div className="glass-card p-6 space-y-5 border-l-4 border-l-[var(--color-brand-400)]">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[var(--color-brand-400)]/10 flex items-center justify-center text-[var(--color-brand-300)] shrink-0 mt-0.5">
+            <Sparkles size={20} />
           </div>
-
-          {/* Step 2: Customer Event Web Pixel */}
-          <div className="glass-card p-6 flex flex-col justify-between space-y-4">
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[var(--color-brand-400)]/10 flex items-center justify-center text-[var(--color-brand-300)]">
-                  <Zap size={20} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-                    2. Script de Conversão (Web Pixel)
-                  </h3>
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    Rastreia a compra final e inicia o envio da Meta CAPI
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-lg bg-[var(--color-bg-primary)]/80 border border-[var(--color-border-default)]">
-                <ol className="text-xs space-y-2 text-[var(--color-text-secondary)] list-decimal pl-4">
-                  <li>Vá em <b>Configurações</b> &gt; <b>Eventos de Clientes</b> no painel da Shopify.</li>
-                  <li>Clique em <b>Adicionar pixel personalizado</b>.</li>
-                  <li>Dê o nome <b>ATM Pixel</b> e cole o código abaixo.</li>
-                  <li>Clique em <b>Salvar</b> e depois em <b>Conectar</b>.</li>
-                </ol>
-              </div>
-
-              <div className="relative">
-                <pre className="text-[10px] leading-relaxed bg-[var(--color-bg-surface)] p-3 rounded-lg overflow-x-auto text-[var(--color-text-secondary)] max-h-36 border border-[var(--color-border-subtle)]">
-                  {pixelScriptCode}
-                </pre>
-                <button
-                  onClick={handleCopy}
-                  className="absolute top-2 right-2 p-1.5 rounded-md bg-[var(--color-bg-card)] border border-[var(--color-border-default)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] transition-colors"
-                  title="Copiar código"
-                >
-                  {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                </button>
-              </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                Pixel Shopify — Instalação Automática
+              </h3>
+              <span className="px-2 py-0.5 text-[10px] font-bold bg-[var(--color-brand-400)]/10 text-[var(--color-brand-300)] rounded-full border border-[var(--color-brand-400)]/20 uppercase tracking-wide">
+                Zero Configuração
+              </span>
             </div>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+              Cole o snippet abaixo no <b>theme.liquid</b>, antes de <code className="text-[var(--color-brand-300)]">&lt;/head&gt;</code>. O script identifica sua loja automaticamente pelo domínio — sem editar nenhum ID.
+            </p>
           </div>
+        </div>
+
+        {/* Badges de eventos */}
+        <div className="flex flex-wrap gap-1.5">
+          {["PageView", "ViewContent", "AddToCart", "InitiateCheckout", "AddPaymentInfo", "Purchase"].map((ev) => (
+            <span key={ev} className="px-2 py-0.5 text-[10px] font-medium bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">
+              ✓ {ev}
+            </span>
+          ))}
+          <span className="px-2 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-400 rounded-full border border-blue-500/20">
+            SHA-256 em todo PII
+          </span>
+        </div>
+
+        {/* URL gerada */}
+        {shopDomain && (
+          <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 flex items-center gap-2">
+            <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+            <span className="text-xs text-emerald-400">
+              Script auto-configurado para <b>{shopDomain}</b>
+            </span>
+          </div>
+        )}
+
+        {/* Snippet de código */}
+        <div className="relative">
+          <pre className="text-[10px] leading-relaxed bg-[var(--color-bg-surface)] p-4 rounded-lg overflow-x-auto text-[var(--color-text-secondary)] max-h-56 border border-[var(--color-border-subtle)] scrollbar-thin">
+            {installSnippet}
+          </pre>
+          <button
+            onClick={handleCopySnippet}
+            className="absolute top-2 right-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-brand-400)] hover:bg-[var(--color-brand-300)] text-white text-[10px] font-bold transition-all shadow-lg"
+          >
+            {copiedSnippet ? <><Check size={12} /> Copiado!</> : <><Copy size={12} /> Copiar Snippet</>}
+          </button>
+        </div>
+
+        {/* Instruções */}
+        <div className="p-4 rounded-lg bg-[var(--color-bg-primary)]/80 border border-[var(--color-border-default)]">
+          <p className="text-xs font-semibold text-[var(--color-text-secondary)] mb-2 flex items-center gap-1.5">
+            <Code2 size={13} className="text-[var(--color-brand-300)]" /> Como instalar
+          </p>
+          <ol className="text-xs space-y-1.5 text-[var(--color-text-secondary)] list-decimal pl-4">
+            <li>Acesse seu painel Shopify → <b>Loja Virtual</b> → <b>Temas</b> → <b>Ações (...)</b> → <b>Editar código</b>.</li>
+            <li>Abra o arquivo <b>theme.liquid</b>.</li>
+            <li>Cole o snippet acima imediatamente <b>antes de <code>&lt;/head&gt;</code></b>.</li>
+            <li>Clique em <b>Salvar</b>. Pronto — nenhuma outra configuração necessária! ✅</li>
+          </ol>
         </div>
       </div>
     </div>

@@ -7,19 +7,21 @@ export interface MetaEvent {
   event_source_url: string;
   action_source: "email" | "website" | "app" | "phone_call" | "chat" | "physical_store" | "system_generated" | "other";
   user_data: {
-    em?: string[];
-    ph?: string[];
-    fn?: string[];
-    ln?: string[];
-    ct?: string[];
-    st?: string[];
-    zp?: string[];
-    co?: string[];
-    external_id?: string[];
-    client_ip_address?: string;
-    client_user_agent?: string;
-    fbp?: string;
-    fbc?: string;
+    em?: string[];          // email — SHA-256
+    ph?: string[];          // phone — SHA-256 (somente dígitos)
+    fn?: string[];          // first name — SHA-256 (lowercase, sem acentos)
+    ln?: string[];          // last name — SHA-256 (lowercase, sem acentos)
+    ct?: string[];          // city — SHA-256 (lowercase, sem acentos)
+    st?: string[];          // state — SHA-256 (código 2 letras lowercase)
+    zp?: string[];          // zip/CEP — SHA-256 (somente dígitos)
+    co?: string[];          // country — SHA-256 (ISO 2 letras lowercase)
+    db?: string[];          // date of birth — SHA-256 (formato YYYYMMDD)
+    ge?: string[];          // gender — SHA-256 ("m" ou "f")
+    external_id?: string[]; // customer ID estável — SHA-256
+    client_ip_address?: string;   // IP real do comprador — sem hash
+    client_user_agent?: string;   // UA do browser — sem hash
+    fbp?: string;           // Meta Browser ID — sem hash
+    fbc?: string;           // Meta Click ID — sem hash
   };
   custom_data?: {
     value?: number;

@@ -1,52 +1,61 @@
 import { createClient } from "../supabase/server";
-import { NormalizedOrder } from "../types";
 
 /**
- * Zera a concorrência e envia de forma idempotente.
- * Se o pedido já foi processado ou está sendo processado, impede novas requisições.
+ * Motor universal de idempotência/deduplicação do ATM.
+ * Suporta qualquer tipo de evento (Purchase, ViewContent, AddToCart, etc.)
+ * de qualquer source (server | browser).
  */
-export async function reservePurchase(
+
+export type EventSource = "server" | "browser";
+export type EventStatus = "pending" | "processing" | "sent" | "accepted" | "rejected" | "deduped" | "failed";
+
+/**
+ * Reserva (lock) um evento genérico para processamento.
+ * Retorna { acquired: true } se o lock foi obtido.
+ * Retorna { acquired: false, state } se já estava processado ou em processamento.
+ */
+export async function reserveEvent(
   storeId: string,
-  orderId: string
+  eventName: string,
+  eventId: string,
+  source: EventSource = "server"
 ): Promise<{ acquired: boolean; state?: "sent" | "processing" }> {
   const supabase = await createClient();
 
   try {
-    // 1. Tenta buscar um evento existente de 'Purchase' para o respectivo pedido
+    // 1. Verificar se evento já existe
     try {
-      const { data: existingEvent, error: fetchError } = await supabase
+      const { data: existingEvent } = await supabase
         .from("events")
         .select("status")
         .eq("store_id", storeId)
-        .eq("order_id", orderId)
-        .eq("event_name", "Purchase")
-        .eq("source", "server")
+        .eq("event_id", eventId)
+        .eq("source", source)
         .maybeSingle();
 
       if (existingEvent) {
-        if (existingEvent.status === "sent" || existingEvent.status === "accepted") {
+        const { status } = existingEvent;
+        if (status === "sent" || status === "accepted" || status === "deduped") {
           return { acquired: false, state: "sent" };
         }
-        if (existingEvent.status === "processing" || existingEvent.status === "pending") {
+        if (status === "processing" || status === "pending") {
           return { acquired: false, state: "processing" };
         }
       }
     } catch {
-      // Ignora erro se tabela events não existir
+      // Ignora erro se tabela não existir ainda
     }
 
-    // 2. Insere ou atualiza o status de concorrência de forma idempotente para 'processing'
-    const eventId = `Purchase_${orderId}`;
+    // 2. Inserir com status "processing" (lock de concorrência)
     try {
       const { error: upsertError } = await supabase
         .from("events")
         .upsert(
           {
             store_id: storeId,
-            order_id: orderId,
-            event_name: "Purchase",
+            event_name: eventName,
             event_id: eventId,
-            source: "server",
+            source,
             status: "processing",
             created_at: new Date().toISOString(),
           },
@@ -54,30 +63,32 @@ export async function reservePurchase(
         );
 
       if (upsertError && upsertError.code !== "PGRST205") {
+        console.warn(`[Dedup Engine] Falha no upsert do lock para ${eventId}:`, upsertError.message);
         return { acquired: false, state: "processing" };
       }
     } catch {
-      // Ignora se tabela não existir
+      // Segurança: em caso de erro no lock, libera para não bloquear o fluxo
     }
 
     return { acquired: true };
-  } catch (error) {
+  } catch {
+    // Fallback resiliente: libera o processamento em qualquer falha grave
     return { acquired: true };
   }
 }
 
 /**
- * Atualiza o status do evento de compra pós processamento
+ * Atualiza o status de um evento pós-processamento.
  */
-export async function updateEventStatus(
+export async function updateEventResult(
   storeId: string,
-  orderId: string,
-  status: "sent" | "accepted" | "rejected" | "failed",
+  eventId: string,
+  source: EventSource,
+  status: EventStatus,
   metaResponse?: any,
   latencyMs?: number
 ): Promise<void> {
   const supabase = await createClient();
-  const eventId = `Purchase_${orderId}`;
 
   try {
     await supabase
@@ -87,12 +98,39 @@ export async function updateEventStatus(
         meta_response: metaResponse || null,
         latency_ms: latencyMs || null,
         sent_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       })
       .eq("store_id", storeId)
       .eq("event_id", eventId)
-      .eq("source", "server");
-  } catch (error) {
-    console.error(`[Dedup Engine Error] Falha ao atualizar status do evento #${orderId}:`, error);
+      .eq("source", source);
+  } catch (error: any) {
+    console.error(`[Dedup Engine] Falha ao atualizar status do evento ${eventId}:`, error.message);
   }
+}
+
+// ─── Wrappers de Compatibilidade (Purchase Server-side) ───────────────────────
+
+/**
+ * @deprecated Use reserveEvent() diretamente.
+ * Mantido para compatibilidade com webhook/[store]/route.ts
+ */
+export async function reservePurchase(
+  storeId: string,
+  orderId: string
+): Promise<{ acquired: boolean; state?: "sent" | "processing" }> {
+  return reserveEvent(storeId, "Purchase", `Purchase_${orderId}`, "server");
+}
+
+/**
+ * @deprecated Use updateEventResult() diretamente.
+ * Mantido para compatibilidade com webhook/[store]/route.ts
+ */
+export async function updateEventStatus(
+  storeId: string,
+  orderId: string,
+  status: EventStatus,
+  metaResponse?: any,
+  latencyMs?: number
+): Promise<void> {
+  return updateEventResult(storeId, `Purchase_${orderId}`, "server", status, metaResponse, latencyMs);
 }

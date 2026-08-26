@@ -21,9 +21,17 @@ A plataforma é estruturada como um SaaS Multi-Tenant. As APIs operam de forma d
 /web/src/app/api/
 ├── auth/shopify/             # GET: Inicia o fluxo de instalação e OAuth
 ├── auth/shopify/callback/    # GET: Troca o código temporário e persiste o token
-├── v1/capture/               # POST: Recebe sessões do Pixel (fbp, fbc, IP, UA)
-└── v1/webhook/[store]/       # POST: Webhook orders/paid de cada loja integrada
+├── v1/capture/               # POST: Bridge de sessão — persiste fbp, fbc, IP, UA, UTMs no Supabase
+├── v1/events/browser/        # POST: Recebe eventos de funil do browser (PageView, ViewContent,
+│                             #       AddToCart, InitiateCheckout, AddPaymentInfo, Purchase)
+│                             #       → Hasha PII server-side e despacha para Meta CAPI
+└── v1/webhook/[store]/       # POST: Webhook orders/paid — evento Purchase server-side
 ```
+
+### Arquivo de Script Shopify
+
+- `shopify-pixel-script.liquid`: Script completo para instalar no `theme.liquid`. Captura sessão,
+  dispara todos os eventos do funil e coleta PII disponível via Liquid (email, phone, endereço).
 
 ---
 
@@ -48,15 +56,44 @@ Para garantir a máxima pontuação de correspondência de eventos (EMQ) e evita
 
 ### 4.1 Identificação e Deduplicação
 *   **Event ID:** Todos os eventos de compra do Servidor devem usar o formato exato `Purchase_${orderId}`. O Pixel do Navegador (Shopify Web Pixels API) deve utilizar o mesmo ID para permitir a deduplicação.
+*   **Event ID (funil):** Eventos de funil (ViewContent, AddToCart, etc.) usam UUID v4 gerado no browser.
 *   **External ID:** Deve ser um hash SHA-256 estável baseado em `customer_id` ou no par `email`/`telefone`. **NUNCA use o order_id como external_id**, pois ele representa a transação e não o comprador.
 
 ### 4.2 Higienização de PII (Dados Pessoais)
-*   **Hash Obrigatório:** Todos os campos de identificação (e-mail, telefone, primeiro nome, sobrenome, cidade, estado, CEP e país) devem ser convertidos para letras minúsculas, ter os espaços em branco removidos e ser hasheados com SHA-256.
-*   **Parâmetros de Sessão:** `fbp` e `fbc` **NÃO** devem ser hasheados.
-*   **fbc (Click ID):** Não fabrique ou gere IDs falsos de `fbc` no momento do Purchase se ele não foi coletado no browser durante o clique original.
+Todos os campos abaixo são normalizados e hasheados com **SHA-256** antes do envio:
+
+| Campo Meta | Normalização antes do hash |
+|---|---|
+| `em` (email) | lowercase + trim |
+| `ph` (phone) | somente dígitos |
+| `fn` (first name) | lowercase + trim + remover acentos |
+| `ln` (last name) | lowercase + trim + remover acentos |
+| `ct` (city) | lowercase + trim + remover acentos e pontuação |
+| `st` (state) | código 2 letras lowercase |
+| `zp` (zip/CEP) | somente dígitos |
+| `co` (country) | código ISO 2 letras lowercase |
+| `db` (date of birth) | formato YYYYMMDD |
+| `ge` (gender) | "m" ou "f" |
+| `external_id` | prefixo `customer:` + SHA-256 |
+
+*   **Parâmetros de Sessão:** `fbp` e `fbc` **NÃO** devem ser hasheados — enviados como recebidos.
+*   **fbc (Click ID):** Não fabrique ou gere IDs falsos de `fbc` retroativamente. Construir a partir do `fbclid` **apenas se ele estiver presente na URL no momento do clique**.
 
 ### 4.3 IP e User-Agent
-*   O IP e o User-Agent enviados nos eventos do servidor devem corresponder ao **dispositivo do comprador** (capturados via API de Capture no navegador) e nunca aos IPs dos servidores da Zedy, Shopify ou do nosso próprio backend.
+*   O IP e o User-Agent enviados nos eventos do servidor devem corresponder ao **dispositivo do comprador** (capturados via `/api/v1/capture` no navegador) e nunca aos IPs dos servidores.
+
+### 4.4 Funil Completo de Eventos
+O ATM envia todos os eventos do funil para maximizar o score do Meta:
+
+| Evento | Trigger | Source |
+|---|---|---|
+| `PageView` | Toda página carregada | Browser → CAPI |
+| `ViewContent` | Página de produto | Browser → CAPI |
+| `AddToCart` | Submit do form de carrinho | Browser → CAPI |
+| `InitiateCheckout` | Entrada no /checkout | Browser → CAPI |
+| `AddPaymentInfo` | Step de pagamento | Browser → CAPI |
+| `Purchase` | Webhook orders/paid | Servidor → CAPI |
+| `Purchase` | Página thank_you | Browser → CAPI (dedup) |
 
 ---
 
@@ -76,3 +113,8 @@ Abaixo está o registro de modificações importantes no projeto.
 | **v1.7.0** | 18/08/2026 | **Feature** | Implementação do Dashboard-Service e API de cálculo de métricas agregadas e P&L. | Antigravity |
 | **v1.8.0** | 18/08/2026 | **Feature** | Integração de Billing com Mercado Pago (Checkout API, Webhook IPN e tela de planos). | Antigravity |
 | **v1.9.0** | 18/08/2026 | **Feature** | Implementação de UI de integrações do Facebook Ads e módulo instalador de Web Pixel. | Antigravity |
+| **v2.0.0** | 26/08/2026 | **Bugfix** | Fix crítico: `/api/v1/capture` agora persiste sessões no Supabase (upsert real). Sem este fix, todos os eventos eram enviados sem fbp/fbc/IP/UA. | Antigravity |
+| **v2.1.0** | 26/08/2026 | **Feature** | `dedup-engine.ts` generalizado para `reserveEvent()` / `updateEventResult()` — suporta qualquer evento e source (server/browser). | Antigravity |
+| **v2.2.0** | 26/08/2026 | **Feature** | `event-builder.ts` expandido com `buildBrowserEvent()`. SHA-256 em todos os campos PII: em, ph, fn, ln, ct, st, zp, co, **db** (nascimento), **ge** (gênero). Normalização correta por campo. | Antigravity |
+| **v2.3.0** | 26/08/2026 | **Feature** | Nova rota `/api/v1/events/browser` — endpoint universal de eventos de funil. Deduplica, recupera sessão, hasha PII e despacha à CAPI. | Antigravity |
+| **v2.4.0** | 26/08/2026 | **Feature** | `shopify-pixel-script.liquid` — script completo com PageView, ViewContent, AddToCart, InitiateCheckout, AddPaymentInfo e Purchase (deduplicado). Coleta PII via Liquid. | Antigravity |
