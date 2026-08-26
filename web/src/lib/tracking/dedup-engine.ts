@@ -51,14 +51,17 @@ export async function reservePurchase(
       );
 
     if (upsertError) {
-      // Falha de concorrência ou registro já modificado por outra thread
+      // Se for erro de schema (tabela ainda não criada), permite o prosseguimento do envio CAPI
+      if (upsertError.code === "PGRST205" || upsertError.message?.includes("events")) {
+        return { acquired: true };
+      }
       return { acquired: false, state: "processing" };
     }
 
     return { acquired: true };
   } catch (error) {
-    console.error(`[Dedup Engine Error] Erro ao reservar compra #${orderId}:`, error);
-    return { acquired: false };
+    console.warn(`[Dedup Engine Warning] Ignorando trava de concorrência por indisponibilidade de banco:`, error);
+    return { acquired: true };
   }
 }
 
