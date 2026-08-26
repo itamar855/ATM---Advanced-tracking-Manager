@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { buildBrowserEvent, getUserDataKeys, BrowserEventName, BrowserUserData, BrowserEventCustomData } from "@/lib/tracking/event-builder";
 import { sendMetaCAPIEvent } from "@/lib/meta/capi";
 import { reserveEvent, updateEventResult } from "@/lib/tracking/dedup-engine";
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // ── 1. Buscar integração Meta ativa (com fallback resiliente) ──
     let pixelId = "";
