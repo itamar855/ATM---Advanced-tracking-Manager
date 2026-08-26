@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/v1/pixel/[domain]/script.js
  *
  * Retorna o script ATM completo, já configurado para a loja identificada
  * pelo domínio Shopify (ex: minhaloja.myshopify.com).
- *
- * O script é cacheado por 5 minutos (CDN) e versionado pelo store_id,
- * então mudanças de configuração propagam rapidamente.
- *
- * O usuário instala apenas UMA linha no theme.liquid:
- *   <script src="https://app.atm.com/api/v1/pixel/{{ shop.permanent_domain }}/script.js" defer></script>
  */
 export async function GET(
   request: NextRequest,
@@ -19,38 +15,23 @@ export async function GET(
 ) {
   const { domain } = await params;
 
-  if (!domain || !domain.includes(".")) {
-    return new NextResponse("// ATM: domínio inválido", {
-      status: 400,
-      headers: { "Content-Type": "application/javascript" },
-    });
-  }
-
-  const supabase = await createClient();
-
-  // Busca a loja pelo shop_domain exato ou parcial
-  let storeId = "";
-  let checkoutDomain = null;
+  let storeId = "dckb5g-7d";
+  const apiBase = "https://atmtracking.vercel.app/api/v1";
 
   try {
+    const supabase = await createClient();
     const { data: store } = await supabase
       .from("stores")
-      .select("id, shop_domain, status, checkout_domain")
+      .select("id, shop_domain")
       .or(`shop_domain.eq.${domain},shop_domain.ilike.%${domain.split('.')[0]}%`)
       .limit(1)
       .maybeSingle();
 
     if (store) {
       storeId = store.id;
-      checkoutDomain = store.checkout_domain;
     }
   } catch (e) {
-    console.warn("[Pixel Script] Falha ao consultar banco, usando fallback.");
-  }
-
-  // Fallback para o identificador padrão se for a loja de Gaiolas
-  if (!storeId) {
-    storeId = domain.includes("gaiola") || domain.includes("dckb5g") ? "dckb5g-7d" : domain;
+    console.warn("[Pixel Script] Fallback aplicado:", e);
   }
 
   const scriptContent = generateATMScript(storeId, apiBase);
@@ -59,10 +40,7 @@ export async function GET(
     status: 200,
     headers: {
       "Content-Type": "application/javascript; charset=utf-8",
-      // Cache de 5 minutos no CDN, 1 minuto no browser
-      "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60",
-      // ETag baseado no store_id para invalidação correta
-      ETag: `"atm-${storeId.slice(0, 8)}"`,
+      "Cache-Control": "no-store, max-age=0",
     },
   });
 }

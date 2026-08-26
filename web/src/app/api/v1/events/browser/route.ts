@@ -152,12 +152,11 @@ export async function POST(request: NextRequest) {
     );
 
     // ── 5. Despachar para a Meta CAPI ──
-    const decryptedToken = decrypt(integration.access_token_enc.toString());
     const capiConfig = {
-      pixelId: integration.pixel_id,
-      accessToken: decryptedToken,
-      apiVersion: integration.api_version,
-      testEventCode: integration.config?.test_event_code,
+      pixelId: pixelId,
+      accessToken: accessToken,
+      apiVersion: "v23.0",
+      testEventCode: testEventCode,
     };
 
     const capiResult = await sendMetaCAPIEvent(capiConfig, metaEvent);
