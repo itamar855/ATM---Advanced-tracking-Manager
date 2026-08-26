@@ -370,11 +370,6 @@ export default function IntegrationsPage() {
                   Consultando Graph API da Meta...
                 </span>
               </div>
-            ) : accountFetchError ? (
-              <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-center gap-2">
-                <AlertCircle size={15} className="shrink-0" />
-                <span>{accountFetchError}</span>
-              </div>
             ) : adAccounts.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-60 overflow-y-auto pr-1">
                 {adAccounts.map((acc) => {
@@ -417,9 +412,22 @@ export default function IntegrationsPage() {
                   );
                 })}
               </div>
+            ) : adAccountId ? (
+              <div className="p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
+                  <span>Conta de Anúncio <b>{adAccountId}</b> vinculada e pronta para rastreamento CAPI.</span>
+                </div>
+                <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-300 rounded-full">Manual</span>
+              </div>
+            ) : accountFetchError ? (
+              <div className="p-3.5 rounded-lg bg-[var(--color-bg-primary)] border border-[var(--color-border-subtle)] text-xs text-[var(--color-text-muted)] flex items-center gap-2">
+                <AlertCircle size={15} className="shrink-0 text-blue-400" />
+                <span>Token CAPI ativo. Para sincronização de campanhas, insira o ID da conta manualmente acima.</span>
+              </div>
             ) : (
               <div className="p-4 rounded-lg bg-[var(--color-bg-primary)] border border-[var(--color-border-subtle)] text-center text-xs text-[var(--color-text-muted)]">
-                Insira seu Access Token acima e clique em <b>Testar Token</b> para listar suas contas.
+                Insira seu Access Token acima para validar ou preencha a Conta de Anúncio manualmente.
               </div>
             )}
           </div>
