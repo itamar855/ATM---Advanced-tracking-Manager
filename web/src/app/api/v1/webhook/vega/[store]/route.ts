@@ -19,31 +19,62 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const rawBody = await request.text();
     const payload = JSON.parse(rawBody);
 
-    // Vega envia status ou event: order_paid, order_approved, paid, approved
-    const eventType = payload.event || payload.eventType || payload.type || "";
+    // Identifica o tipo de evento do Vega Checkout:
+    // 1. Purchase (Venda aprovada/paga)
+    // 2. InitiateCheckout (Carrinho abandonado)
+    // 3. AddPaymentInfo (Aguardando pagamento / PIX ou Boleto gerado)
+    const eventType = (payload.event || payload.eventType || payload.type || "").toLowerCase();
     const status = (payload.status || payload.order_status || "").toLowerCase();
 
-    const isPaid =
+    let metaEventName: "Purchase" | "InitiateCheckout" | "AddPaymentInfo" = "Purchase";
+    let isTrackable = false;
+
+    if (
       eventType === "order_paid" ||
       eventType === "order_approved" ||
-      eventType === "ORDER_PAID" ||
+      eventType === "purchase" ||
       status === "paid" ||
       status === "approved" ||
-      status === "pago";
-
-    if (!isPaid) {
-      return NextResponse.json({ ok: true, message: "Evento ignorado (não é pedido pago)" }, { status: 200 });
+      status === "pago"
+    ) {
+      metaEventName = "Purchase";
+      isTrackable = true;
+    } else if (
+      eventType === "abandoned_cart" ||
+      eventType === "cart_abandoned" ||
+      eventType === "checkout_abandoned" ||
+      eventType.includes("abandon") ||
+      status.includes("abandon")
+    ) {
+      metaEventName = "InitiateCheckout";
+      isTrackable = true;
+    } else if (
+      eventType === "order_waiting_payment" ||
+      eventType === "waiting_payment" ||
+      eventType.includes("waiting") ||
+      status === "waiting_payment" ||
+      status === "pending" ||
+      status === "aguardando_pagamento"
+    ) {
+      metaEventName = "AddPaymentInfo";
+      isTrackable = true;
     }
 
-    const orderId = String(payload.order_id || payload.orderId || payload.id || payload.code || "");
+    if (!isTrackable) {
+      return NextResponse.json({ ok: true, message: `Evento [${eventType || status}] ignorado para CAPI` }, { status: 200 });
+    }
+
+    const orderId = String(payload.order_id || payload.orderId || payload.id || payload.code || payload.cart_id || "");
     if (!orderId) {
-      return NextResponse.json({ ok: false, error: "Identificador do pedido ausente" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Identificador do pedido/carrinho ausente" }, { status: 400 });
     }
 
-    // 1. Lock de Idempotência
-    const lock = await reservePurchase(storeId, orderId);
-    if (!lock.acquired) {
-      return NextResponse.json({ ok: true, message: "Pedido duplicado ignorado" }, { status: 200 });
+    // 1. Lock de Idempotência (para Purchase)
+    if (metaEventName === "Purchase") {
+      const lock = await reservePurchase(storeId, orderId);
+      if (!lock.acquired) {
+        return NextResponse.json({ ok: true, message: "Pedido duplicado ignorado" }, { status: 200 });
+      }
     }
 
     const supabase = await createClient();
@@ -58,7 +89,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .maybeSingle();
 
     if (!integration) {
-      await updateEventStatus(storeId, orderId, "failed", { error: "Sem integração Meta ativa" });
+      if (metaEventName === "Purchase") {
+        await updateEventStatus(storeId, orderId, "failed", { error: "Sem integração Meta ativa" });
+      }
       return NextResponse.json({ ok: false, error: "Meta CAPI não configurada para esta loja" }, { status: 400 });
     }
 
@@ -145,8 +178,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
-    // 5. Monta o evento da Meta
+    // 5. Monta o evento da Meta customizado para o evento correto
     const metaEvent = buildMetaPurchaseEvent(normalizedOrder, sessionData);
+    metaEvent.event_name = metaEventName;
+    metaEvent.event_id = `${metaEventName}_${orderId}`;
+
     const decryptedMetaToken = decrypt(integration.access_token_enc.toString());
 
     // 6. Envia para a Meta CAPI
@@ -160,13 +196,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const metaResponse = await sendMetaCAPIEvent(capiConfig, metaEvent);
     const latencyMs = Date.now() - startTime;
 
-    const dbStatus = metaResponse.ok ? "accepted" : "rejected";
-    const errors = metaResponse.ok ? null : { metaError: metaResponse.error };
-
-    await updateEventStatus(storeId, orderId, dbStatus, errors, latencyMs);
+    if (metaEventName === "Purchase") {
+      const dbStatus = metaResponse.ok ? "accepted" : "rejected";
+      const errors = metaResponse.ok ? null : { metaError: metaResponse.error };
+      await updateEventStatus(storeId, orderId, dbStatus, errors, latencyMs);
+    }
 
     return NextResponse.json({
       ok: metaResponse.ok,
+      event_name: metaEventName,
       order_id: orderId,
       meta_response: metaResponse,
     });
