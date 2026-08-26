@@ -38,6 +38,7 @@ export default function IntegrationsPage() {
   const [metaConnected, setMetaConnected] = useState(false);
 
   // Campos do Perfil Meta
+  const [adAccountId, setAdAccountId] = useState("");
   const [profileName, setProfileName] = useState("Perfil Principal");
   const [pixelId, setPixelId] = useState("1104875232197441");
   const [accessToken, setAccessToken] = useState("");
@@ -203,6 +204,10 @@ export default function IntegrationsPage() {
     setLoading(true);
 
     try {
+      const finalAccounts = selectedAccounts.length > 0 
+        ? selectedAccounts 
+        : adAccountId ? [adAccountId.trim()] : [];
+
       const res = await fetch("/api/v1/meta/accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -210,7 +215,7 @@ export default function IntegrationsPage() {
           store_id: storeId || "dckb5g-7d",
           access_token: accessToken || (savedConfig ? savedConfig.access_token_enc : ""),
           profile_name: profileName,
-          ad_account_ids: selectedAccounts,
+          ad_account_ids: finalAccounts,
           pixel_id: pixelId,
           test_event_code: testEventCode,
         }),
@@ -219,7 +224,7 @@ export default function IntegrationsPage() {
       const data = await res.json();
       if (data.ok) {
         setMetaConnected(true);
-        alert("Perfil e contas do Facebook sincronizados com sucesso!");
+        alert("Configurações da Meta salvas com sucesso!");
       } else {
         alert("Erro ao salvar: " + data.error);
       }
@@ -278,7 +283,7 @@ export default function IntegrationsPage() {
         </div>
 
         <form onSubmit={handleSaveIntegration} className="space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">
                 Nome do Perfil / BM
@@ -287,7 +292,7 @@ export default function IntegrationsPage() {
                 type="text"
                 value={profileName}
                 onChange={(e) => setProfileName(e.target.value)}
-                placeholder="Ex: Perfil Matheus - BM Principal"
+                placeholder="Ex: Perfil Principal Loja"
                 className="input text-xs"
                 required
               />
@@ -304,6 +309,19 @@ export default function IntegrationsPage() {
                 placeholder="Ex: 1104875232197441"
                 className="input text-xs font-mono"
                 required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">
+                Conta de Anúncio ID (Opcional)
+              </label>
+              <input
+                type="text"
+                value={adAccountId}
+                onChange={(e) => setAdAccountId(e.target.value)}
+                placeholder="Ex: act_123456789"
+                className="input text-xs font-mono"
               />
             </div>
           </div>
