@@ -103,27 +103,43 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient();
 
-    // Salva ou atualiza a integração oficial
-    const { error } = await supabase
+    // 1. Verifica se já existe uma integração da Meta para esta loja
+    const { data: existing } = await supabase
       .from("integrations")
-      .upsert(
-        {
-          store_id: finalStoreId,
-          platform: "meta",
-          pixel_id: pixel_id || "1104875232197441",
-          access_token_enc: access_token,
-          status: "active",
-          config: {
-            profile_name: profile_name || "Perfil Principal",
-            ad_account_ids: Array.isArray(ad_account_ids) ? ad_account_ids : [ad_account_ids],
-            test_event_code: test_event_code || undefined,
-            updated_at: new Date().toISOString(),
-          },
-        },
-        { onConflict: "store_id,platform,pixel_id" }
-      );
+      .select("id")
+      .eq("store_id", finalStoreId)
+      .eq("platform", "meta")
+      .limit(1)
+      .maybeSingle();
 
-    if (error) throw error;
+    const integrationPayload = {
+      store_id: finalStoreId,
+      platform: "meta",
+      pixel_id: pixel_id || "1104875232197441",
+      access_token_enc: access_token,
+      status: "active",
+      config: {
+        profile_name: profile_name || "Perfil Principal",
+        ad_account_ids: Array.isArray(ad_account_ids) ? ad_account_ids : [ad_account_ids],
+        test_event_code: test_event_code || undefined,
+        updated_at: new Date().toISOString(),
+      },
+    };
+
+    if (existing) {
+      const { error: updateErr } = await supabase
+        .from("integrations")
+        .update(integrationPayload)
+        .eq("id", existing.id);
+
+      if (updateErr) throw updateErr;
+    } else {
+      const { error: insertErr } = await supabase
+        .from("integrations")
+        .insert(integrationPayload);
+
+      if (insertErr) throw insertErr;
+    }
 
     return NextResponse.json({
       ok: true,
