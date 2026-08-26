@@ -112,69 +112,54 @@ export default function IntegrationsPage() {
 
   useEffect(() => {
     async function loadConfig() {
+      setFetchingAccounts(true);
       try {
-        const supabase = createClient();
-        const { data: store } = await supabase
-          .from("stores")
-          .select("id, shop_domain")
-          .limit(1)
-          .maybeSingle();
-
-        if (store) {
-          setStoreId(store.id);
-          setShopDomain(store.shop_domain || "dckb5g-7d.myshopify.com");
-        }
-
-        const { data: integration } = await supabase
-          .from("integrations")
-          .select("*")
-          .eq("platform", "meta")
-          .maybeSingle();
-
-        if (integration) {
-          setSavedConfig(integration);
-          setPixelId(integration.pixel_id || "1104875232197441");
-          setProfileName(integration.config?.profile_name || "Perfil Principal");
-          setTestEventCode(integration.config?.test_event_code || "");
-          setMetaConnected(integration.status === "active");
-
-          if (integration.config?.ad_account_ids) {
-            setSelectedAccounts(
-              Array.isArray(integration.config.ad_account_ids)
-                ? integration.config.ad_account_ids
-                : [integration.config.ad_account_ids]
-            );
+        const res = await fetch("/api/v1/meta/accounts", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ok) {
+            setMetaConnected(Boolean(data.connected));
+            if (data.user?.name) setProfileName(data.user.name);
+            if (data.pixelId) setPixelId(data.pixelId);
+            if (Array.isArray(data.accounts)) {
+              setAdAccounts(data.accounts);
+            }
+            if (Array.isArray(data.selectedAccountIds) && data.selectedAccountIds.length > 0) {
+              setSelectedAccounts(data.selectedAccountIds);
+            }
           }
-
-          // Se já temos a integração salva, tenta buscar as contas
-          fetchAccountsFromApi(store?.id || "dckb5g-7d");
         }
       } catch (err) {
-        console.error("Erro ao carregar configurações:", err);
+        console.error("Erro ao carregar configurações da Meta:", err);
+      } finally {
+        setFetchingAccounts(false);
       }
     }
     loadConfig();
   }, []);
 
-  // Busca as contas de anúncio na Meta Graph API
+  // Busca as contas de anúncio na Meta Graph API manualmente
   const fetchAccountsFromApi = async (storeIdParam?: string, explicitToken?: string) => {
     setFetchingAccounts(true);
     setAccountFetchError("");
     try {
-      let url = `/api/v1/meta/accounts?store_id=${storeIdParam || storeId}`;
+      let url = `/api/v1/meta/accounts`;
       if (explicitToken) {
         url = `/api/v1/meta/accounts?token=${encodeURIComponent(explicitToken)}`;
       }
 
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: "no-store" });
       const data = await res.json();
 
       if (data.ok && Array.isArray(data.accounts)) {
         setAdAccounts(data.accounts);
+        setMetaConnected(true);
         if (data.user?.name) {
           setProfileName(data.user.name);
         }
-        if (selectedAccounts.length === 0 && data.accounts.length > 0) {
+        if (Array.isArray(data.selectedAccountIds) && data.selectedAccountIds.length > 0) {
+          setSelectedAccounts(data.selectedAccountIds);
+        } else if (selectedAccounts.length === 0 && data.accounts.length > 0) {
           setSelectedAccounts([data.accounts[0].id]);
         }
       } else {

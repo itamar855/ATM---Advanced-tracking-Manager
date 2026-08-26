@@ -81,9 +81,25 @@ export async function GET(request: NextRequest) {
       businessName: acc.business_name || null,
     }));
 
+    const supabase = createAdminClient();
+    const { data: currentIntegration } = await supabase
+      .from("integrations")
+      .select("*")
+      .eq("platform", "meta")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const selectedAccountIds = currentIntegration?.config?.ad_account_ids || [];
+    const savedPixelId = currentIntegration?.pixel_id || "1104875232197441";
+    const savedProfileName = currentIntegration?.config?.profile_name || userName;
+
     return NextResponse.json({
       ok: true,
-      user: { name: userName },
+      connected: currentIntegration?.status === "active" || !!accessToken,
+      user: { name: savedProfileName || userName },
+      pixelId: savedPixelId,
+      selectedAccountIds: Array.isArray(selectedAccountIds) ? selectedAccountIds : [selectedAccountIds],
       accounts: formattedAccounts,
     });
   } catch (error: any) {
