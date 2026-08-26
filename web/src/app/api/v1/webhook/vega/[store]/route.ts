@@ -64,7 +64,26 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ ok: true, message: `Evento [${eventType || status}] ignorado para CAPI` }, { status: 200 });
     }
 
-    const orderId = String(payload.order_id || payload.orderId || payload.id || payload.code || payload.cart_id || "");
+    // Extração do identificador do pedido/transação/carrinho (com fallbacks para simulação do Vega)
+    let orderId = String(
+      payload.order_id ||
+      payload.orderId ||
+      payload.id ||
+      payload.code ||
+      payload.cart_id ||
+      payload.transaction_id ||
+      payload.checkout_id ||
+      payload.checkout?.id ||
+      payload.checkout?.code ||
+      payload.data?.id ||
+      ""
+    );
+
+    // Se for modo de teste/simulação do Vega e não veio ID explícito
+    if (!orderId && (payload.test_mode || payload.is_test)) {
+      orderId = "VEGA_TEST_" + Date.now();
+    }
+
     if (!orderId) {
       return NextResponse.json({ ok: false, error: "Identificador do pedido/carrinho ausente" }, { status: 400 });
     }
