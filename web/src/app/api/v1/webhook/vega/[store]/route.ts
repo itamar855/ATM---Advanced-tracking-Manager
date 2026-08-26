@@ -240,12 +240,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const latencyMs = Date.now() - startTime;
     const eventStatus = metaResponse.ok ? "accepted" : "rejected";
 
+    const paymentMethodDetected = String(payload.payment_method || payload.gateway || payload.payment_type || (orderId.toLowerCase().includes("pix") ? "Pix" : "Cartão / Gateway"));
+
     await updateEventResult(
       storeId || "dckb5g-7d",
       `${metaEventName}_${orderId}`,
       "server",
       eventStatus,
-      metaResponse.response || null,
+      {
+        ...(metaResponse.response || {}),
+        custom_data: {
+          value: orderValue,
+          currency: payload.currency || "BRL",
+        },
+        order_details: {
+          value: orderValue,
+          currency: payload.currency || "BRL",
+          customer_name: `${normalizedOrder.customer.firstName} ${normalizedOrder.customer.lastName}`.trim() || "Cliente Identificado",
+          customer_email: normalizedOrder.customer.email || "",
+          customer_phone: normalizedOrder.customer.phone || "",
+          payment_method: paymentMethodDetected,
+          tracking_params: normalizedOrder.trackingParams,
+        },
+      },
       latencyMs,
       Object.keys(metaEvent.user_data || {}),
       metaEventName,
@@ -256,6 +273,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       ok: metaResponse.ok,
       event_name: metaEventName,
       order_id: orderId,
+      value: orderValue,
       meta_response: metaResponse,
     });
   } catch (error: any) {

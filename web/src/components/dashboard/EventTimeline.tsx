@@ -9,7 +9,9 @@ import {
   ShoppingBag,
   X,
   FileCode,
-  Network
+  Network,
+  Filter,
+  DollarSign
 } from "lucide-react";
 import { useState } from "react";
 
@@ -40,252 +42,240 @@ interface EventTimelineProps {
 
 export function EventTimeline({ events }: EventTimelineProps) {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [activeFilter, setActiveFilter] = useState<string>("all");
+  const [visibleLimit, setVisibleLimit] = useState<number>(300);
+
+  const filteredEvents = events.filter((ev) => {
+    if (activeFilter === "all") return true;
+    return ev.eventName.toLowerCase() === activeFilter.toLowerCase();
+  });
+
+  const displayedEvents = filteredEvents.slice(0, visibleLimit);
 
   return (
     <div className="relative">
       <div className="glass-card">
         <div className="px-5 py-4 border-b border-[var(--color-border-default)]">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-                Eventos Recentes
+                Eventos Recentes ({events.length})
               </h3>
               <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                Últimos eventos enviados à Meta (clique em um evento para ver detalhes)
+                Exibindo os últimos 300 eventos despachados para a Meta Conversions API (CAPI)
               </p>
             </div>
-            <button className="btn-secondary py-1.5 px-3 text-xs">
-              Ver todos
-            </button>
+
+            {/* Filtros Rápidos */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={() => setActiveFilter("all")}
+                className={cn(
+                  "px-2.5 py-1 text-xs rounded-lg font-medium transition-all",
+                  activeFilter === "all"
+                    ? "bg-blue-500 text-white font-bold"
+                    : "bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border-subtle)]"
+                )}
+              >
+                Todos ({events.length})
+              </button>
+              <button
+                onClick={() => setActiveFilter("Purchase")}
+                className={cn(
+                  "px-2.5 py-1 text-xs rounded-lg font-medium transition-all flex items-center gap-1",
+                  activeFilter === "Purchase"
+                    ? "bg-emerald-500 text-white font-bold"
+                    : "bg-[var(--color-bg-surface)] text-emerald-400 hover:bg-[var(--color-border-subtle)]"
+                )}
+              >
+                💰 Compras ({events.filter((e) => e.eventName === "Purchase").length})
+              </button>
+              <button
+                onClick={() => setActiveFilter("AddToCart")}
+                className={cn(
+                  "px-2.5 py-1 text-xs rounded-lg font-medium transition-all",
+                  activeFilter === "AddToCart"
+                    ? "bg-purple-500 text-white font-bold"
+                    : "bg-[var(--color-bg-surface)] text-purple-400 hover:bg-[var(--color-border-subtle)]"
+                )}
+              >
+                🛒 Carrinhos ({events.filter((e) => e.eventName === "AddToCart").length})
+              </button>
+              <button
+                onClick={() => setActiveFilter("PageView")}
+                className={cn(
+                  "px-2.5 py-1 text-xs rounded-lg font-medium transition-all",
+                  activeFilter === "PageView"
+                    ? "bg-cyan-500 text-white font-bold"
+                    : "bg-[var(--color-bg-surface)] text-cyan-400 hover:bg-[var(--color-border-subtle)]"
+                )}
+              >
+                👁️ PageViews ({events.filter((e) => e.eventName === "PageView").length})
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="divide-y divide-[var(--color-border-subtle)]">
-          {events.map((event) => (
-            <div
-              key={event.id}
-              onClick={() => setSelectedEvent(event)}
-              className="px-5 py-3.5 hover:bg-[var(--color-bg-card-hover)] transition-colors cursor-pointer group"
-            >
-              <div className="flex items-center gap-4">
-                {/* Status Icon */}
-                <div
-                  className={cn(
-                    "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
-                    event.status === "accepted" &&
-                      "bg-[var(--color-success-500)]/15",
-                    event.status === "rejected" &&
-                      "bg-[var(--color-danger-500)]/15",
-                    event.status === "pending" &&
-                      "bg-[var(--color-warning-500)]/15",
-                    event.status === "deduped" &&
-                      "bg-[var(--color-brand-400)]/15"
-                  )}
-                >
-                  {event.status === "accepted" && (
-                    <CheckCircle2 size={16} className="text-[var(--color-success-400)]" />
-                  )}
-                  {event.status === "rejected" && (
-                    <XCircle size={16} className="text-[var(--color-danger-400)]" />
-                  )}
-                  {event.status === "pending" && (
-                    <Clock size={16} className="text-[var(--color-warning-400)]" />
-                  )}
-                  {event.status === "deduped" && (
-                    <ShoppingBag size={16} className="text-[var(--color-brand-300)]" />
-                  )}
-                </div>
-
-                {/* Event Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-[var(--color-text-primary)]">
-                      {event.eventName}
-                    </span>
-                    <span
-                      className={cn(
-                        "badge text-[9px] px-1.5 py-0",
-                        event.source === "server" ? "badge-info" : "badge-warning"
-                      )}
-                    >
-                      {event.source === "server" ? "Server" : "Browser"}
-                    </span>
-                    <span className="text-xs text-[var(--color-text-muted)]">
-                      {event.orderId}
-                    </span>
+        <div className="divide-y divide-[var(--color-border-subtle)] max-h-[650px] overflow-y-auto pr-1">
+          {displayedEvents.map((event) => {
+            const isPurchase = event.eventName === "Purchase";
+            return (
+              <div
+                key={event.id}
+                onClick={() => setSelectedEvent(event)}
+                className={cn(
+                  "px-5 py-3.5 hover:bg-[var(--color-bg-card-hover)] transition-colors cursor-pointer group",
+                  isPurchase && "bg-emerald-500/5 hover:bg-emerald-500/10"
+                )}
+              >
+                <div className="flex items-center gap-4">
+                  {/* Status Icon */}
+                  <div
+                    className={cn(
+                      "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                      isPurchase
+                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                        : event.status === "accepted"
+                        ? "bg-emerald-500/10 text-emerald-400"
+                        : "bg-red-500/10 text-red-400"
+                    )}
+                  >
+                    <CheckCircle2 size={16} />
                   </div>
 
-                  {/* Signal Dots */}
-                  <div className="flex items-center gap-1 mt-1.5">
-                    <SignalDot active={event.signals.fbp} label="fbp" />
-                    <SignalDot active={event.signals.fbc} label="fbc" />
-                    <SignalDot active={event.signals.ip} label="IP" />
-                    <SignalDot active={event.signals.ua} label="UA" />
-                    <SignalDot active={event.signals.email} label="em" />
-                    <SignalDot active={event.signals.phone} label="ph" />
-                    <SignalDot active={event.signals.externalId} label="ext" />
-                    <SignalDot active={event.signals.address} label="addr" />
+                  {/* Event Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={cn("text-xs font-bold", isPurchase ? "text-emerald-400 text-sm" : "text-[var(--color-text-primary)]")}>
+                        {isPurchase ? "💰 Purchase (Venda Paga)" : event.eventName}
+                      </span>
+                      <span
+                        className={cn(
+                          "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase",
+                          event.source === "server"
+                            ? "bg-purple-500/20 text-purple-300"
+                            : "bg-blue-500/20 text-blue-300"
+                        )}
+                      >
+                        {event.source}
+                      </span>
+                      <span className="text-[11px] text-[var(--color-text-muted)] font-mono">
+                        {event.orderId}
+                      </span>
+                    </div>
+
+                    {/* Sinais em badges */}
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      <span className={cn("text-[9px] font-mono", event.signals.fbp ? "text-emerald-400 font-bold" : "text-zinc-600")}>
+                        •fbp
+                      </span>
+                      <span className={cn("text-[9px] font-mono", event.signals.fbc ? "text-emerald-400 font-bold" : "text-zinc-600")}>
+                        •fbc
+                      </span>
+                      <span className={cn("text-[9px] font-mono", event.signals.ip ? "text-emerald-400 font-bold" : "text-zinc-600")}>
+                        •IP
+                      </span>
+                      <span className={cn("text-[9px] font-mono", event.signals.ua ? "text-emerald-400 font-bold" : "text-zinc-600")}>
+                        •UA
+                      </span>
+                      <span className={cn("text-[9px] font-mono", event.signals.email ? "text-emerald-400 font-bold" : "text-zinc-600")}>
+                        •em
+                      </span>
+                      <span className={cn("text-[9px] font-mono", event.signals.phone ? "text-emerald-400 font-bold" : "text-zinc-600")}>
+                        •ph
+                      </span>
+                      <span className={cn("text-[9px] font-mono", event.signals.externalId ? "text-emerald-400 font-bold" : "text-zinc-600")}>
+                        •ext
+                      </span>
+                      <span className={cn("text-[9px] font-mono", event.signals.address ? "text-emerald-400 font-bold" : "text-zinc-600")}>
+                        •addr
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Valor e Score */}
+                  <div className="text-right shrink-0">
+                    <div className={cn("text-xs font-black", isPurchase ? "text-emerald-400 text-sm" : "text-[var(--color-text-primary)]")}>
+                      {event.value > 0 ? `R$ ${event.value.toFixed(2)}` : "R$ 0,00"}
+                    </div>
+                    <div className="text-[10px] text-emerald-400 font-bold">
+                      {event.healthScore} <span className="text-[var(--color-text-muted)] font-normal">/ 100</span>
+                    </div>
                   </div>
                 </div>
-
-                {/* Value & Score */}
-                <div className="text-right shrink-0">
-                  <p className="text-sm font-semibold text-[var(--color-text-primary)]">
-                    R$ {event.value.toLocaleString("pt-BR")}
-                  </p>
-                  <div className="flex items-center gap-1 justify-end mt-1">
-                    <span
-                      className={cn(
-                        "text-[11px] font-bold",
-                        event.healthScore >= 85
-                          ? "text-[var(--color-success-400)]"
-                          : event.healthScore >= 60
-                          ? "text-[var(--color-warning-400)]"
-                          : "text-[var(--color-danger-400)]"
-                      )}
-                    >
-                      {event.healthScore}
-                    </span>
-                    <span className="text-[10px] text-[var(--color-text-muted)]">
-                      / 100
-                    </span>
-                  </div>
-                </div>
-
-                {/* Arrow */}
-                <ArrowRight
-                  size={14}
-                  className="text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                />
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
-      {/* Slide-over Modal para Detalhes do Evento (Sem background escuro completo e sem travar a navegação lateral) */}
+      {/* Modal Drawer Lateral de Detalhes do Evento */}
       {selectedEvent && (
-        <div className="fixed top-16 right-0 bottom-0 w-80 bg-[var(--color-bg-card)] border-l border-[var(--color-border-default)] z-40 flex flex-col justify-between shadow-xl animate-in slide-in-from-right duration-200">
-          {/* Header */}
-          <div className="px-4 py-4 border-b border-[var(--color-border-default)] flex items-center justify-between">
-            <div>
-              <h3 className="text-xs font-bold text-[var(--color-text-primary)] flex items-center gap-1.5">
-                <FileCode size={14} className="text-[var(--color-brand-300)]" />
-                Detalhes do Evento
-              </h3>
-              <p className="text-[9px] text-[var(--color-text-muted)] mt-0.5 font-mono">
-                ID: {selectedEvent.id}
-              </p>
-            </div>
+        <div className="fixed inset-y-0 right-0 w-96 bg-[#0E0F14] border-l border-[var(--color-border-default)] shadow-2xl p-6 z-50 overflow-y-auto space-y-6 fade-in">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <FileCode size={16} className="text-blue-400" />
+              Detalhes do Evento
+            </h3>
             <button
               onClick={() => setSelectedEvent(null)}
-              className="p-1 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800"
             >
-              <X size={14} />
+              <X size={16} />
             </button>
           </div>
 
-          {/* Body */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* Event Overview Card */}
-            <div className="p-3 rounded-lg bg-[var(--color-bg-primary)]/80 border border-[var(--color-border-subtle)] space-y-2.5">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-[var(--color-text-muted)]">Nome</span>
-                <span className="font-bold text-[var(--color-text-primary)]">{selectedEvent.eventName}</span>
-              </div>
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-[var(--color-text-muted)]">Origem</span>
-                <span className="badge badge-info text-[9px] px-1 py-0">{selectedEvent.source}</span>
-              </div>
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-[var(--color-text-muted)]">Status</span>
-                <span className="badge badge-success text-[9px] px-1 py-0">{selectedEvent.status}</span>
-              </div>
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-[var(--color-text-muted)]">Pedido ID</span>
-                <span className="font-semibold text-[var(--color-text-primary)] text-[10px] font-mono">{selectedEvent.orderId}</span>
-              </div>
+          <div className="space-y-3 text-xs">
+            <div className="flex justify-between py-1 border-b border-zinc-800">
+              <span className="text-zinc-400">Nome</span>
+              <span className="font-bold text-white">{selectedEvent.eventName}</span>
             </div>
-
-            {/* Health Score */}
-            <div className="space-y-2">
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
-                Qualidade de Dados (EMQ)
-              </h4>
-              <div className="p-3 rounded-lg bg-[var(--color-bg-primary)]/80 border border-[var(--color-border-subtle)] flex items-center justify-between">
-                <span className="text-[11px] text-[var(--color-text-secondary)]">Score</span>
-                <span className="text-base font-black text-emerald-400">{selectedEvent.healthScore} / 100</span>
-              </div>
+            <div className="flex justify-between py-1 border-b border-zinc-800">
+              <span className="text-zinc-400">Origem</span>
+              <span className="font-bold text-blue-400">{selectedEvent.source}</span>
             </div>
-
-            {/* Payload Signals */}
-            <div className="space-y-2">
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] flex items-center gap-1">
-                <Network size={12} className="text-[var(--color-brand-300)]" />
-                Sinais Enviados
-              </h4>
-              <div className="grid grid-cols-1 gap-1.5">
-                <SignalInfoCard label="fbp (Browser ID)" active={selectedEvent.signals.fbp} />
-                <SignalInfoCard label="fbc (Click ID)" active={selectedEvent.signals.fbc} />
-                <SignalInfoCard label="Endereço IP" active={selectedEvent.signals.ip} />
-                <SignalInfoCard label="User Agent" active={selectedEvent.signals.ua} />
-                <SignalInfoCard label="E-mail Hasheado" active={selectedEvent.signals.email} />
-                <SignalInfoCard label="Telefone Hasheado" active={selectedEvent.signals.phone} />
-                <SignalInfoCard label="External ID Hasheado" active={selectedEvent.signals.externalId} />
-                <SignalInfoCard label="Localidade / Endereço" active={selectedEvent.signals.address} />
-              </div>
+            <div className="flex justify-between py-1 border-b border-zinc-800">
+              <span className="text-zinc-400">Status</span>
+              <span className="font-bold text-emerald-400">{selectedEvent.status}</span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-zinc-800">
+              <span className="text-zinc-400">Pedido ID</span>
+              <span className="font-mono text-zinc-300">{selectedEvent.orderId}</span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-zinc-800">
+              <span className="text-zinc-400">Valor</span>
+              <span className="font-bold text-emerald-400">R$ {selectedEvent.value.toFixed(2)}</span>
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="px-4 py-3.5 border-t border-[var(--color-border-default)]">
-            <button
-              onClick={() => setSelectedEvent(null)}
-              className="btn-secondary w-full py-1.5 text-xs font-semibold"
-            >
-              Fechar Painel
-            </button>
+          <div className="space-y-2">
+            <span className="text-xs font-bold text-zinc-300 block">Sinais Enviados à Meta (EMQ):</span>
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              {Object.entries(selectedEvent.signals).map(([sig, active]) => (
+                <div
+                  key={sig}
+                  className={cn(
+                    "p-2 rounded border flex items-center justify-between",
+                    active
+                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300 font-bold"
+                      : "bg-zinc-900 border-zinc-800 text-zinc-600"
+                  )}
+                >
+                  <span className="capitalize">{sig}</span>
+                  <span>{active ? "Disponível" : "Ausente"}</span>
+                </div>
+              ))}
+            </div>
           </div>
+
+          <button
+            onClick={() => setSelectedEvent(null)}
+            className="w-full py-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs"
+          >
+            Fechar Painel
+          </button>
         </div>
       )}
-    </div>
-  );
-}
-
-function SignalDot({ active, label }: { active: boolean; label: string }) {
-  return (
-    <div
-      className={cn(
-        "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium",
-        active
-          ? "bg-[var(--color-success-500)]/10 text-[var(--color-success-400)]"
-          : "bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)]"
-      )}
-      title={`${label}: ${active ? "presente" : "ausente"}`}
-    >
-      <span
-        className={cn(
-          "w-1 h-1 rounded-full",
-          active ? "bg-[var(--color-success-400)]" : "bg-[var(--color-text-muted)]"
-        )}
-      />
-      {label}
-    </div>
-  );
-}
-
-function SignalInfoCard({ label, active }: { label: string; active: boolean }) {
-  return (
-    <div className={cn(
-      "px-2.5 py-1.5 rounded border text-[10px] flex items-center justify-between",
-      active
-        ? "bg-[var(--color-success-500)]/5 border-[var(--color-success-500)]/15 text-[var(--color-success-400)]"
-        : "bg-[var(--color-bg-surface)] border-[var(--color-border-subtle)] text-[var(--color-text-muted)]"
-    )}>
-      <span className="font-medium">{label}</span>
-      <span className="font-bold text-[9px]">
-        {active ? "Disponível" : "Ausente"}
-      </span>
     </div>
   );
 }
