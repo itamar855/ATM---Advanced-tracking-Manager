@@ -11,14 +11,12 @@ export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://trackingatm.vercel.app";
   const redirectUri = `${appUrl.replace(/\/$/, "")}/api/auth/facebook/callback`;
 
-  // Permissões completas para ler e gerenciar campanhas e insights
+  // Permissões oficiais da Meta para leitura e gestão de contas e anúncios
   const scopes = [
     "ads_read",
     "ads_management",
-    "read_insights",
     "business_management",
-    "public_profile",
-    "email"
+    "public_profile"
   ].join(",");
 
   const state = Math.random().toString(36).substring(2, 15);
