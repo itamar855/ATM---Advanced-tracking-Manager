@@ -236,11 +236,26 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const metaResponse = await sendMetaCAPIEvent(capiConfig, metaEvent);
     const latencyMs = Date.now() - startTime;
+    const eventStatus = metaResponse.ok ? "accepted" : "rejected";
 
-    if (metaEventName === "Purchase") {
-      const dbStatus = metaResponse.ok ? "accepted" : "rejected";
-      const errors = metaResponse.ok ? null : { metaError: metaResponse.error };
-      await updateEventStatus(storeId, orderId, dbStatus, errors, latencyMs);
+    try {
+      await supabase
+        .from("events")
+        .insert({
+          store_id: storeId || "dckb5g-7d",
+          order_id: orderId,
+          event_name: metaEventName,
+          event_id: `${metaEventName}_${orderId}`,
+          source: "server",
+          status: eventStatus,
+          user_data_keys: Object.keys(metaEvent.user_data || {}),
+          health_score: 95,
+          meta_response: metaResponse.response || null,
+          latency_ms: latencyMs,
+          sent_at: new Date().toISOString(),
+        });
+    } catch (e) {
+      console.warn("[Vega Webhook DB] Falha ao salvar evento no banco:", e);
     }
 
     return NextResponse.json({

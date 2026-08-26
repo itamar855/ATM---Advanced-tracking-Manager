@@ -168,21 +168,18 @@ export async function POST(request: NextRequest) {
     try {
       await supabase
         .from("events")
-        .upsert(
-          {
-            store_id: store_id.length === 36 ? store_id : undefined,
-            event_name,
-            event_id,
-            source: "browser",
-            status,
-            user_data_keys: userDataKeys,
-            health_score: 95,
-            meta_response: capiResult.response || null,
-            latency_ms: latencyMs,
-            sent_at: new Date().toISOString(),
-          },
-          { onConflict: "store_id,event_id,source" }
-        );
+        .insert({
+          store_id: store_id || "dckb5g-7d",
+          event_name,
+          event_id,
+          source: "browser",
+          status,
+          user_data_keys: userDataKeys,
+          health_score: 95,
+          meta_response: capiResult.response || null,
+          latency_ms: latencyMs,
+          sent_at: new Date().toISOString(),
+        });
     } catch (e) {
       console.warn("[Browser Events DB] Falha ao salvar no banco:", e);
     }
