@@ -271,15 +271,29 @@ export default function IntegrationsPage() {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => fetchAccountsFromApi(undefined, accessToken || undefined)}
-            disabled={fetchingAccounts}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-bg-surface)] hover:bg-[var(--color-border-subtle)] text-xs text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] transition-all font-medium"
-          >
-            <RefreshCw size={12} className={fetchingAccounts ? "animate-spin text-blue-400" : ""} />
-            {fetchingAccounts ? "Atualizando Contas..." : "Recarregar Contas"}
-          </button>
+          <div className="flex items-center gap-2">
+            <a
+              href="/api/auth/facebook"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-bold transition-all shadow-md"
+            >
+              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+              </svg>
+              <span>Conectar com Facebook (1-Clique)</span>
+            </a>
+
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(`${host}/api/auth/facebook`);
+                alert("Link de autorização copiado! Cole no navegador onde seu Facebook de anúncios está aberto.");
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--color-bg-surface)] hover:bg-[var(--color-border-subtle)] text-xs text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] transition-all font-medium"
+            >
+              <Copy size={13} />
+              <span>Copiar Link</span>
+            </button>
+          </div>
         </div>
 
         <form onSubmit={handleSaveIntegration} className="space-y-5">
