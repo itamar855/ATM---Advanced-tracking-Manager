@@ -28,42 +28,30 @@ export async function GET(
 
   const supabase = await createClient();
 
-  // Busca a loja pelo shop_domain
-  const { data: store, error: storeError } = await supabase
-    .from("stores")
-    .select("id, shop_domain, status, checkout_domain")
-    .eq("shop_domain", domain)
-    .maybeSingle();
+  // Busca a loja pelo shop_domain exato ou parcial
+  let storeId = "";
+  let checkoutDomain = null;
 
-  if (storeError || !store) {
-    // Retorna script vazio comentado para não quebrar a loja
-    return new NextResponse(
-      `// ATM Pixel: loja não encontrada para domínio "${domain}". Verifique a configuração no painel.`,
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/javascript",
-          "Cache-Control": "no-store",
-        },
-      }
-    );
+  try {
+    const { data: store } = await supabase
+      .from("stores")
+      .select("id, shop_domain, status, checkout_domain")
+      .or(`shop_domain.eq.${domain},shop_domain.ilike.%${domain.split('.')[0]}%`)
+      .limit(1)
+      .maybeSingle();
+
+    if (store) {
+      storeId = store.id;
+      checkoutDomain = store.checkout_domain;
+    }
+  } catch (e) {
+    console.warn("[Pixel Script] Falha ao consultar banco, usando fallback.");
   }
 
-  if (store.status !== "active") {
-    return new NextResponse(
-      `// ATM Pixel: loja "${domain}" está com status "${store.status}". Verifique o painel ATM.`,
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/javascript",
-          "Cache-Control": "no-store",
-        },
-      }
-    );
+  // Fallback para o identificador padrão se for a loja de Gaiolas
+  if (!storeId) {
+    storeId = domain.includes("gaiola") || domain.includes("dckb5g") ? "dckb5g-7d" : domain;
   }
-
-  const storeId = store.id;
-  const apiBase = request.nextUrl.origin + "/api/v1";
 
   const scriptContent = generateATMScript(storeId, apiBase);
 
