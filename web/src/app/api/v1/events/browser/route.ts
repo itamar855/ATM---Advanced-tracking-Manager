@@ -165,8 +165,9 @@ export async function POST(request: NextRequest) {
     const status = capiResult.ok ? "accepted" : "rejected";
     const userDataKeys = getUserDataKeys(metaEvent.user_data);
 
+    let dbErrorMsg = null;
     try {
-      await supabase
+      const { error: dbErr } = await supabase
         .from("events")
         .insert({
           store_id: store_id || "dckb5g-7d",
@@ -180,13 +181,14 @@ export async function POST(request: NextRequest) {
           latency_ms: latencyMs,
           sent_at: new Date().toISOString(),
         });
-    } catch (e) {
-      console.warn("[Browser Events DB] Falha ao salvar no banco:", e);
+      if (dbErr) dbErrorMsg = dbErr.message;
+    } catch (e: any) {
+      dbErrorMsg = e.message;
     }
 
     if (!capiResult.ok) {
       return NextResponse.json(
-        { ok: false, error: capiResult.error },
+        { ok: false, error: capiResult.error, dbError: dbErrorMsg },
         { status: 400 }
       );
     }
