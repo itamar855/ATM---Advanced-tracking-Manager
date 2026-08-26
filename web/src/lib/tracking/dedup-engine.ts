@@ -1,4 +1,4 @@
-import { createClient } from "../supabase/server";
+import { createAdminClient } from "../supabase/server";
 
 /**
  * Motor universal de idempotência/deduplicação do ATM.
@@ -21,7 +21,7 @@ export async function reserveEvent(
   source: EventSource = "server"
 ): Promise<{ acquired: boolean; state?: "sent" | "processing" }> {
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // Valida se storeId é um UUID válido de 36 caracteres
     let validStoreId = storeId;
@@ -107,7 +107,7 @@ export async function updateEventResult(
   metaResponse?: any,
   latencyMs?: number
 ): Promise<void> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   try {
     await supabase
