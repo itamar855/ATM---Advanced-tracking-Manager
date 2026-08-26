@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 
 export async function POST(request: NextRequest) {
   try {
@@ -51,8 +51,8 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    // Persistir/enriquecer a sessão no Supabase
-    const supabase = await createClient();
+    // Persistir/enriquecer a sessão no Supabase via Admin Client
+    const supabase = createAdminClient();
     const { error: upsertError } = await supabase
       .from("sessions")
       .upsert(sessionData, {

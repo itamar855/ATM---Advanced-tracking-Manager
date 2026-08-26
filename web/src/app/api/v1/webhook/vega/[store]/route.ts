@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { reservePurchase, updateEventStatus } from "@/lib/tracking/dedup-engine";
+import { createAdminClient } from "@/lib/supabase/server";
+import { reservePurchase, updateEventResult } from "@/lib/tracking/dedup-engine";
 import { buildMetaPurchaseEvent } from "@/lib/tracking/event-builder";
 import { sendMetaCAPIEvent } from "@/lib/meta/capi";
 import { decrypt } from "@/lib/encryption";
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // 2. Busca integração ativa da Meta CAPI (com fallback resiliente)
     let pixelId = "";
@@ -192,11 +192,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         paid: payload.paid_at || payload.approved_at || new Date().toISOString(),
       },
       trackingParams: {
-        utm_source: utmSource,
-        utm_campaign: utmCampaign,
-        utm_medium: utmMedium,
-        utm_content: utmContent,
-        utm_term: utmTerm,
+        utm_source: trackingParams.utm_source || payload.utm_source || "",
+        utm_campaign: trackingParams.utm_campaign || payload.utm_campaign || "",
+        utm_medium: trackingParams.utm_medium || payload.utm_medium || "",
+        utm_content: trackingParams.utm_content || payload.utm_content || "",
+        utm_term: trackingParams.utm_term || payload.utm_term || "",
         track_id: trackId,
       },
     };
@@ -238,25 +238,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const latencyMs = Date.now() - startTime;
     const eventStatus = metaResponse.ok ? "accepted" : "rejected";
 
-    try {
-      await supabase
-        .from("events")
-        .insert({
-          store_id: storeId || "dckb5g-7d",
-          order_id: orderId,
-          event_name: metaEventName,
-          event_id: `${metaEventName}_${orderId}`,
-          source: "server",
-          status: eventStatus,
-          user_data_keys: Object.keys(metaEvent.user_data || {}),
-          health_score: 95,
-          meta_response: metaResponse.response || null,
-          latency_ms: latencyMs,
-          sent_at: new Date().toISOString(),
-        });
-    } catch (e) {
-      console.warn("[Vega Webhook DB] Falha ao salvar evento no banco:", e);
-    }
+    await updateEventResult(
+      storeId || "dckb5g-7d",
+      `${metaEventName}_${orderId}`,
+      "server",
+      eventStatus,
+      metaResponse.response || null,
+      latencyMs,
+      Object.keys(metaEvent.user_data || {}),
+      metaEventName,
+      orderId
+    );
 
     return NextResponse.json({
       ok: metaResponse.ok,
