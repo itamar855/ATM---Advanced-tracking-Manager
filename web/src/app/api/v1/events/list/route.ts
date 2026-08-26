@@ -1,28 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rridxhzbkitgcodzyctu.supabase.co";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyaWR4aHpia2l0Z2NvZHp5Y3R1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzcxNTUzMCwiZXhwIjoyMTAzMjkxNTMwfQ.gGxjPtKXABAYM4r6RsHcebVwwHsdpMD-RyRnxJn3QxE";
+
 /**
- * GET /api/v1/events/list?store_id=...
- * Retorna os últimos eventos processados da loja para exibição no Event Explorer.
+ * GET /api/v1/events/list
+ * Retorna os eventos salvos no banco de dados para exibição no Event Explorer.
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createAdminClient();
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/events?select=*&order=created_at.desc&limit=50`, {
+      method: "GET",
+      headers: {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
 
-    // Busca os últimos 50 eventos ordenados por data
-    const { data: events, error } = await supabase
-      .from("events")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(50);
-
-    if (error) {
-      return NextResponse.json({ ok: false, dbError: error.message, events: [] }, { status: 200 });
+    if (!res.ok) {
+      const errText = await res.text();
+      return NextResponse.json({ ok: false, error: errText, events: [] }, { status: 200 });
     }
 
-    const formattedEvents = (events || []).map((e) => ({
+    const events = await res.json();
+
+    const formattedEvents = (events || []).map((e: any) => ({
       id: e.id,
       orderId: e.order_id || e.event_id?.slice(-8) || "S/I",
       eventName: e.event_name,

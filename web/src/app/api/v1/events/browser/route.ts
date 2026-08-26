@@ -5,6 +5,9 @@ import { sendMetaCAPIEvent } from "@/lib/meta/capi";
 import { reserveEvent, updateEventResult } from "@/lib/tracking/dedup-engine";
 import { decrypt } from "@/lib/encryption";
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rridxhzbkitgcodzyctu.supabase.co";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyaWR4aHpia2l0Z2NvZHp5Y3R1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzcxNTUzMCwiZXhwIjoyMTAzMjkxNTMwfQ.gGxjPtKXABAYM4r6RsHcebVwwHsdpMD-RyRnxJn3QxE";
+
 /**
  * POST /api/v1/events/browser
  *
@@ -167,25 +170,34 @@ export async function POST(request: NextRequest) {
 
     let dbErrorMsg = null;
     try {
-      const { error: dbErr } = await supabase
-        .from("events")
-        .upsert(
-          {
-            store_id: store_id || "dckb5g-7d",
-            event_name,
-            event_id,
-            source: "browser",
-            status,
-            user_data_keys: userDataKeys,
-            health_score: 95,
-            meta_response: capiResult.response || null,
-            latency_ms: latencyMs,
-            sent_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "store_id,event_id,source" }
-        );
-      if (dbErr) dbErrorMsg = dbErr.message;
+      const eventPayload = {
+        store_id: store_id || "dckb5g-7d",
+        event_name,
+        event_id,
+        source: "browser",
+        status,
+        user_data_keys: userDataKeys,
+        health_score: 95,
+        meta_response: capiResult.response || null,
+        latency_ms: latencyMs,
+        sent_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const dbRes = await fetch(`${SUPABASE_URL}/rest/v1/events`, {
+        method: "POST",
+        headers: {
+          "apikey": SUPABASE_SERVICE_ROLE_KEY,
+          "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+          "Prefer": "resolution=merge-duplicates",
+        },
+        body: JSON.stringify(eventPayload),
+      });
+
+      if (!dbRes.ok) {
+        dbErrorMsg = await dbRes.text();
+      }
     } catch (e: any) {
       dbErrorMsg = e.message;
     }
