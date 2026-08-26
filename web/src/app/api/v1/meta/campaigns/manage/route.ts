@@ -1,0 +1,103 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/server";
+import { decrypt } from "@/lib/encryption";
+import { getUsdBrlRate } from "@/lib/currency";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * POST /api/v1/meta/campaigns/manage
+ * Permite controle total de campanhas, conjuntos e anúncios:
+ * - status: 'ACTIVE' | 'PAUSED'
+ * - budget: altera orçamento diário
+ * - duplicate: duplica o objeto
+ * - delete: remove o objeto
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id, level, action, value, accountCurrency } = body as {
+      id: string;
+      level: "campaign" | "adset" | "ad";
+      action: "status" | "budget" | "duplicate" | "delete";
+      value?: any;
+      accountCurrency?: string;
+    };
+
+    if (!id || !action) {
+      return NextResponse.json({ ok: false, error: "ID e action são obrigatórios" }, { status: 400 });
+    }
+
+    const supabase = createAdminClient();
+
+    // 1. Busca token da Meta
+    const { data: integration } = await supabase
+      .from("integrations")
+      .select("*")
+      .eq("platform", "meta")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let token = integration?.access_token_enc || process.env.META_ACCESS_TOKEN || "";
+    if (token && !token.startsWith("EAA")) {
+      try {
+        token = decrypt(token);
+      } catch {}
+    }
+
+    if (!token) {
+      return NextResponse.json({ ok: false, error: "Token da Meta não encontrado" }, { status: 400 });
+    }
+
+    const curr = (accountCurrency || "USD").toUpperCase();
+    const usdBrlRate = await getUsdBrlRate();
+
+    let graphUrl = `https://graph.facebook.com/v23.0/${id}`;
+    let method = "POST";
+    let payload: Record<string, any> = {};
+
+    if (action === "status") {
+      payload = { status: value === "active" || value === "ACTIVE" ? "ACTIVE" : "PAUSED" };
+    } else if (action === "budget") {
+      let budgetAmount = Number(value || 0);
+      // Se a conta for USD e o usuário digitou em BRL, converte para USD
+      if (curr === "USD") {
+        budgetAmount = budgetAmount / usdBrlRate;
+      }
+      const budgetCents = Math.round(budgetAmount * 100);
+      payload = { daily_budget: budgetCents };
+    } else if (action === "duplicate") {
+      graphUrl = `https://graph.facebook.com/v23.0/${id}/copies`;
+      payload = { status_option: "PAUSED" };
+    } else if (action === "delete") {
+      method = "DELETE";
+    }
+
+    const metaRes = await fetch(
+      `${graphUrl}?access_token=${token}`,
+      {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: method === "POST" ? JSON.stringify(payload) : undefined,
+      }
+    );
+
+    const resData = await metaRes.json();
+
+    if (!metaRes.ok) {
+      console.error("[Meta Manage API Error]:", resData);
+      return NextResponse.json({ ok: false, error: resData.error?.message || "Erro na Meta API" }, { status: 400 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      action,
+      id,
+      meta_response: resData,
+    });
+  } catch (error: any) {
+    console.error("[Meta Campaign Manage Route Error]:", error);
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  }
+}

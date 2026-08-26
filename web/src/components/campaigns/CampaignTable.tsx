@@ -8,13 +8,11 @@ import {
   Pause,
   Trash2,
   Copy,
-  Edit2,
   DollarSign,
   ChevronDown,
   ChevronRight,
   Sparkles,
   Layers,
-  Sparkle,
   Radio,
   FileText
 } from "lucide-react";
@@ -65,10 +63,11 @@ export interface Campaign {
 
 interface CampaignTableProps {
   campaigns: Campaign[];
+  accountCurrency?: string;
   onRefresh?: () => void;
 }
 
-export function CampaignTable({ campaigns: initialCampaigns, onRefresh }: CampaignTableProps) {
+export function CampaignTable({ campaigns: initialCampaigns, accountCurrency = "USD", onRefresh }: CampaignTableProps) {
   const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
   const [expandedCampaigns, setExpandedCampaigns] = useState<Record<string, boolean>>({});
   const [expandedAdsets, setExpandedAdsets] = useState<Record<string, boolean>>({});
@@ -110,31 +109,66 @@ export function CampaignTable({ campaigns: initialCampaigns, onRefresh }: Campai
     }
   };
 
-  const handleAction = async (action: string, ids: string[], value?: string) => {
-    if (ids.length === 0) return;
-    setLoadingAction(`${action}-${ids.join(",")}`);
+  const handleManage = async (
+    id: string,
+    level: "campaign" | "adset" | "ad",
+    action: "status" | "budget" | "duplicate" | "delete",
+    value?: any
+  ) => {
+    if (action === "delete" && !confirm("Tem certeza que deseja excluir este item no Meta Ads?")) {
+      return;
+    }
+
+    setLoadingAction(`${action}-${id}`);
 
     try {
-      const response = await fetch("/api/v1/meta/campaigns/actions", {
+      const response = await fetch("/api/v1/meta/campaigns/manage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id,
+          level,
           action,
-          campaign_id: ids[0],
           value,
-          extra_ids: ids,
+          accountCurrency,
         }),
       });
 
       const data = await response.json();
       if (data.ok) {
-        alert(`Ação [${action.toUpperCase()}] aplicada com sucesso na Meta.`);
         if (onRefresh) onRefresh();
       } else {
         alert("Erro na Meta: " + (data.error || "Ação não processada"));
       }
     } catch (err: any) {
       alert("Erro ao executar ação: " + err.message);
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleBulkAction = async (action: "status" | "budget", value?: any) => {
+    if (selectedIds.length === 0) return;
+    setLoadingAction(`bulk-${action}`);
+
+    try {
+      for (const id of selectedIds) {
+        await fetch("/api/v1/meta/campaigns/manage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id,
+            level: "campaign",
+            action,
+            value,
+            accountCurrency,
+          }),
+        });
+      }
+      setSelectedIds([]);
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      alert("Erro em lote: " + err.message);
     } finally {
       setLoadingAction(null);
     }
@@ -165,28 +199,28 @@ export function CampaignTable({ campaigns: initialCampaigns, onRefresh }: Campai
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => handleAction("activate", selectedIds)}
+              onClick={() => handleBulkAction("status", "active")}
               disabled={!!loadingAction}
               className="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1 hover:bg-emerald-500/30"
             >
-              <Play size={11} /> Ativar
+              <Play size={11} /> Ativar em Lote
             </button>
             <button
-              onClick={() => handleAction("pause", selectedIds)}
+              onClick={() => handleBulkAction("status", "paused")}
               disabled={!!loadingAction}
               className="px-2.5 py-1 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-bold flex items-center gap-1 hover:bg-amber-500/30"
             >
-              <Pause size={11} /> Pausar
+              <Pause size={11} /> Pausar em Lote
             </button>
             <button
               onClick={() => {
-                const b = prompt("Novo orçamento diário em R$:");
-                if (b) handleAction("update_budget", selectedIds, b);
+                const b = prompt("Novo orçamento diário em R$ para os selecionados:");
+                if (b) handleBulkAction("budget", Number(b));
               }}
               disabled={!!loadingAction}
               className="px-2.5 py-1 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[11px] font-bold flex items-center gap-1 hover:bg-blue-500/30"
             >
-              <DollarSign size={11} /> Orçamento
+              <DollarSign size={11} /> Ajustar Orçamento
             </button>
           </div>
         </div>
@@ -200,23 +234,23 @@ export function CampaignTable({ campaigns: initialCampaigns, onRefresh }: Campai
                 <input
                   type="checkbox"
                   onChange={handleSelectAll}
-                  checked={selectedIds.length > 0}
+                  checked={selectedIds.length > 0 && selectedIds.length === campaigns.length}
                   className="rounded border-[var(--color-border-subtle)] text-blue-500 focus:ring-0 cursor-pointer"
                 />
               </th>
               <th className="w-8"></th>
-              <th>Estrutura (Campanha / Conjunto / Anúncio)</th>
-              <th>Status</th>
-              <th>Orçamento</th>
-              <th className="text-right">Gasto</th>
-              <th className="text-right">Receita ATM</th>
-              <th className="text-right">Lucro</th>
+              <th>ESTRUTURA (CAMPANHA / CONJUNTO / ANÚNCIO)</th>
+              <th>STATUS</th>
+              <th>ORÇAMENTO</th>
+              <th className="text-right">GASTO</th>
+              <th className="text-right">RECEITA ATM</th>
+              <th className="text-right">LUCRO</th>
               <th className="text-right">ROAS</th>
-              <th className="text-right">Conv. / CPA</th>
-              <th className="text-center w-24">Ações</th>
+              <th className="text-right">CONV. / CPA</th>
+              <th className="text-center">AÇÕES</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-[var(--color-border-subtle)]">
             {campaigns.map((campaign) => {
               const isExpanded = expandedCampaigns[campaign.campaign_id];
               const isChecked = selectedIds.includes(campaign.campaign_id);
@@ -225,7 +259,13 @@ export function CampaignTable({ campaigns: initialCampaigns, onRefresh }: Campai
               return (
                 <div key={campaign.campaign_id} style={{ display: "contents" }}>
                   {/* Linha 1: CAMPANHA */}
-                  <tr className={cn("hover:bg-blue-500/5 transition-colors font-medium", isChecked && "bg-blue-500/10")}>
+                  <tr
+                    className={cn(
+                      "hover:bg-[var(--color-bg-card-hover)] transition-colors group",
+                      isChecked && "bg-blue-500/5",
+                      isExpanded && "bg-[var(--color-bg-surface)]/20"
+                    )}
+                  >
                     <td className="text-center">
                       <input
                         type="checkbox"
@@ -236,37 +276,50 @@ export function CampaignTable({ campaigns: initialCampaigns, onRefresh }: Campai
                     </td>
                     <td>
                       {adsets.length > 0 && (
-                        <button onClick={() => toggleCampaign(campaign.campaign_id)} className="p-1 text-[var(--color-text-muted)] hover:text-white">
+                        <button
+                          onClick={() => toggleCampaign(campaign.campaign_id)}
+                          className="p-1 text-[var(--color-text-muted)] hover:text-white transition-colors"
+                        >
                           {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                         </button>
                       )}
                     </td>
-                    <td className="font-bold text-[var(--color-text-primary)]">
+                    <td className="font-bold text-[var(--color-text-primary)] text-xs">
                       <div className="flex items-center gap-2">
-                        <span className="text-blue-400 text-xs">🎯</span>
+                        <span className="text-blue-400">🎯</span>
                         <span className="truncate max-w-[280px]" title={campaign.campaign_name}>
                           {campaign.campaign_name}
                         </span>
-                        <button
-                          onClick={() => {
-                            const newN = prompt("Renomear Campanha:", campaign.campaign_name);
-                            if (newN) handleAction("rename", [campaign.campaign_id], newN);
-                          }}
-                          className="text-[var(--color-text-muted)] hover:text-blue-400 p-0.5"
-                        >
-                          <Edit2 size={10} />
-                        </button>
                       </div>
                     </td>
                     <td>
-                      <span className={cn("px-2 py-0.5 text-[9px] font-bold rounded-full border uppercase", campaign.status === "active" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-zinc-500/10 text-zinc-400 border-zinc-500/20")}>
+                      <span
+                        className={cn(
+                          "px-2 py-0.5 text-[9px] font-bold rounded-full border uppercase",
+                          campaign.status === "active"
+                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                            : "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"
+                        )}
+                      >
                         {campaign.status === "active" ? "Ativa" : "Pausada"}
                       </span>
                     </td>
-                    <td>
-                      <span className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                        {campaign.budget ? `R$ ${campaign.budget.toFixed(2)} (${campaign.budgetType})` : "Sob Adset (ABO)"}
-                      </span>
+                    <td className="text-xs font-mono">
+                      <div className="flex items-center gap-1">
+                        <span>{campaign.budget ? `R$ ${campaign.budget.toFixed(2)}` : "Sob Adset (ABO)"}</span>
+                        {campaign.budget !== undefined && campaign.budget > 0 && (
+                          <button
+                            onClick={() => {
+                              const b = prompt("Alterar orçamento diário da campanha (R$):", String(campaign.budget));
+                              if (b) handleManage(campaign.campaign_id, "campaign", "budget", Number(b));
+                            }}
+                            className="text-zinc-500 hover:text-blue-400 p-0.5 text-[10px]"
+                            title="Editar Orçamento"
+                          >
+                            ✏️
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="text-right text-xs font-semibold text-[var(--color-text-primary)]">
                       R$ {campaign.spend.toFixed(2)}
@@ -286,12 +339,27 @@ export function CampaignTable({ campaigns: initialCampaigns, onRefresh }: Campai
                       <span className="font-bold text-[var(--color-text-primary)]">{campaign.conversions}</span> | R$ {campaign.cpa.toFixed(2)}
                     </td>
                     <td className="text-center">
-                      <div className="flex items-center justify-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1">
                         <button
-                          onClick={() => handleAction(campaign.status === "active" ? "pause" : "activate", [campaign.campaign_id])}
+                          onClick={() => handleManage(campaign.campaign_id, "campaign", "status", campaign.status === "active" ? "paused" : "active")}
                           className="p-1 rounded bg-[var(--color-bg-surface)] hover:bg-blue-500/20 text-[var(--color-text-secondary)] hover:text-blue-400"
+                          title={campaign.status === "active" ? "Pausar Campanha" : "Ativar Campanha"}
                         >
-                          {campaign.status === "active" ? <Pause size={12} /> : <Play size={12} />}
+                          {campaign.status === "active" ? <Pause size={12} className="text-amber-400" /> : <Play size={12} className="text-emerald-400" />}
+                        </button>
+                        <button
+                          onClick={() => handleManage(campaign.campaign_id, "campaign", "duplicate")}
+                          className="p-1 rounded bg-[var(--color-bg-surface)] hover:bg-blue-500/20 text-zinc-400 hover:text-blue-400"
+                          title="Duplicar Campanha"
+                        >
+                          <Copy size={12} />
+                        </button>
+                        <button
+                          onClick={() => handleManage(campaign.campaign_id, "campaign", "delete")}
+                          className="p-1 rounded bg-[var(--color-bg-surface)] hover:bg-rose-500/20 text-zinc-500 hover:text-rose-400"
+                          title="Excluir Campanha"
+                        >
+                          <Trash2 size={12} />
                         </button>
                       </div>
                     </td>
@@ -326,15 +394,6 @@ export function CampaignTable({ campaigns: initialCampaigns, onRefresh }: Campai
                               <div className="flex items-center gap-2">
                                 <span className="text-purple-400 text-xs">📂</span>
                                 <span className="truncate max-w-[240px]" title={adset.name}>{adset.name}</span>
-                                <button
-                                  onClick={() => {
-                                    const newN = prompt("Renomear Conjunto:", adset.name);
-                                    if (newN) handleAction("rename", [adset.id], newN);
-                                  }}
-                                  className="text-[var(--color-text-muted)] hover:text-purple-400 p-0.5"
-                                >
-                                  <Edit2 size={9} />
-                                </button>
                               </div>
                             </td>
                             <td>
@@ -348,41 +407,65 @@ export function CampaignTable({ campaigns: initialCampaigns, onRefresh }: Campai
                                 <button
                                   onClick={() => {
                                     const b = prompt("Alterar orçamento diário do conjunto (R$):", String(adset.budget || "50"));
-                                    if (b) handleAction("update_budget", [adset.id], b);
+                                    if (b) handleManage(adset.id, "adset", "budget", Number(b));
                                   }}
-                                  className="text-[var(--color-text-muted)] hover:text-blue-400"
+                                  className="text-zinc-500 hover:text-purple-400 p-0.5 text-[10px]"
+                                  title="Editar Orçamento do Conjunto"
                                 >
-                                  <Edit2 size={9} />
+                                  ✏️
                                 </button>
                               </div>
                             </td>
-                            <td className="text-right">R$ {adset.spend.toFixed(2)}</td>
-                            <td className="text-right text-purple-300">R$ {adset.revenue.toFixed(2)}</td>
-                            <td className="text-right">
+                            <td className="text-right text-xs font-medium text-[var(--color-text-primary)]">
+                              R$ {adset.spend.toFixed(2)}
+                            </td>
+                            <td className="text-right text-xs font-semibold text-purple-400">
+                              R$ {adset.revenue.toFixed(2)}
+                            </td>
+                            <td className="text-right text-xs font-semibold">
                               <span className={adset.profit >= 0 ? "text-emerald-400" : "text-rose-400"}>
                                 R$ {adset.profit.toFixed(2)}
                               </span>
                             </td>
-                            <td className="text-right text-blue-300 font-bold">{adset.roas.toFixed(2)}x</td>
-                            <td className="text-right text-[11px] text-[var(--color-text-muted)]">
+                            <td className="text-right text-xs font-bold text-blue-400">
+                              {adset.roas.toFixed(2)}x
+                            </td>
+                            <td className="text-right text-xs text-[var(--color-text-muted)]">
                               {adset.conversions} | R$ {adset.cpa.toFixed(2)}
                             </td>
                             <td className="text-center">
-                              <button
-                                onClick={() => handleAction(adset.status === "active" ? "pause" : "activate", [adset.id])}
-                                className="p-1 rounded bg-[var(--color-bg-surface)] hover:bg-purple-500/20 text-[var(--color-text-secondary)] hover:text-purple-300"
-                              >
-                                {adset.status === "active" ? <Pause size={10} /> : <Play size={10} />}
-                              </button>
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={() => handleManage(adset.id, "adset", "status", adset.status === "active" ? "paused" : "active")}
+                                  className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white"
+                                  title={adset.status === "active" ? "Pausar Conjunto" : "Ativar Conjunto"}
+                                >
+                                  {adset.status === "active" ? <Pause size={11} className="text-amber-400" /> : <Play size={11} className="text-emerald-400" />}
+                                </button>
+                                <button
+                                  onClick={() => handleManage(adset.id, "adset", "duplicate")}
+                                  className="p-1 rounded hover:bg-zinc-800 text-zinc-500 hover:text-purple-400"
+                                  title="Duplicar Conjunto"
+                                >
+                                  <Copy size={11} />
+                                </button>
+                                <button
+                                  onClick={() => handleManage(adset.id, "adset", "delete")}
+                                  className="p-1 rounded hover:bg-zinc-800 text-zinc-500 hover:text-rose-400"
+                                  title="Excluir Conjunto"
+                                >
+                                  <Trash2 size={11} />
+                                </button>
+                              </div>
                             </td>
                           </tr>
 
-                          {/* Linha 3: ANÚNCIOS (ADS / CRIATIVOS) */}
+                          {/* Linha 3: ANÚNCIOS / ADS */}
                           {isAdsetExpanded &&
                             ads.map((ad) => {
                               const isAdChecked = selectedIds.includes(ad.id);
                               return (
-                                <tr key={ad.id} className={cn("bg-[var(--color-bg-primary)]/70 hover:bg-blue-500/5 transition-colors text-[11px] border-l-4 border-l-blue-400/60", isAdChecked && "bg-blue-500/10")}>
+                                <tr key={ad.id} className={cn("bg-[var(--color-bg-surface)]/70 hover:bg-blue-500/10 transition-colors text-[11px] border-l-2 border-l-cyan-500/40", isAdChecked && "bg-blue-500/15")}>
                                   <td className="text-center">
                                     <input
                                       type="checkbox"
@@ -392,36 +475,52 @@ export function CampaignTable({ campaigns: initialCampaigns, onRefresh }: Campai
                                     />
                                   </td>
                                   <td></td>
-                                  <td className="pl-12 text-[var(--color-text-muted)] font-mono">
+                                  <td className="pl-12 text-[var(--color-text-secondary)]">
                                     <div className="flex items-center gap-2">
-                                      <span className="text-blue-400">🎨</span>
-                                      <span className="truncate max-w-[220px]" title={ad.name}>{ad.name}</span>
+                                      <span className="text-cyan-400">🎨</span>
+                                      <span className="truncate max-w-[200px]" title={ad.name}>{ad.name}</span>
                                     </div>
                                   </td>
                                   <td>
-                                    <span className={cn("px-1 py-0.2 text-[8px] font-bold rounded uppercase", ad.status === "active" ? "text-emerald-400" : "text-zinc-500")}>
+                                    <span className={cn("px-1.5 py-0.2 text-[8px] font-bold rounded border uppercase", ad.status === "active" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-zinc-500/10 text-zinc-400 border-zinc-500/20")}>
                                       {ad.status === "active" ? "Ativo" : "Pausado"}
                                     </span>
                                   </td>
-                                  <td>—</td>
-                                  <td className="text-right">R$ {ad.spend.toFixed(2)}</td>
-                                  <td className="text-right text-purple-300">R$ {ad.revenue.toFixed(2)}</td>
-                                  <td className="text-right">
+                                  <td className="text-[10px] text-zinc-500 font-mono">Sob Conjunto</td>
+                                  <td className="text-right font-normal text-[var(--color-text-primary)]">
+                                    R$ {ad.spend.toFixed(2)}
+                                  </td>
+                                  <td className="text-right font-medium text-purple-400">
+                                    R$ {ad.revenue.toFixed(2)}
+                                  </td>
+                                  <td className="text-right font-medium">
                                     <span className={ad.profit >= 0 ? "text-emerald-400" : "text-rose-400"}>
                                       R$ {ad.profit.toFixed(2)}
                                     </span>
                                   </td>
-                                  <td className="text-right text-blue-300">{ad.roas.toFixed(2)}x</td>
-                                  <td className="text-right text-[10px] text-[var(--color-text-muted)]">
+                                  <td className="text-right font-bold text-blue-400">
+                                    {ad.roas.toFixed(2)}x
+                                  </td>
+                                  <td className="text-right text-[var(--color-text-muted)]">
                                     {ad.conversions} | R$ {ad.cpa.toFixed(2)}
                                   </td>
                                   <td className="text-center">
-                                    <button
-                                      onClick={() => handleAction(ad.status === "active" ? "pause" : "activate", [ad.id])}
-                                      className="p-1 rounded bg-[var(--color-bg-surface)] hover:bg-blue-500/20 text-[var(--color-text-secondary)] hover:text-blue-300"
-                                    >
-                                      {ad.status === "active" ? <Pause size={9} /> : <Play size={9} />}
-                                    </button>
+                                    <div className="flex items-center justify-center gap-1">
+                                      <button
+                                        onClick={() => handleManage(ad.id, "ad", "status", ad.status === "active" ? "paused" : "active")}
+                                        className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white"
+                                        title={ad.status === "active" ? "Pausar Anúncio" : "Ativar Anúncio"}
+                                      >
+                                        {ad.status === "active" ? <Pause size={10} className="text-amber-400" /> : <Play size={10} className="text-emerald-400" />}
+                                      </button>
+                                      <button
+                                        onClick={() => handleManage(ad.id, "ad", "delete")}
+                                        className="p-1 rounded hover:bg-zinc-800 text-zinc-500 hover:text-rose-400"
+                                        title="Excluir Anúncio"
+                                      >
+                                        <Trash2 size={10} />
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               );

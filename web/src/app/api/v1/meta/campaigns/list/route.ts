@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/v1/meta/campaigns/list
- * Retorna hierarquia completa (Campanhas -> Conjuntos -> Anúncios) da conta de anúncios
+ * Retorna a hierarquia completa de 3 níveis das contas ativadas no momento
  */
 export async function GET(request: NextRequest) {
   try {
@@ -25,58 +25,60 @@ export async function GET(request: NextRequest) {
       .limit(1)
       .maybeSingle();
 
-    if (!integration || !integration.access_token_enc) {
-      return NextResponse.json({ ok: false, error: "Integração da Meta não encontrada", campaigns: [] });
-    }
-
-    let token = integration.access_token_enc.toString();
-    if (!token.startsWith("EAA")) {
+    let token = integration?.access_token_enc || process.env.META_ACCESS_TOKEN || "";
+    if (token && !token.startsWith("EAA")) {
       try {
         token = decrypt(token);
       } catch {}
     }
 
-    // 2. Determina a conta de anúncios alvo
-    const adAccountId =
-      paramAccountId ||
-      integration.config?.ad_account_ids?.[0] ||
-      integration.config?.ad_account_id ||
-      "1316835733682937";
+    if (!token) {
+      return NextResponse.json({ ok: false, error: "Token da Meta não encontrado", campaigns: [] });
+    }
 
-    const formattedAccountId = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
-
-    // 3. Busca lista de todas as contas vinculadas para o seletor rápido
-    let availableAccounts: Array<{ id: string; name: string }> = [];
-    try {
-      const accRes = await fetch(
-        `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,name,currency,amount_spent&access_token=${token}&limit=30`
-      );
-      if (accRes.ok) {
-        const accData = await accRes.json();
-        if (Array.isArray(accData.data)) {
-          availableAccounts = accData.data.map((a: any) => ({
-            id: a.id,
-            name: a.name || a.id,
-          }));
-        }
-      }
-    } catch {}
-
-    // 4. Chamada de Hierarquia Completa de 3 Níveis na Graph API da Meta + Moeda da Conta
     const usdBrlRate = await getUsdBrlRate();
-    let accountCurrency = "USD";
 
-    try {
-      const accInfoRes = await fetch(`https://graph.facebook.com/v23.0/${formattedAccountId}?fields=currency&access_token=${token}`);
-      if (accInfoRes.ok) {
-        const accInfo = await accInfoRes.json();
-        if (accInfo.currency) accountCurrency = accInfo.currency.toUpperCase();
-      }
-    } catch {}
+    // 2. Lista de contas ATIVADAS no momento (apenas as ativadas)
+    const selectedAccountIds: string[] =
+      integration?.config?.selected_account_ids ||
+      integration?.config?.ad_account_ids ||
+      ["act_1316835733682937", "act_2704031959980850", "act_1552831582460812"];
 
-    const metaUrl = `https://graph.facebook.com/v23.0/${formattedAccountId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget,objective,insights{spend,actions},adsets{id,name,status,daily_budget,lifetime_budget,insights{spend,actions},ads{id,name,status,insights{spend,actions}}}&access_token=${token}&limit=30`;
+    // 3. Monta a lista de contas ativadas com nomes e moedas
+    const availableAccounts: Array<{ id: string; name: string; currency: string }> = [];
 
-    // 5. Busca todas as compras pagas reais no banco para atribuição de receita
+    const accountNamesMap: Record<string, string> = {
+      "act_1316835733682937": "USD 1 - Cultura 420",
+      "act_2704031959980850": "USD 2 - Escala",
+      "act_1552831582460812": "USD 3 - Escala",
+      "act_994577432497447": "CONTA 01 - Restaura Phone",
+      "act_857082363539586": "CONTA 02 - Restaura Phone",
+      "act_991744449908220": "CONTA 03 - Energisa",
+    };
+
+    for (const accId of selectedAccountIds) {
+      const formatted = accId.startsWith("act_") ? accId : `act_${accId}`;
+      const defaultName = accountNamesMap[formatted] || formatted;
+      availableAccounts.push({
+        id: formatted,
+        name: defaultName,
+        currency: formatted.includes("1316835") || formatted.includes("270403") || formatted.includes("155283") ? "USD" : "BRL",
+      });
+    }
+
+    // 4. Determina qual conta carregar (default: USD 2 ou USD 1)
+    const targetAccountId =
+      paramAccountId && paramAccountId !== "all"
+        ? (paramAccountId.startsWith("act_") ? paramAccountId : `act_${paramAccountId}`)
+        : (availableAccounts[1]?.id || availableAccounts[0]?.id || "act_2704031959980850");
+
+    const targetAccountInfo = availableAccounts.find((a) => a.id === targetAccountId);
+    const accountCurrency = targetAccountInfo?.currency || "USD";
+
+    // 5. Chamada de Hierarquia Completa de 3 Níveis na Graph API da Meta
+    const metaUrl = `https://graph.facebook.com/v23.0/${targetAccountId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget,objective,insights{spend,actions},adsets{id,name,status,daily_budget,lifetime_budget,insights{spend,actions},ads{id,name,status,insights{spend,actions}}}&access_token=${token}&limit=30`;
+
+    // 6. Busca todas as compras pagas reais no banco para atribuição de receita
     const { data: dbPurchases } = await supabase
       .from("events")
       .select("*")
@@ -126,7 +128,6 @@ export async function GET(request: NextRequest) {
           const rawSpend = Number(cInsights.spend || 0);
           const cSpend = convertToBrl(rawSpend, accountCurrency, usdBrlRate);
 
-          // Receita e conversões REAIS pagas do checkout
           const cPaidData = paidPurchasesByCampaign.get(c.id) || { totalValue: 0, count: 0 };
           const cRevenue = cPaidData.totalValue;
           const cPurchases = cPaidData.count;
@@ -219,11 +220,14 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      selectedAccountId: formattedAccountId,
+      selectedAccountId: targetAccountId,
+      accountCurrency,
+      usdBrlRate,
       availableAccounts,
       campaigns,
     });
   } catch (error: any) {
+    console.error("[Meta Campaigns API Error]:", error);
     return NextResponse.json({ ok: false, error: error.message, campaigns: [] }, { status: 500 });
   }
 }

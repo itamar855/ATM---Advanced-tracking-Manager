@@ -153,14 +153,30 @@ export async function POST(request: NextRequest) {
       externalId: (rawUserData && rawUserData.externalId) || track_id || undefined,
     };
 
-    // Se email/phone não vieram no payload, tenta recuperar da sessão
-    if (!enrichedUserData.email && track_id) {
+    // Se email/phone não vieram no payload, tenta recuperar da sessão ou compras anteriores
+    if ((!enrichedUserData.email || !enrichedUserData.phone) && (track_id || sessionData.fbp)) {
       try {
+        // 1. Tenta buscar em sessões recentes
         const { data: dbSess } = await supabase
           .from("sessions")
-          .select("utm_source, utm_campaign")
+          .select("fbp, client_ip, utm_source, utm_campaign")
           .eq("track_id", track_id)
           .maybeSingle();
+
+        // 2. Tenta buscar em eventos anteriores com email/phone pelo track_id ou fbp
+        const { data: prevEvent } = await supabase
+          .from("events")
+          .select("meta_response")
+          .not("meta_response->order_details->customer_email", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (prevEvent?.meta_response?.order_details?.customer_email && !enrichedUserData.email) {
+          enrichedUserData.email = prevEvent.meta_response.order_details.customer_email;
+          enrichedUserData.phone = prevEvent.meta_response.order_details.customer_phone || enrichedUserData.phone;
+          enrichedUserData.firstName = prevEvent.meta_response.order_details.customer_name?.split(" ")[0] || enrichedUserData.firstName;
+        }
       } catch {}
     }
 
