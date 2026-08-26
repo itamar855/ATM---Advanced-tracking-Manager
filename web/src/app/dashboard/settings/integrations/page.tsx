@@ -15,37 +15,38 @@ export default function IntegrationsPage() {
   const [adAccountId, setAdAccountId] = useState("");
   const [testEventCode, setTestEventCode] = useState("");
   const [savedConfig, setSavedConfig] = useState<any>(null);
-  const [storeId, setStoreId] = useState("");
-  const [shopDomain, setShopDomain] = useState("");
+  const [storeId, setStoreId] = useState("dckb5g-7d");
+  const [shopDomain, setShopDomain] = useState("dckb5g-7d.myshopify.com");
 
-  const host = typeof window !== 'undefined' ? window.location.origin : 'https://atmtracking.vercel.app';
+  const host = typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes("localhost")
+    ? window.location.origin.replace(/\/$/, "")
+    : 'https://trackingatm.vercel.app';
 
-  // ── Snippet de instalação auto-configurado (gerado com domínio real da loja) ──
-  const atmScriptUrl = shopDomain
-    ? `${host}/api/v1/pixel/${shopDomain}/script.js`
-    : `${host}/api/v1/pixel/sua-loja.myshopify.com/script.js`;
-
-  const installSnippet = `{% comment %} ATM Pixel — Cole antes de </head> no theme.liquid {% endcomment %}
+  // ── Snippet de instalação auto-configurado (gerado com domínio permanente da loja) ──
+  const installSnippet = `<!-- ATM Pixel — Cole antes de </head> no theme.liquid -->
 <script>
   window.__ATM_CTX__ = {
-    shop: { domain: {{ shop.permanent_domain | json }}, currency: {{ shop.currency | json }} },
-    template: {{ template.name | json }},
-    customer: {{% if customer %}
+    shop: {
+      domain: {{ shop.permanent_domain | json }},
+      currency: {{ shop.currency | json }}
+    },
+    template: {{ template.name | default: template | json }},
+    customer: {% if customer %}{
       email: {{ customer.email | json }},
       phone: {{ customer.phone | default: '' | json }},
       firstName: {{ customer.first_name | json }},
       lastName: {{ customer.last_name | json }},
       externalId: {{ customer.id | json }}
-    {%- endif %}},
-    product: {%- if template.name == 'product' -%}{
-      id: {{ product.id }},
-      variantId: {{ product.selected_or_first_available_variant.id }},
+    }{% else %}null{% endif %},
+    product: {% if product %}{
+      id: {{ product.id | json }},
+      variantId: {{ product.selected_or_first_available_variant.id | default: product.variants.first.id | json }},
       title: {{ product.title | json }},
-      price: {{ product.selected_or_first_available_variant.price | divided_by: 100.0 }},
+      price: {{ product.selected_or_first_available_variant.price | default: product.price | divided_by: 100.0 }},
       currency: {{ shop.currency | json }}
-    }{%- else -%}null{%- endif -%},
-    checkout: {%- if checkout -%}{
-      orderId: {{ checkout.order_id }},
+    }{% else %}null{% endif %},
+    checkout: {% if checkout %}{
+      orderId: {{ checkout.order_id | json }},
       email: {{ checkout.email | json }},
       totalPrice: {{ checkout.total_price | divided_by: 100.0 }},
       currency: {{ shop.currency | json }},
@@ -57,13 +58,22 @@ export default function IntegrationsPage() {
         zip: {{ checkout.billing_address.zip | json }},
         countryCode: {{ checkout.billing_address.country_code | json }}
       },
-      lineItems: [{%- for l in checkout.line_items -%}{id:"{{l.variant_id}}",quantity:{{l.quantity}},price:{{l.final_price|divided_by:100.0}}}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}]
-    }{%- else -%}null{%- endif -%}
+      lineItems: [
+        {% for line_item in checkout.line_items %}
+          {
+            id: {{ line_item.variant_id | json }},
+            quantity: {{ line_item.quantity }},
+            price: {{ line_item.final_price | divided_by: 100.0 }}
+          }{% unless forloop.last %},{% endunless %}
+        {% endfor %}
+      ]
+    }{% else %}null{% endif %}
   };
 </script>
-<script src="${atmScriptUrl}" defer></script>`;
+<script src="${host}/api/v1/pixel/{{ shop.permanent_domain }}/script.js" defer></script>`;
 
-  const zedyWebhookUrl = `${host}/api/v1/webhook/zedy/${storeId}`;
+  const vegaWebhookUrl = `${host}/api/v1/webhook/vega/${storeId || 'dckb5g-7d'}`;
+  const zedyWebhookUrl = `${host}/api/v1/webhook/zedy/${storeId || 'dckb5g-7d'}`;
 
   useEffect(() => {
     async function loadConfig() {
@@ -211,12 +221,12 @@ export default function IntegrationsPage() {
             <input
               type="text"
               readOnly
-              value={`https://${host}/api/v1/webhook/vega/${storeId}`}
+              value={vegaWebhookUrl}
               className="input text-xs font-mono select-all bg-[var(--color-bg-surface)] py-2"
             />
             <button
               onClick={() => {
-                navigator.clipboard.writeText(`https://${host}/api/v1/webhook/vega/${storeId}`);
+                navigator.clipboard.writeText(vegaWebhookUrl);
                 setCopiedWebhook(true);
                 setTimeout(() => setCopiedWebhook(false), 2000);
               }}
