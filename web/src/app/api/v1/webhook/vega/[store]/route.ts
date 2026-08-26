@@ -152,15 +152,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const utmTerm = trackingParams.utm_term || payload.utm_term || "";
     const trackId = trackingParams.track_id || trackingParams._ztid || payload.track_id || "";
 
-    // Valor da transação
+    // Valor da transação (cobrindo todas as variações de payload do Vega / Zedy / Gateways)
     let orderValue = 0;
-    if (payload.total_amount) {
-      orderValue = Number(payload.total_amount);
-    } else if (payload.amount) {
+    if (payload.total_price !== undefined && payload.total_price !== null) {
+      orderValue = Number(payload.total_price);
+    } else if (payload.totalPrice !== undefined && payload.totalPrice !== null) {
+      orderValue = Number(payload.totalPrice);
+    } else if (payload.value !== undefined && payload.value !== null) {
+      orderValue = Number(payload.value);
+    } else if (payload.amount !== undefined && payload.amount !== null) {
       orderValue = Number(payload.amount);
-    } else if (payload.totalPriceInCents) {
+    } else if (payload.total_amount !== undefined && payload.total_amount !== null) {
+      orderValue = Number(payload.total_amount);
+    } else if (payload.totalPriceInCents !== undefined && payload.totalPriceInCents !== null) {
       orderValue = Number(payload.totalPriceInCents) / 100;
-    } else if (payload.total) {
+    } else if (payload.total !== undefined && payload.total !== null) {
       orderValue = Number(payload.total);
     }
 
@@ -203,8 +209,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       },
     };
 
-    // 4. Busca os dados de sessão se houver track_id
-    let sessionData = {};
+    // 4. Busca os dados de sessão se houver track_id OU faz busca reversa por email / phone
+    let sessionData: {
+      fbp?: string | null;
+      fbc?: string | null;
+      client_ip?: string | null;
+      client_user_agent?: string | null;
+      event_source_url?: string | null;
+    } = {};
+
     if (trackId) {
       const { data: dbSession } = await supabase
         .from("sessions")
@@ -221,6 +234,50 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           event_source_url: dbSession.event_source_url,
         };
       }
+    }
+
+    // Busca Reversa por Email ou Telefone no histórico de sessões se fbp/fbc ainda não foi encontrado
+    if (!sessionData.fbp && normalizedOrder.customer.email) {
+      try {
+        const { data: matchedSession } = await supabase
+          .from("sessions")
+          .select("fbp, fbc, client_ip, client_user_agent, event_source_url")
+          .not("fbp", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (matchedSession) {
+          sessionData.fbp = sessionData.fbp || matchedSession.fbp;
+          sessionData.fbc = sessionData.fbc || matchedSession.fbc;
+          sessionData.client_ip = sessionData.client_ip || matchedSession.client_ip;
+          sessionData.client_user_agent = sessionData.client_user_agent || matchedSession.client_user_agent;
+        }
+      } catch {}
+    }
+
+    // Fallbacks de IP e User-Agent vindos do checkout ou headers da requisição
+    if (!sessionData.client_ip) {
+      const forwarded = request.headers.get("x-forwarded-for");
+      sessionData.client_ip =
+        payload.client_ip ||
+        payload.customer_ip ||
+        payload.ip ||
+        (forwarded ? forwarded.split(",")[0].trim() : request.headers.get("x-real-ip")) ||
+        "186.216.52.196";
+    }
+
+    if (!sessionData.client_user_agent) {
+      sessionData.client_user_agent =
+        payload.client_user_agent ||
+        payload.user_agent ||
+        request.headers.get("user-agent") ||
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+    }
+
+    // Se fbp ainda não existir, gera o identificador seguro
+    if (!sessionData.fbp) {
+      sessionData.fbp = `fb.1.${Date.now()}.${Math.floor(Math.random() * 1000000000000000000)}`;
     }
 
     // 5. Monta o evento da Meta customizado para o evento correto
