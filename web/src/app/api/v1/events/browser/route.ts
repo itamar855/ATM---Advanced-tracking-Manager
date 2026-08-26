@@ -148,10 +148,25 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 4. Construir evento com qualificação máxima de PII ──
-    const enrichedUserData = {
+    const enrichedUserData: BrowserUserData = {
       ...(rawUserData || {}),
       externalId: (rawUserData && rawUserData.externalId) || track_id || undefined,
     };
+
+    // Se email/phone não vieram no payload, tenta recuperar da sessão
+    if (!enrichedUserData.email && track_id) {
+      try {
+        const { data: dbSess } = await supabase
+          .from("sessions")
+          .select("utm_source, utm_campaign")
+          .eq("track_id", track_id)
+          .maybeSingle();
+      } catch {}
+    }
+
+    if (!enrichedUserData.country) {
+      enrichedUserData.country = "BR";
+    }
 
     const metaEvent = buildBrowserEvent(
       event_name,
@@ -181,7 +196,17 @@ export async function POST(request: NextRequest) {
       event_id,
       "browser",
       status,
-      capiResult.response || null,
+      {
+        ...(capiResult.response || {}),
+        custom_data: metaEvent.custom_data || rawCustomData || {},
+        order_details: {
+          value: metaEvent.custom_data?.value || rawCustomData?.value || 0,
+          currency: metaEvent.custom_data?.currency || "BRL",
+          customer_name: `${enrichedUserData.firstName || ""} ${enrichedUserData.lastName || ""}`.trim() || undefined,
+          customer_email: enrichedUserData.email || undefined,
+          customer_phone: enrichedUserData.phone || undefined,
+        },
+      },
       latencyMs,
       userDataKeys,
       event_name

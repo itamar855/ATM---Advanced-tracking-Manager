@@ -6,10 +6,10 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/v1/pixel/[domain]/script.js
  *
- * Retorna o script ATM completo de máxima performance, com:
- * - Geração e fixação autônoma de First-Party Cookie (_fbp e _fbc instantâneos)
- * - Interceptação precisa de AddToCart com preço exato da variante
- * - Rastreamento ultra-resiliente sem perdas de PageView
+ * Retorna o script ATM Pixel de máxima performance (v4.0):
+ * - Input Harvester: captura contínua de email, phone, nome, CEP, cidade e estado
+ * - InitiateCheckout de alta precisão com PII e valor monetário real do carrinho
+ * - First-Party Cookie Engine (_fbp e _fbc instantâneos)
  */
 export async function GET(
   request: NextRequest,
@@ -50,9 +50,9 @@ export async function GET(
 
 function generateATMScript(storeId: string, apiBase: string): string {
   return `/**
- * ATM Pixel v3.0 — Advanced Tracking Manager (Ultra-Resilient First-Party)
+ * ATM Pixel v4.0 — Advanced Tracking Manager (Input Harvester & Deep PII)
  * Loja: ${storeId}
- * Auto-gerado e otimizado para máxima pontuação EMQ e zero perda de fbp/fbc.
+ * Auto-gerado e otimizado para EMQ 100% e rastreamento de ponta a ponta.
  */
 (function () {
   "use strict";
@@ -95,7 +95,6 @@ function generateATMScript(storeId: string, apiBase: string): string {
     return id;
   }
 
-  // Garante fbp 100% autônomo (não espera o pixel do Facebook demorar a carregar)
   function getFbp() {
     var c = getCookie("_fbp");
     if (c) return c;
@@ -105,7 +104,6 @@ function generateATMScript(storeId: string, apiBase: string): string {
     return newFbp;
   }
 
-  // Garante fbc a partir de fbclid com validade de 90 dias
   function getFbc() {
     var c = getCookie("_fbc");
     if (c) return c;
@@ -132,13 +130,65 @@ function generateATMScript(storeId: string, apiBase: string): string {
     };
   }
 
+  // ── Input Harvester (Capturador Contínuo de PII em Formulários) ───────────
+
+  var _ctx = window.__ATM_CTX__ || {};
+  _ctx.customer = _ctx.customer || {};
+
+  // Recupera dados previamente salvos
+  try {
+    _ctx.customer.email = _ctx.customer.email || localStorage.getItem("atm_p_em") || "";
+    _ctx.customer.phone = _ctx.customer.phone || localStorage.getItem("atm_p_ph") || "";
+    _ctx.customer.firstName = _ctx.customer.firstName || localStorage.getItem("atm_p_fn") || "";
+    _ctx.customer.lastName = _ctx.customer.lastName || localStorage.getItem("atm_p_ln") || "";
+    _ctx.customer.zip = _ctx.customer.zip || localStorage.getItem("atm_p_zp") || "";
+    _ctx.customer.city = _ctx.customer.city || localStorage.getItem("atm_p_ct") || "";
+    _ctx.customer.state = _ctx.customer.state || localStorage.getItem("atm_p_st") || "";
+    _ctx.customer.country = "BR";
+  } catch (e) {}
+
+  // Escuta digitação em qualquer campo da loja
+  document.addEventListener("input", function (e) {
+    var t = e.target;
+    if (!t || !t.value) return;
+    var name = (t.name || t.id || t.placeholder || t.className || "").toLowerCase();
+    var val = t.value.trim();
+    if (!val || val.length < 2) return;
+
+    if (t.type === "email" || name.includes("email") || name.includes("e-mail") || (val.includes("@") && val.includes("."))) {
+      _ctx.customer.email = val;
+      try { localStorage.setItem("atm_p_em", val); } catch (err) {}
+    } else if (t.type === "tel" || name.includes("phone") || name.includes("celular") || name.includes("tel") || name.includes("whatsapp")) {
+      _ctx.customer.phone = val.replace(/\\D/g, "");
+      try { localStorage.setItem("atm_p_ph", _ctx.customer.phone); } catch (err) {}
+    } else if (name.includes("nome") || name.includes("first_name") || name.includes("firstname")) {
+      _ctx.customer.firstName = val.split(" ")[0];
+      _ctx.customer.lastName = val.split(" ").slice(1).join(" ") || _ctx.customer.firstName;
+      try {
+        localStorage.setItem("atm_p_fn", _ctx.customer.firstName);
+        localStorage.setItem("atm_p_ln", _ctx.customer.lastName);
+      } catch (err) {}
+    } else if (name.includes("sobrenome") || name.includes("last_name") || name.includes("lastname")) {
+      _ctx.customer.lastName = val;
+      try { localStorage.setItem("atm_p_ln", val); } catch (err) {}
+    } else if (name.includes("cep") || name.includes("zip") || name.includes("postal")) {
+      _ctx.customer.zip = val.replace(/\\D/g, "");
+      try { localStorage.setItem("atm_p_zp", _ctx.customer.zip); } catch (err) {}
+    } else if (name.includes("cidade") || name.includes("city")) {
+      _ctx.customer.city = val;
+      try { localStorage.setItem("atm_p_ct", val); } catch (err) {}
+    } else if (name.includes("estado") || name.includes("state") || name.includes("uf")) {
+      _ctx.customer.state = val;
+      try { localStorage.setItem("atm_p_st", val); } catch (err) {}
+    }
+  }, true);
+
   // ── Inicialização de Sessão ───────────────────────────────────────────────
 
   var _tid = getTrackId();
   var _fbp = getFbp();
   var _fbc = getFbc();
   var _utms = getUtms();
-  var _ctx = window.__ATM_CTX__ || {};
   var _captured = false;
 
   function captureSession() {
@@ -171,7 +221,6 @@ function generateATMScript(storeId: string, apiBase: string): string {
 
   function sendEvent(eventName, customData, extraUserData) {
     var ud = Object.assign({}, _ctx.customer || {}, extraUserData || {});
-    // Garante fbp e fbc atualizados
     _fbp = getFbp();
     _fbc = getFbc();
 
@@ -213,7 +262,7 @@ function generateATMScript(storeId: string, apiBase: string): string {
     });
   }
 
-  // ── AddToCart de Alta Precisão (Preço Exato da Variante) ──────────────────
+  // ── AddToCart de Alta Precisão ───────────────────────────────────────────
 
   var _lastSentCartItem = "";
   var _lastCartSentTime = 0;
@@ -221,7 +270,7 @@ function generateATMScript(storeId: string, apiBase: string): string {
   function dispatchAddToCart(variantId, title, price, qty) {
     var now = Date.now();
     var key = variantId + "_" + price;
-    if (key === _lastSentCartItem && (now - _lastCartSentTime < 1500)) return; // Debounce
+    if (key === _lastSentCartItem && (now - _lastCartSentTime < 1500)) return;
     _lastSentCartItem = key;
     _lastCartSentTime = now;
 
@@ -263,42 +312,43 @@ function generateATMScript(storeId: string, apiBase: string): string {
     };
   }
 
-  // 2. Interceptador de Formulários e Cliques em Botões de Compra
-  document.addEventListener("submit", function (e) {
-    var form = e.target;
-    if (form && form.action && form.action.includes("/cart/add")) {
-      var variantInput = form.querySelector('[name="id"]');
-      var qtyInput = form.querySelector('[name="quantity"]');
-      var vId = variantInput ? variantInput.value : (_ctx.product ? _ctx.product.variantId : "");
-      var qty = qtyInput ? Number(qtyInput.value) : 1;
-      if (_ctx.product) {
-        dispatchAddToCart(vId || _ctx.product.variantId, _ctx.product.title, _ctx.product.price, qty);
-      }
-    }
-  }, true);
+  // ── InitiateCheckout Universal com Valor e PII Completos ─────────────────
 
   var _lastSentCheckoutTime = 0;
 
   function dispatchInitiateCheckout() {
     var now = Date.now();
-    if (now - _lastSentCheckoutTime < 2500) return; // Debounce 2.5s
+    if (now - _lastSentCheckoutTime < 2500) return;
     _lastSentCheckoutTime = now;
 
-    var val = Number((_ctx.cart && _ctx.cart.total_price ? _ctx.cart.total_price / 100 : (_ctx.product ? _ctx.product.price : 0)) || 0);
-    var contentIds = (_ctx.cart && Array.isArray(_ctx.cart.items))
+    // Determina valor do carrinho
+    var prodPrice = Number(_ctx.product ? _ctx.product.price : 0);
+    var cartPrice = Number(_ctx.cart && _ctx.cart.total_price ? _ctx.cart.total_price / 100 : 0);
+    var checkoutValue = cartPrice > 0 ? cartPrice : (prodPrice > 0 ? prodPrice : 172.88);
+
+    var contentIds = (_ctx.cart && Array.isArray(_ctx.cart.items) && _ctx.cart.items.length > 0)
       ? _ctx.cart.items.map(function (i) { return String(i.id || i.variant_id); })
-      : [String(_ctx.product ? (_ctx.product.variantId || _ctx.product.id) : "CART")];
+      : [String(_ctx.product ? (_ctx.product.variantId || _ctx.product.id) : "CART_ITEM")];
 
     sendEvent("InitiateCheckout", {
       content_ids: contentIds,
       content_type: "product",
-      value: val > 0 ? val : 172.88,
+      value: checkoutValue,
       currency: _currency,
       num_items: (_ctx.cart && _ctx.cart.item_count) || 1,
+    }, {
+      email: _ctx.customer.email || "",
+      phone: _ctx.customer.phone || "",
+      firstName: _ctx.customer.firstName || "",
+      lastName: _ctx.customer.lastName || _ctx.customer.firstName || "",
+      city: _ctx.customer.city || "",
+      state: _ctx.customer.state || "",
+      zip: _ctx.customer.zip || "",
+      country: "BR",
     });
   }
 
-  // Interceptação de cliques em botões de compra, carrinho e checkout
+  // Interceptação de cliques em botões de compra e checkout
   document.addEventListener("click", function (e) {
     var target = e.target;
     var btn = target.closest ? target.closest("button, a, input[type='submit']") : null;
@@ -338,7 +388,7 @@ function generateATMScript(storeId: string, apiBase: string): string {
     }
   }, true);
 
-  // ── Checkout & Payment Page Detection ───────────────────────────────────
+  // ── Checkout & Thank You Page Detection ──────────────────────────────────
 
   if (/^\\/checkout|^\\/checkouts\\//.test(_path)) {
     dispatchInitiateCheckout();
@@ -365,14 +415,14 @@ function generateATMScript(storeId: string, apiBase: string): string {
           num_items: lineItems.reduce(function (a, i) { return a + (i.quantity || 1); }, 0),
         },
         {
-          email: _ctx.checkout.email,
-          phone: _ctx.checkout.phone,
-          firstName: _ctx.checkout.billingAddress && _ctx.checkout.billingAddress.firstName,
-          lastName: _ctx.checkout.billingAddress && _ctx.checkout.billingAddress.lastName,
-          city: _ctx.checkout.billingAddress && _ctx.checkout.billingAddress.city,
-          state: _ctx.checkout.billingAddress && _ctx.checkout.billingAddress.provinceCode,
-          zip: _ctx.checkout.billingAddress && _ctx.checkout.billingAddress.zip,
-          country: _ctx.checkout.billingAddress && _ctx.checkout.billingAddress.countryCode,
+          email: _ctx.checkout.email || _ctx.customer.email,
+          phone: _ctx.checkout.phone || _ctx.customer.phone,
+          firstName: (_ctx.checkout.billingAddress && _ctx.checkout.billingAddress.firstName) || _ctx.customer.firstName,
+          lastName: (_ctx.checkout.billingAddress && _ctx.checkout.billingAddress.lastName) || _ctx.customer.lastName,
+          city: (_ctx.checkout.billingAddress && _ctx.checkout.billingAddress.city) || _ctx.customer.city,
+          state: (_ctx.checkout.billingAddress && _ctx.checkout.billingAddress.provinceCode) || _ctx.customer.state,
+          zip: (_ctx.checkout.billingAddress && _ctx.checkout.billingAddress.zip) || _ctx.customer.zip,
+          country: "BR",
         }
       );
     }
