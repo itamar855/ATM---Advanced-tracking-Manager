@@ -207,6 +207,51 @@ analytics.subscribe("checkout_completed", async (event) => {
         </p>
       </div>
 
+      {/* Vega Checkout Integration Card */}
+      <div className="glass-card p-6 space-y-4 border-l-4 border-l-emerald-500">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+            <Zap size={20} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                Vega Checkout (Webhooks)
+              </h3>
+              <span className="px-2 py-0.5 text-[10px] font-medium bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">Recomendado</span>
+            </div>
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Envie eventos de compras pagas e aprovadas do Vega Checkout direto para a Meta Conversions API (CAPI)
+            </p>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-lg bg-[var(--color-bg-primary)] border border-[var(--color-border-subtle)] space-y-3">
+          <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
+            Copie a URL abaixo e configure no painel do <b>Vega Checkout</b> em <b>Webhooks &gt; Adicionar Webhook</b> para o evento de pedido pago.
+          </p>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              readOnly
+              value={`https://${host}/api/v1/webhook/vega/${storeId}`}
+              className="input text-xs font-mono select-all bg-[var(--color-bg-surface)] py-2"
+            />
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(`https://${host}/api/v1/webhook/vega/${storeId}`);
+                setCopiedWebhook(true);
+                setTimeout(() => setCopiedWebhook(false), 2000);
+              }}
+              className="btn-primary shrink-0 py-2 px-4 text-xs font-semibold"
+            >
+              {copiedWebhook ? <Check size={14} /> : "Copiar"}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Zedy Checkout Integration Card */}
       <div className="glass-card p-6 space-y-4">
         <div className="flex items-center gap-3">
