@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       .limit(50);
 
     if (error) {
-      return NextResponse.json({ ok: false, error: error.message, events: [] }, { status: 200 });
+      return NextResponse.json({ ok: false, dbError: error.message, events: [] }, { status: 200 });
     }
 
     const formattedEvents = (events || []).map((e) => ({
