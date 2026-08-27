@@ -219,16 +219,22 @@ function generateATMScript(storeId: string, apiBase: string): string {
 
   // ── Despachante de Eventos para Meta CAPI ─────────────────────────────────
 
-  function sendEvent(eventName, customData, extraUserData) {
+  // eventId: opcional — se fornecido, usa como event_id (para Purchase com order_id)
+  // Garantia de deduplicação: mesmo event_id no browser e no webhook server
+  function sendEvent(eventName, customData, extraUserData, eventId) {
     var ud = Object.assign({}, _ctx.customer || {}, extraUserData || {});
     _fbp = getFbp();
     _fbc = getFbc();
+
+    // fbp e fbc são incluídos em user_data para enriquecimento no servidor
+    ud.fbp = _fbp || ud.fbp;
+    ud.fbc = _fbc || ud.fbc;
 
     var payload = JSON.stringify({
       store_id: ATM.storeId,
       track_id: _tid,
       event_name: eventName,
-      event_id: uuid(),
+      event_id: eventId || uuid(),
       event_source_url: window.location.href,
       user_data: ud,
       custom_data: customData || null,
@@ -416,10 +422,15 @@ function generateATMScript(storeId: string, apiBase: string): string {
 
     if (!sessionStorage.getItem(dkey)) {
       sessionStorage.setItem(dkey, "1");
+
+      // event_id padronizado como "order_" + orderId para deduplicacao correta com o webhook server
+      // O webhook tambem usa esse mesmo padrao -- assim a Meta deduplica os dois envios corretamente
+      var purchaseEventId = "order_" + finalOrderId;
+
       var pValue = Number(
         (_ctx.checkout && _ctx.checkout.totalPrice) ||
         (window.Shopify && window.Shopify.checkout && window.Shopify.checkout.total_price) ||
-        172.88
+        0
       );
 
       var lineItems = (_ctx.checkout && _ctx.checkout.lineItems) || [];
@@ -444,7 +455,10 @@ function generateATMScript(storeId: string, apiBase: string): string {
           state: (_ctx.checkout && _ctx.checkout.billingAddress && _ctx.checkout.billingAddress.provinceCode) || _ctx.customer.state,
           zip: (_ctx.checkout && _ctx.checkout.billingAddress && _ctx.checkout.billingAddress.zip) || _ctx.customer.zip,
           country: "BR",
-        }
+          fbp: _fbp,
+          fbc: _fbc,
+        },
+        purchaseEventId  // event_id fixo = "order_" + orderId para dedup com webhook
       );
     }
   }

@@ -217,6 +217,7 @@ export default function DashboardResumoPage() {
               <option value="yesterday">Ontem</option>
               <option value="last_7d">Últimos 7 dias</option>
               <option value="last_30d">Últimos 30 dias</option>
+              <option value="last_60d">Últimos 60 dias</option>
               <option value="this_month">Este Mês</option>
             </select>
           </div>

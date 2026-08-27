@@ -138,6 +138,8 @@ export interface BrowserUserData {
   dateOfBirth?: string; // formato YYYYMMDD ou ISO
   gender?: string;      // "m", "f", "male", "female"
   externalId?: string;  // customer ID do sistema
+  fbp?: string;         // Facebook Browser ID (cookie 1st-party _fbp)
+  fbc?: string;         // Facebook Click ID (cookie 1st-party _fbc)
 }
 
 export interface BrowserEventCustomData {

@@ -1,105 +1,98 @@
-# CÉREBRO TÉCNICO & OPERACIONAL — ATM TRACKING
+# CÉREBRO TÉCNICO & OPERACIONAL — ATM TRACKING (ADVANCED TRACKING MANAGER)
 
-Este documento é a fonte única de verdade da arquitetura, decisões técnicas, convenções de código e logs de depuração do **ATM (Advanced Tracking Manager ADS)**. Ele deve ser atualizado a cada nova feature, correção de falhas ou mudança arquitetural para guiar o desenvolvimento sem perda de contexto.
-
----
-
-## 1. Diretrizes de Desenvolvimento e Continuidade
-
-*   **Evitar Redundância:** Não redesenhar a arquitetura atual ou reescrever rotas sem uma evidência clara de falha documentada no ledger.
-*   **Depuração Guiada:** 1 problema → 1 hipótese → 1 teste → 1 resultado → 1 decisão.
-*   **Logs Limpos:** Nunca imprimir tokens, segredos, chaves privadas ou dados sensíveis de usuários (PII) sem hash nos logs do servidor.
-*   **Independência de Gateway:** As regras financeiras de cálculo do P&L devem ser calculadas no banco de dados com base na receita recebida e no custo das mercadorias vendidas (COGS) fornecido pelo lojista, subtraindo o custo de anúncios (Meta Marketing API).
+Este documento é a fonte única de verdade da arquitetura, decisões técnicas, convenções de código, integrações de APIs e logs de depuração do **ATM (Advanced Tracking Manager ADS)**.
 
 ---
 
-## 2. Arquitetura do Sistema e Rotas
+## 1. Visão Geral da Arquitetura
 
-A plataforma é estruturada como um SaaS Multi-Tenant. As APIs operam de forma dinâmica utilizando identificadores isolados.
+O ATM opera como uma infraestrutura de rastreamento server-side e atribuição First-Party de altíssima performance para e-commerce e tráfego direto.
 
 ```
-/web/src/app/api/
-├── auth/shopify/             # GET: Inicia o fluxo de instalação e OAuth
-├── auth/shopify/callback/    # GET: Troca o código temporário e persiste o token
-├── v1/capture/               # POST: Bridge de sessão — persiste fbp, fbc, IP, UA, UTMs no Supabase
-├── v1/events/browser/        # POST: Recebe eventos de funil do browser (PageView, ViewContent,
-│                             #       AddToCart, InitiateCheckout, AddPaymentInfo, Purchase)
-│                             #       → Hasha PII server-side e despacha para Meta CAPI
-└── v1/webhook/[store]/       # POST: Webhook orders/paid — evento Purchase server-side
+                               ┌─────────────────────────────┐
+                               │  Navegador do Comprador     │
+                               │  (Script ATM v4.0 Dinâmico) │
+                               └──────────────┬──────────────┘
+                                              │
+                    ┌─────────────────────────┴─────────────────────────┐
+                    │ (Primeiro ms: _fbp, _fbc, IP, UA, UTMs)           │
+                    ▼                                                   ▼
+       ┌─────────────────────────┐                         ┌─────────────────────────┐
+       │  POST /api/v1/capture   │                         │ POST /events/browser    │
+       │  (Bridge de Sessão)     │                         │ (PageView, IC, ATC, etc)│
+       └────────────┬────────────┘                         └────────────┬────────────┘
+                    │                                                   │
+                    ▼                                                   ▼
+       ┌─────────────────────────┐                         ┌─────────────────────────┐
+       │   Supabase PostgreSQL   │                         │  Meta Conversions API   │
+       │   (Sessões & Eventos)   │◄────────────────────────┤  (CAPI v23.0 - SHA-256) │
+       └────────────▲────────────┘                         └────────────▲────────────┘
+                    │                                                   │
+                    │      ┌─────────────────────────────┐              │
+                    └──────┤   POST /api/v1/webhook/*    ├──────────────┘
+                           │   (Vega Checkout / Shopify) │
+                           └─────────────────────────────┘
 ```
 
-### Arquivo de Script Shopify
+---
 
-- `shopify-pixel-script.liquid`: Script completo para instalar no `theme.liquid`. Captura sessão,
-  dispara todos os eventos do funil e coleta PII disponível via Liquid (email, phone, endereço).
+## 2. Mapa Completo de Rotas de API (`/web/src/app/api/`)
+
+| Rota | Método | Função |
+| :--- | :--- | :--- |
+| `/api/auth/facebook` | `GET` | Inicia o fluxo de autorização OAuth 2.0 com a Meta Graph API. |
+| `/api/auth/facebook/callback` | `GET` | Troca o `code` temporário pelo **Long-Lived Access Token (60 dias)** e persiste no Supabase. |
+| `/api/v1/capture` | `POST` | **Bridge de Atribuição:** Registra ou atualiza a sessão do visitante com `fbp`, `fbc`, `fbclid`, IP real, UA e UTMs. |
+| `/api/v1/pixel/[domain]/script.js` | `GET` | **Pixel Engine v4.0:** Serve dinamicamente o script com **Input Harvester**, captura de `AddToCart` com preço da variante, `InitiateCheckout` com valor real e detector universal de **Thank You Page (`Purchase`)**. |
+| `/api/v1/events/browser` | `POST` | Recebe eventos do navegador, enriquece dados PII com busca reversa, gera hashes SHA-256 e despacha para a Meta CAPI com deduplicação. |
+| `/api/v1/events/list` | `GET` | Retorna os **últimos 500 eventos** ao vivo com contagem de Compras, Checkouts, Carrinhos e PageViews. |
+| `/api/v1/webhook/vega/[store]` | `POST` | Webhook oficial do **Vega Checkout**: Processa compras aprovadas, carrinhos abandonados e PIX/Boleto gerados com 13 parâmetros PII. |
+| `/api/v1/webhook/[store]` | `POST` | Webhook universal do **Shopify** para `orders/paid` e `orders/create`. |
+| `/api/v1/webhook/zedy/[store]` | `POST` | Webhook para o checkout **Zedy**. |
+| `/api/v1/dashboard/metrics` | `GET` | Retorna o P&L consolidado: Faturamento Líquido, Gasto em Ads convertido para BRL com cotação do dia, Lucro Líquido Real, ROAS, Vendas Pendentes, Donut de Métodos de Pagamento e Fontes de Tráfego. |
+| `/api/v1/meta/campaigns/list` | `GET` | **Gerenciador de 4 Níveis (Estilo UTMify PRO):** Retorna `accounts` (com Cartões e Ciclos da Meta), `campaigns`, `adsets` e `ads` com métricas completas (IC, CPI, Margem, ROI, Lucro, ROAS, CPA). |
+| `/api/v1/meta/campaigns/manage` | `POST` | **Central de Controle:** Executa Play/Pause, Alteração de Orçamento diário (com conversão USD/BRL), Duplicação e Exclusão direto na Graph API. |
+| `/api/v1/orders/list` | `GET` | Lista todos os pedidos rastreados com atribuição CAPI direta e detalhes de cliente e UTMs. |
+| `/api/v1/live` | `GET` | Contador em tempo real de clientes online navegando e clientes no checkout. |
 
 ---
 
-## 3. Modelo de Dados (Supabase / PostgreSQL)
+## 3. Conversão Cambial em Tempo Real (`USD ➔ BRL`)
 
-O schema está estruturado em migrações incrementais na pasta `supabase/migrations/`:
-
-*   `001_create_tenants.sql`: Tabela de organizações/assinaturas com RLS ativado por `auth.uid()`.
-*   `002_create_stores.sql`: Lojas integradas da Shopify vinculadas a um tenant. Guarda as credenciais criptografadas de acesso.
-*   `003_create_integrations.sql`: Configurações de pixels (Meta, Google, TikTok) e tokens das plataformas de anúncios.
-*   `004_create_sessions.sql`: Ponte de atribuição. Armazena `track_id`, `fbp`, `fbc`, `fbclid`, IP real e User-Agent do comprador.
-*   `005_create_orders.sql`: Relação de pedidos sincronizados com UTMs e hashes de dados pessoais para envio CAPI.
-*   `006_create_events.sql` & `event_attempts.sql`: Log de auditoria de eventos despachados para as CAPI com rastreamento de latência e erros.
-*   `007_create_diagnostics.sql`: Alertas automáticos do sistema (Score baixo, falha de conexão, duplicidade de emissores).
-*   `008_create_costs.sql`: Valores de custo de anúncios sincronizados das APIs de Marketing e COGS inseridos.
+Implementada no serviço [`web/src/lib/currency.ts`](file:///c:/Users/Hard%20Work/Desktop/ATM%20-%20Advanced%20Tracking%20Manager%20ADS/web/src/lib/currency.ts):
+- Conecta-se à API comercial oficial do Banco Central / AwesomeAPI (`https://economia.awesomeapi.com.br/last/USD-BRL`).
+- Taxa comercial atual: `USD 1 = R$ 5.1627`.
+- Converte automaticamente gastos e orçamentos das contas faturadas em Dólar (`USD 1`, `USD 2`, `USD 3`, `USD 04 - BM NOVA`) para Reais para cálculo exato de **Lucro Líquido Real**, **ROAS** e **CPA**.
 
 ---
 
-## 4. Regras Críticas de Negócio para o Meta CAPI
+## 4. Regras de Qualidade Meta CAPI (EMQ 100% & Deduplicação)
 
-Para garantir a máxima pontuação de correspondência de eventos (EMQ) e evitar penalidades da Meta, as seguintes regras são **obrigatórias** e estão codificadas em [event-builder.ts](file:///c:/Users/Hard%20Work/Desktop/ATM%20-%20Advanced%20Tracking%20Manager%20ADS/web/src/lib/tracking/event-builder.ts):
+### 4.1 Higienização Rigorosa de 13 Sinais PII
+| Sinal Meta | Parâmetro | Normalização antes do SHA-256 |
+| :--- | :--- | :--- |
+| E-mail | `em` | `lowercase + trim` |
+| Telefone | `ph` | Apenas números com DDI (`5511999999999`) |
+| Primeiro Nome | `fn` | `lowercase + trim + sem acentos` |
+| Sobrenome | `ln` | `lowercase + trim + sem acentos` |
+| Cidade | `ct` | `lowercase + trim + sem acentos` |
+| Estado | `st` | UF com 2 letras minúsculas (ex: `sp`, `rj`) |
+| CEP | `zp` | Apenas 8 dígitos numéricos |
+| País | `co` | `br` em minúsculo |
+| Identificador Universal | `external_id` | SHA-256 baseado em `customer:email` ou `visitor:fbp` |
+| Cookie de 1ª Parte | `fbp` | `fb.1.{timestamp}.{rand}` (NÃO hasheado) |
+| Click ID de 1ª Parte | `fbc` | `fb.1.{timestamp}.{fbclid}` (NÃO hasheado) |
+| IP Real do Dispositivo | `client_ip_address` | IP do visitante capturado no navegador |
+| User-Agent Real | `client_user_agent` | UA exato do navegador do visitante |
 
-### 4.1 Identificação e Deduplicação
-*   **Event ID:** Todos os eventos de compra do Servidor devem usar o formato exato `Purchase_${orderId}`. O Pixel do Navegador (Shopify Web Pixels API) deve utilizar o mesmo ID para permitir a deduplicação.
-*   **Event ID (funil):** Eventos de funil (ViewContent, AddToCart, etc.) usam UUID v4 gerado no browser.
-*   **External ID:** Deve ser um hash SHA-256 estável baseado em `customer_id` ou no par `email`/`telefone`. **NUNCA use o order_id como external_id**, pois ele representa a transação e não o comprador.
-
-### 4.2 Higienização de PII (Dados Pessoais)
-Todos os campos abaixo são normalizados e hasheados com **SHA-256** antes do envio:
-
-| Campo Meta | Normalização antes do hash |
-|---|---|
-| `em` (email) | lowercase + trim |
-| `ph` (phone) | somente dígitos |
-| `fn` (first name) | lowercase + trim + remover acentos |
-| `ln` (last name) | lowercase + trim + remover acentos |
-| `ct` (city) | lowercase + trim + remover acentos e pontuação |
-| `st` (state) | código 2 letras lowercase |
-| `zp` (zip/CEP) | somente dígitos |
-| `co` (country) | código ISO 2 letras lowercase |
-| `db` (date of birth) | formato YYYYMMDD |
-| `ge` (gender) | "m" ou "f" |
-| `external_id` | prefixo `customer:` + SHA-256 |
-
-*   **Parâmetros de Sessão:** `fbp` e `fbc` **NÃO** devem ser hasheados — enviados como recebidos.
-*   **fbc (Click ID):** Não fabrique ou gere IDs falsos de `fbc` retroativamente. Construir a partir do `fbclid` **apenas se ele estiver presente na URL no momento do clique**.
-
-### 4.3 IP e User-Agent
-*   O IP e o User-Agent enviados nos eventos do servidor devem corresponder ao **dispositivo do comprador** (capturados via `/api/v1/capture` no navegador) e nunca aos IPs dos servidores.
-
-### 4.4 Funil Completo de Eventos
-O ATM envia todos os eventos do funil para maximizar o score do Meta:
-
-| Evento | Trigger | Source |
-|---|---|---|
-| `PageView` | Toda página carregada | Browser → CAPI |
-| `ViewContent` | Página de produto | Browser → CAPI |
-| `AddToCart` | Submit do form de carrinho | Browser → CAPI |
-| `InitiateCheckout` | Entrada no /checkout | Browser → CAPI |
-| `AddPaymentInfo` | Step de pagamento | Browser → CAPI |
-| `Purchase` | Webhook orders/paid | Servidor → CAPI |
-| `Purchase` | Página thank_you | Browser → CAPI (dedup) |
+### 4.2 Deduplicação Tripla
+1. **Client-Side:** Trava em `sessionStorage` com chave `atm_purchase_{orderId}` contra F5 na página de obrigado.
+2. **Server-Side:** Idempotência no banco via `reserveEvent(storeId, eventName, eventId, source)`.
+3. **Meta CAPI Engine:** Janela de 48 horas unificando o evento do navegador com o evento do webhook do servidor com base no par `(event_name, event_id)`.
 
 ---
 
-## 5. Ledger de Alterações e Histórico
-
-Abaixo está o registro de modificações importantes no projeto.
+## 5. Ledger de Versões e Alterações
 
 | Versão | Data | Tipo | Descrição | Autor |
 | :--- | :--- | :--- | :--- | :--- |
@@ -123,4 +116,4 @@ Abaixo está o registro de modificações importantes no projeto.
 | **v2.7.0** | 26/08/2026 | **Feature & Refinamento** | Dashboard Principal reestruturada com Card Master de Lucro Líquido Real, Cotação Comercial USD/BRL em tempo real (`currency.ts`), conversão cambial automática de gastos e orçamentos em USD para BRL, disparo universal de `InitiateCheckout` no navegador e 100% de cobertura EMQ (13 parâmetros PII). | Antigravity |
 | **v2.8.0** | 26/08/2026 | **UI/UX Master & Otimização** | Redesenho completo do Gerenciador de Campanhas estilo UTMify PRO (Super Otimizado): Navegação em 4 abas de drill-down (`Contas`, `Campanhas`, `CJs`, `ADs`), Toggle Switches iOS animados de Play/Pause instantâneo, Cartões de crédito e ciclos de cobrança da Meta, Métricas completas (IC, CPI, Margem, ROI, Lucro, ROAS, CPA), edição inline de orçamento e Linha de Totais no Rodapé. | Antigravity |
 | **v2.9.0** | 26/08/2026 | **Dashboard Resumo & Sidebar Master** | Redesenho completo da Dashboard Principal (Resumo) estilo UTMify PRO com 12 Cards Financeiros (Faturamento Líquido, Gastos em Ads convertidos, ROAS, Lucro Líquido Real, Vendas Pendentes, Margem, Taxas, ROI, CPA, ARPU, Reembolso, Chargeback e Taxa de Aprovação), Gráfico Donut de Meios de Pagamento (Pix, Cartão, Boleto), Barras de Fontes de Tráfego e Menu Lateral hierárquico reestruturado. | Antigravity |
-
+| **v3.0.0** | 26/08/2026 | **Scale & High Throughput** | Limite do Event Explorer expandido para 500 eventos ao vivo para suportar alto tráfego simultâneo (165+ usuários online), detecção universal de Thank You Page no Pixel v4.0 com fallback para Shopify Checkout e tela de Pedidos & Vendas reformulada. | Antigravity |

@@ -67,7 +67,8 @@ export async function updateEventResult(
   latencyMs?: number,
   userDataKeys: string[] = [],
   eventName: string = "Event",
-  orderId?: string
+  orderId?: string,
+  emqScore?: number
 ): Promise<void> {
   const finalStoreId = storeId || "dckb5g-7d";
 
@@ -80,7 +81,7 @@ export async function updateEventResult(
       source,
       status,
       user_data_keys: userDataKeys,
-      health_score: 95,
+      health_score: emqScore !== undefined ? emqScore : 95,
       meta_response: metaResponse || null,
       latency_ms: latencyMs || null,
       sent_at: new Date().toISOString(),

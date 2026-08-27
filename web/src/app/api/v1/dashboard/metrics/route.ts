@@ -6,12 +6,83 @@ import { getUsdBrlRate, convertToBrl } from "@/lib/currency";
 export const dynamic = "force-dynamic";
 
 /**
+ * Converte um date_preset em { startDate, endDate } como strings ISO.
+ * Para garantir que Gasto × Vendas usem EXATAMENTE o mesmo intervalo,
+ * aplicamos a fórmula: effective_start_date = MAX(checkout_started_at, startDate)
+ *
+ * @param datePreset - Período selecionado pelo usuário
+ * @param checkoutStartedAt - Data em que o checkout entrou em operação (por loja)
+ */
+function resolveDateRange(datePreset: string, checkoutStartedAt?: string | null): {
+  startDate: string;
+  endDate: string;
+  effectiveStartDate: string;
+} {
+  const now = new Date();
+  const endDate = new Date(now);
+  endDate.setHours(23, 59, 59, 999);
+
+  let startDate = new Date(now);
+  startDate.setHours(0, 0, 0, 0);
+
+  switch (datePreset) {
+    case "yesterday":
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 1);
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setDate(endDate.getDate() - 1);
+      endDate.setHours(23, 59, 59, 999);
+      break;
+    case "last_7d":
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 7);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case "last_30d":
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 30);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case "last_60d":
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 60);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case "this_month":
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    default: // "today"
+      break;
+  }
+
+  // effective_start_date = MAX(checkout_started_at, startDate)
+  // Garante que não comparamos gasto de ANTES do checkout entrar em operação com vendas inexistentes
+  let effectiveStartDate = startDate.toISOString();
+  if (checkoutStartedAt) {
+    const coDate = new Date(checkoutStartedAt);
+    if (coDate > startDate) {
+      effectiveStartDate = coDate.toISOString();
+    }
+  }
+
+  return {
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString(),
+    effectiveStartDate,
+  };
+}
+
+/**
  * GET /api/v1/dashboard/metrics
- * Retorna as métricas completas consolidadas da Dashboard Resumo (Estilo UTMify PRO):
- * - Faturamento Líquido, Gasto com Anúncios (convertido USD/BRL), Lucro Líquido Real, ROAS
- * - Vendas Pendentes, Margem, ROI, Taxas, CPA, Reembolso, ARPU, Chargeback, Taxa de Aprovação
- * - Gráfico Donut de Meios de Pagamento (Pix, Cartão, Boleto)
- * - Divisão de Vendas por Fonte de Tráfego (MetaAds, Google, Orgânico, etc.)
+ * Retorna métricas financeiras completas da Dashboard Resumo.
+ *
+ * v3.1.0 - Fixes:
+ *   - Filtro de data aplicado nas vendas (mesmo intervalo que o gasto em ads)
+ *   - effective_start_date = MAX(checkout_started_at, início_período)
+ *   - Removido fallback faker de dados fictícios
+ *   - Adicionado suporte a last_60d
+ *   - Vendas Pendentes calculadas dinamicamente
  */
 export async function GET(request: NextRequest) {
   try {
@@ -22,11 +93,12 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient();
     const usdBrlRate = await getUsdBrlRate();
 
-    // 1. Busca token da Meta no banco
+    // 1. Busca integração Meta ativa
     const { data: integration } = await supabase
       .from("integrations")
       .select("*")
       .eq("platform", "meta")
+      .eq("status", "active")
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -38,21 +110,35 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
-    const allAccountIds: string[] = integration?.config?.ad_account_ids || [
-      "act_1316835733682937",
-      "act_2704031959980850",
-      "act_1552831582460812",
-      "act_994577432497447",
-      "act_857082363539586",
-      "act_991744449908220",
-    ];
+    const allAccountIds: string[] = integration?.config?.ad_account_ids || [];
 
-    // 2. Mapeia date_preset
-    let metaDatePreset = "today";
-    if (datePreset === "yesterday") metaDatePreset = "yesterday";
-    else if (datePreset === "last_7d") metaDatePreset = "last_7d";
-    else if (datePreset === "last_30d") metaDatePreset = "last_30d";
-    else if (datePreset === "this_month") metaDatePreset = "this_month";
+    // 2. Busca checkout_started_at da loja para a regra de datas
+    // Tenta buscar da tabela stores, com fallback para config da integração
+    let checkoutStartedAt: string | null = null;
+    try {
+      const { data: storeData } = await supabase
+        .from("stores")
+        .select("config, created_at")
+        .limit(1)
+        .maybeSingle();
+
+      checkoutStartedAt =
+        storeData?.config?.checkout_started_at ||
+        integration?.config?.checkout_started_at ||
+        null;
+    } catch {}
+
+    // 3. Resolve intervalo de datas com regra effective_start_date
+    const presetMap: Record<string, string> = {
+      today: "today",
+      yesterday: "yesterday",
+      last_7d: "last_7d",
+      last_30d: "last_30d",
+      last_60d: "last_60d",
+      this_month: "this_month",
+    };
+    const metaDatePreset = presetMap[datePreset] || "today";
+    const { startDate, endDate, effectiveStartDate } = resolveDateRange(datePreset, checkoutStartedAt);
 
     let totalSpendBrl = 0;
     let totalSpendOriginal = 0;
@@ -60,7 +146,7 @@ export async function GET(request: NextRequest) {
     let totalClicks = 0;
     const availableAccounts: Array<{ id: string; name: string; currency: string; spend: number; spendBrl: number }> = [];
 
-    // 3. Consulta em tempo real na Meta Graph API com conversão USD/BRL
+    // 4. Consulta gastos na Meta Graph API pelo período
     if (token && allAccountIds.length > 0) {
       const spendPromises = allAccountIds.map(async (accId) => {
         const formattedId = accId.startsWith("act_") ? accId : `act_${accId}`;
@@ -71,12 +157,15 @@ export async function GET(request: NextRequest) {
           );
           if (res.ok) {
             const accData = await res.json();
-            const currency = (accData.currency || "USD").toUpperCase();
+            if (accData.error) {
+              console.warn(`[Dashboard Metrics] Erro conta ${formattedId}:`, accData.error.message);
+              return;
+            }
+            const currency = (accData.currency || "BRL").toUpperCase();
             const ins = accData.insights?.data?.[0];
             const origSpend = Number(ins?.spend || 0);
             const imp = Number(ins?.impressions || 0);
             const clk = Number(ins?.clicks || 0);
-
             const convertedSpendBrl = convertToBrl(origSpend, currency, usdBrlRate);
 
             availableAccounts.push({
@@ -102,13 +191,25 @@ export async function GET(request: NextRequest) {
       await Promise.all(spendPromises);
     }
 
-    // 4. Busca dados de vendas e pedidos no Supabase
+    // 5. Busca vendas aprovadas NO PERÍODO (usando effectiveStartDate)
+    // Isso garante que gasto e vendas são do mesmo intervalo temporal
     const { data: allPurchases } = await supabase
       .from("events")
-      .select("*")
+      .select("event_name, meta_response, created_at")
       .eq("event_name", "Purchase")
       .eq("status", "accepted")
+      .gte("created_at", effectiveStartDate)
+      .lte("created_at", endDate)
       .order("created_at", { ascending: false });
+
+    // 6. Busca vendas pendentes (PIX/Boleto aguardando pagamento) no período
+    const { data: pendingPurchases } = await supabase
+      .from("events")
+      .select("meta_response")
+      .eq("event_name", "Purchase")
+      .eq("status", "pending")
+      .gte("created_at", effectiveStartDate)
+      .lte("created_at", endDate);
 
     let netRevenue = 0;
     let paidSalesCount = 0;
@@ -116,7 +217,6 @@ export async function GET(request: NextRequest) {
     let cardCount = 0;
     let boletoCount = 0;
     let otherCount = 0;
-
     let metaSalesCount = 0;
     let iqSalesCount = 0;
     let naSalesCount = 0;
@@ -127,13 +227,13 @@ export async function GET(request: NextRequest) {
       const customData = metaResp.custom_data || {};
       const tracking = orderDetails.tracking_params || {};
 
-      const val = Number(orderDetails.value || customData.value || 172.88);
+      const val = Number(orderDetails.value || customData.value || 0);
       netRevenue += val;
       paidSalesCount += 1;
 
       // Classifica Método de Pagamento
-      const method = String(orderDetails.payment_method || "pix").toLowerCase();
-      if (method.includes("pix")) pixCount++;
+      const method = String(orderDetails.payment_method || "").toLowerCase();
+      if (method.includes("pix") || method === "") pixCount++; // sem method = pix (default Vega)
       else if (method.includes("card") || method.includes("cartao") || method.includes("credit")) cardCount++;
       else if (method.includes("boleto")) boletoCount++;
       else otherCount++;
@@ -142,56 +242,54 @@ export async function GET(request: NextRequest) {
       const src = String(tracking.utm_source || "").toLowerCase();
       if (src.includes("meta") || src.includes("facebook") || src.includes("fb") || src.includes("insta")) {
         metaSalesCount++;
-      } else if (src.includes("iq") || src.includes("google") || src.includes("kwai")) {
+      } else if (src.includes("iq") || src.includes("google") || src.includes("kwai") || src.includes("tiktok")) {
         iqSalesCount++;
       } else {
         naSalesCount++;
       }
     });
 
-    // Se houver poucas vendas de teste cadastradas, garante proporção realista
-    if (paidSalesCount === 0) {
-      netRevenue = 3342.47;
-      paidSalesCount = 33;
-      pixCount = 23;
-      cardCount = 10;
-      boletoCount = 0;
-      metaSalesCount = 18;
-      iqSalesCount = 7;
-      naSalesCount = 8;
-    }
+    // Vendas Pendentes calculadas dinamicamente
+    let pendingSalesValue = 0;
+    (pendingPurchases || []).forEach((ev) => {
+      const metaResp = ev.meta_response || {};
+      const orderDetails = metaResp.order_details || {};
+      const customData = metaResp.custom_data || {};
+      pendingSalesValue += Number(orderDetails.value || customData.value || 0);
+    });
 
-    const totalOrders = Math.max(paidSalesCount, pixCount + cardCount + boletoCount + otherCount);
-    const pixPercent = totalOrders > 0 ? Math.round((pixCount / totalOrders) * 100) : 69;
-    const cardPercent = totalOrders > 0 ? Math.round((cardCount / totalOrders) * 100) : 30;
-    const boletoPercent = totalOrders > 0 ? Math.round((boletoCount / totalOrders) * 100) : 1;
+    const totalOrders = paidSalesCount;
+    const pixPercent = totalOrders > 0 ? Math.round((pixCount / totalOrders) * 100) : 0;
+    const cardPercent = totalOrders > 0 ? Math.round((cardCount / totalOrders) * 100) : 0;
+    const boletoPercent = totalOrders > 0 ? Math.round((boletoCount / totalOrders) * 100) : 0;
 
-    // Cálculo das Métricas Financeiras
-    const taxes = 0; // Taxas configuráveis
-    const totalSpend = totalSpendBrl > 0 ? totalSpendBrl : 2608.72;
+    // Métricas Financeiras (somente dados reais, sem fallback faker)
+    const taxes = 0;
+    const totalSpend = totalSpendBrl;
     const totalProfit = netRevenue - totalSpend - taxes;
-    const roas = totalSpend > 0 ? netRevenue / totalSpend : 1.28;
-    const roi = totalSpend > 0 ? totalProfit / totalSpend : 1.28;
-    const margin = netRevenue > 0 ? (totalProfit / netRevenue) * 100 : 22.0;
-    const cpa = totalOrders > 0 ? totalSpend / totalOrders : 79.05;
-    const arpu = totalOrders > 0 ? netRevenue / totalOrders : 101.29;
-    const pendingSalesValue = 6129.16; // Boletos e Pix aguardando pagamento
+    const roas = totalSpend > 0 ? netRevenue / totalSpend : 0;
+    const roi = totalSpend > 0 ? totalProfit / totalSpend : 0;
+    const margin = netRevenue > 0 ? (totalProfit / netRevenue) * 100 : 0;
+    const cpa = totalOrders > 0 && totalSpend > 0 ? totalSpend / totalOrders : 0;
+    const arpu = totalOrders > 0 ? netRevenue / totalOrders : 0;
 
-    const metaPercent = totalOrders > 0 ? ((metaSalesCount / totalOrders) * 100).toFixed(1) : "54.5";
-    const iqPercent = totalOrders > 0 ? ((iqSalesCount / totalOrders) * 100).toFixed(1) : "21.2";
-    const naPercent = totalOrders > 0 ? ((naSalesCount / totalOrders) * 100).toFixed(1) : "18.2";
+    const metaPercent = totalOrders > 0 ? ((metaSalesCount / totalOrders) * 100).toFixed(1) : "0";
+    const iqPercent = totalOrders > 0 ? ((iqSalesCount / totalOrders) * 100).toFixed(1) : "0";
+    const naPercent = totalOrders > 0 ? ((naSalesCount / totalOrders) * 100).toFixed(1) : "0";
 
     return NextResponse.json({
       ok: true,
       usdBrlRate,
       date_preset: datePreset,
+      effective_start_date: effectiveStartDate,
+      checkout_started_at: checkoutStartedAt,
       metrics: {
         net_revenue: Math.round(netRevenue * 100) / 100,
         ad_spend: Math.round(totalSpend * 100) / 100,
         ad_spend_original: Math.round(totalSpendOriginal * 100) / 100,
         profit: Math.round(totalProfit * 100) / 100,
         roas: Math.round(roas * 100) / 100,
-        pending_sales_value: pendingSalesValue,
+        pending_sales_value: Math.round(pendingSalesValue * 100) / 100,
         margin: Math.round(margin * 10) / 10,
         taxes: taxes,
         roi: Math.round(roi * 100) / 100,
@@ -199,7 +297,7 @@ export async function GET(request: NextRequest) {
         refund_rate: 0.0,
         arpu: Math.round(arpu * 100) / 100,
         chargeback_rate: 0.0,
-        approval_rate: 100.0,
+        approval_rate: totalOrders > 0 ? 100.0 : 0.0,
         impressions: totalImpressions,
         clicks: totalClicks,
         total_orders: totalOrders,
@@ -212,9 +310,9 @@ export async function GET(request: NextRequest) {
         other: { count: otherCount, percent: 0 },
       },
       traffic_sources: [
-        { name: "MetaAds", count: metaSalesCount || 18, percent: Number(metaPercent) || 54.5 },
-        { name: "iq", count: iqSalesCount || 7, percent: Number(iqPercent) || 21.2 },
-        { name: "N/A", count: naSalesCount || 6, percent: Number(naPercent) || 18.2 },
+        { name: "MetaAds", count: metaSalesCount, percent: Number(metaPercent) },
+        { name: "iq", count: iqSalesCount, percent: Number(iqPercent) },
+        { name: "N/A", count: naSalesCount, percent: Number(naPercent) },
       ],
       available_accounts: availableAccounts,
     });

@@ -55,5 +55,4 @@
   };
 </script>
 
-{% comment %} ── Bloco 2: Script ATM auto-configurado pelo domínio da loja ── {% endcomment %}
-<script src="{{ shop.permanent_domain | prepend: '/api/v1/pixel/' | append: '/script.js' | prepend: 'https://SEU_DOMINIO_ATM.vercel.app' }}" defer></script>
+<script src="https://trackingatm.vercel.app/api/v1/pixel/{{ shop.permanent_domain }}/script.js" defer></script>

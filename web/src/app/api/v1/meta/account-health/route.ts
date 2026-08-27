@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
+
+export const dynamic = "force-dynamic";
 
 /**
  * Infere o Trust Tier da conta (1, 2 ou 3) com base em sinais reais da Meta API.
@@ -85,7 +87,6 @@ function inferTier(metaAccount: any): {
   totalPoints += statusPoints;
   maxPoints += 5;
 
-  // Normaliza 0-100 e define o Tier
   const normalized = Math.round((totalPoints / maxPoints) * 100);
   let tier: 1 | 2 | 3 = 1;
   if (normalized >= 70) tier = 3;
@@ -95,48 +96,133 @@ function inferTier(metaAccount: any): {
 }
 
 /**
- * GET /api/v1/meta/account-health?store_id=xyz
- * Busca dados REAIS da Meta Graph API e retorna Trust Score + Trust Tier inferido.
+ * GET /api/v1/meta/account-health?store_id=xyz&ad_account_id=act_xxx
+ *
+ * v3.1.0 - Fixes:
+ *   - Aceita ad_account_id como parâmetro direto (sem precisar de store_id)
+ *   - Busca robusta de token: tenta por store_id, se não achar, busca qualquer integração ativa
+ *   - Verificação de permissões antes da chamada de dados sensíveis
+ *   - Mensagem de erro clara quando token não tem ads_management
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get("store_id");
+    const directAccountId = searchParams.get("ad_account_id");
 
-    if (!storeId) {
-      return NextResponse.json({ ok: false, error: "store_id obrigatório" }, { status: 400 });
+    const supabase = createAdminClient();
+
+    // 1. Busca integração Meta ativa — tenta filtrar por store_id, senão pega qualquer ativa
+    let integration: any = null;
+
+    if (storeId) {
+      const { data } = await supabase
+        .from("integrations")
+        .select("*")
+        .eq("store_id", storeId)
+        .eq("platform", "meta")
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      integration = data;
     }
 
-    const supabase = await createClient();
-
-    const { data: integration } = await supabase
-      .from("integrations")
-      .select("*")
-      .eq("store_id", storeId)
-      .eq("platform", "meta")
-      .eq("status", "active")
-      .maybeSingle();
+    // Fallback: busca qualquer integração ativa da Meta
+    if (!integration) {
+      const { data } = await supabase
+        .from("integrations")
+        .select("*")
+        .eq("platform", "meta")
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      integration = data;
+    }
 
     if (!integration) {
       return NextResponse.json({
         ok: false,
-        error: "Nenhuma integração do Facebook ativa encontrada para esta loja.",
+        error: "Nenhuma integração do Facebook ativa encontrada. Conecte sua conta em Integrações.",
       }, { status: 404 });
     }
 
-    const adAccountId = (integration.config?.ad_account_id as string) || "";
+    // 2. Descriptografa token
+    let decryptedToken = "";
+    const rawToken = integration.access_token_enc?.toString() || "";
+    if (rawToken.startsWith("EAA")) {
+      decryptedToken = rawToken;
+    } else {
+      try {
+        decryptedToken = decrypt(rawToken);
+      } catch {
+        decryptedToken = rawToken;
+      }
+    }
+
+    if (!decryptedToken) {
+      return NextResponse.json({
+        ok: false,
+        error: "Token de acesso inválido. Reconecte sua conta do Facebook em Integrações.",
+      }, { status: 401 });
+    }
+
+    // 3. Resolve conta de anúncio a analisar
+    // Prioridade: parâmetro direto > config.ad_account_id (singular) > primeiro do array ad_account_ids
+    let adAccountId = directAccountId || "";
     if (!adAccountId) {
+      const configIds = integration.config?.ad_account_ids;
+      if (Array.isArray(configIds) && configIds.length > 0) {
+        adAccountId = configIds[0];
+      } else if (integration.config?.ad_account_id) {
+        adAccountId = integration.config.ad_account_id;
+      }
+    }
+
+    if (!adAccountId) {
+      // Retorna lista de contas disponíveis para o usuário selecionar
       return NextResponse.json({
         ok: false,
         error: "ad_account_id não configurado. Selecione uma conta de anúncios.",
+        needs_account_selection: true,
+        available_account_ids: integration.config?.ad_account_ids || [],
       }, { status: 400 });
     }
 
     const cleanAccountId = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
-    const decryptedToken = decrypt(integration.access_token_enc.toString());
     const apiVersion = integration.api_version || "v23.0";
 
-    // Campos expandidos — inclui capabilities e created_time para inferência de Tier
+    // 4. Verifica permissões do token antes de chamar endpoints sensíveis
+    let permissionsOk = true;
+    let permissionError = "";
+    try {
+      const permRes = await fetch(
+        `https://graph.facebook.com/${apiVersion}/me/permissions?access_token=${decryptedToken}`,
+        { signal: AbortSignal.timeout(8000) }
+      );
+      if (permRes.ok) {
+        const permData = await permRes.json();
+        const grantedPerms: string[] = (permData.data || [])
+          .filter((p: any) => p.status === "granted")
+          .map((p: any) => p.permission);
+        if (!grantedPerms.includes("ads_management") && !grantedPerms.includes("ads_read")) {
+          permissionsOk = false;
+          permissionError = `Token sem permissão 'ads_management' ou 'ads_read'. Permissões concedidas: ${grantedPerms.join(", ")}`;
+        }
+      }
+    } catch {
+      // Se não conseguir verificar permissões, tenta prosseguir mesmo assim
+    }
+
+    if (!permissionsOk) {
+      return NextResponse.json({
+        ok: false,
+        error: permissionError,
+      }, { status: 403 });
+    }
+
+    // 5. Campos expandidos — inclui capabilities e created_time para inferência de Tier
     const fields = [
       "name",
       "account_status",
@@ -146,50 +232,65 @@ export async function GET(request: NextRequest) {
       "currency",
       "capabilities",
       "created_time",
-      "insights.date_preset(last_30d){impressions,spend,actions}",
+      `insights.date_preset(last_30d){impressions,spend,actions}`,
     ].join(",");
 
     const accountUrl = `https://graph.facebook.com/${apiVersion}/${cleanAccountId}?fields=${fields}&access_token=${decryptedToken}`;
-    const resp = await fetch(accountUrl, { signal: AbortSignal.timeout(10000) });
+    const resp = await fetch(accountUrl, { signal: AbortSignal.timeout(12000) });
 
     if (!resp.ok) {
       const errorJson = await resp.json();
+      const errMsg = errorJson.error?.message || "Falha na Graph API do Facebook";
+      const errCode = errorJson.error?.code || 0;
       return NextResponse.json({
         ok: false,
-        error: errorJson.error?.message || "Falha na Graph API do Facebook",
+        error: `(#${errCode}) ${errMsg}`,
       }, { status: resp.status });
     }
 
     const metaAccount = await resp.json();
 
-    // EMQ médio dos eventos recentes do ATM
-    const { data: events } = await supabase
+    if (metaAccount.error) {
+      return NextResponse.json({
+        ok: false,
+        error: `(#${metaAccount.error.code}) ${metaAccount.error.message}`,
+      }, { status: 400 });
+    }
+
+    // 6. EMQ médio dos eventos recentes do ATM
+    const eventQuery = supabase
       .from("events")
       .select("health_score")
-      .eq("store_id", storeId)
       .eq("source", "server")
       .order("created_at", { ascending: false })
       .limit(50);
 
-    const avgEmq = events && events.length > 0
-      ? Math.round(events.reduce((acc, ev) => acc + (ev.health_score || 0), 0) / events.length)
-      : 0;
+    if (storeId) {
+      eventQuery.eq("store_id", storeId);
+    }
 
-    // 4 Pilares do Trust Score
+    const { data: events } = await eventQuery;
+
+    const avgEmq =
+      events && events.length > 0
+        ? Math.round(events.reduce((acc, ev) => acc + (ev.health_score || 0), 0) / events.length)
+        : 0;
+
+    // 7. 4 Pilares do Trust Score
     const accountStatus = metaAccount.account_status || 1;
     const billingScore = accountStatus === 1 ? 100 : accountStatus === 3 ? 50 : 20;
     const complianceScore = !metaAccount.disable_reason || metaAccount.disable_reason === 0 ? 100 : 30;
-    const feedbackScore = 5.0;
+    const feedbackScore = 5.0; // A Meta não expõe isso diretamente na API
     const emqScore = avgEmq;
 
     const trustScore = Math.round(
-      (billingScore * 0.3) +
-      (complianceScore * 0.3) +
-      ((feedbackScore / 5.0) * 100 * 0.2) +
-      (emqScore * 0.2)
+      billingScore * 0.3 +
+      complianceScore * 0.3 +
+      (feedbackScore / 5.0) * 100 * 0.2 +
+      emqScore * 0.2
     );
 
-    // Trust Tier inferido
+    // 8. Trust Tier inferido
     const { tier, signals: tierSignals } = inferTier(metaAccount);
 
     const risks: string[] = [];
@@ -209,11 +310,12 @@ export async function GET(request: NextRequest) {
     }
     if (risks.length === 0) {
       recommendations.push("Conta de anúncio saudável e sem pendências regulamentares.");
+      recommendations.push("Continue monitorando o EMQ e mantenha o pixel com todos os sinais PII.");
     }
 
     const healthRecord = {
       ad_account_id: cleanAccountId,
-      ad_account_name: metaAccount.name || "Conta de Anúncios Integrada",
+      ad_account_name: metaAccount.name || "Conta de Anúncios",
       account_status: accountStatus,
       trust_score: trustScore,
       compliance_score: complianceScore,
@@ -228,13 +330,15 @@ export async function GET(request: NextRequest) {
       last_analyzed_at: new Date().toISOString(),
     };
 
-    await supabase.from("ad_account_health").upsert({
-      store_id: storeId,
-      ...healthRecord,
-    }, { onConflict: "store_id,ad_account_id" });
+    // Persiste no banco (não crítico — não bloqueia resposta)
+    try {
+      await supabase.from("ad_account_health").upsert(
+        { store_id: storeId || "default", ...healthRecord },
+        { onConflict: "store_id,ad_account_id" }
+      );
+    } catch {}
 
     return NextResponse.json({ ok: true, source: "live", data: healthRecord });
-
   } catch (error: any) {
     console.error("[Meta Account Health API Error]:", error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });

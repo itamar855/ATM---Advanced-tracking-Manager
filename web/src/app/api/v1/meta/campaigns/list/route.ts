@@ -9,22 +9,26 @@ export const dynamic = "force-dynamic";
  * GET /api/v1/meta/campaigns/list
  * Retorna dados estruturados em 4 níveis (Contas, Campanhas, Conjuntos/AdSets, Anúncios/Ads)
  * enriquecidos com Ciclo de cobrança, Cartão de crédito, Métricas de Lucro, ROAS, IC, CPI e Margem.
+ *
+ * v3.1.0 - Fixes:
+ *   - Removidos IDs hardcoded; usa exclusivamente contas do token conectado + config
+ *   - Busca integração pela integração mais recente ativa (sem depender de store_id específico)
+ *   - Adicionado effective_status para refletir status real de veiculação
+ *   - Error handling granular por conta (falha numa conta não derruba tudo)
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const datePreset = searchParams.get("date_preset") || "today";
-    const filterAccountId = searchParams.get("ad_account_id");
-    const filterCampaignId = searchParams.get("campaign_id");
-    const filterAdsetId = searchParams.get("adset_id");
 
     const supabase = createAdminClient();
 
-    // 1. Busca token mestre da Meta
+    // 1. Busca token mestre da Meta — integração ativa mais recente
     const { data: integration } = await supabase
       .from("integrations")
       .select("*")
       .eq("platform", "meta")
+      .eq("status", "active")
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -37,65 +41,85 @@ export async function GET(request: NextRequest) {
     }
 
     if (!token) {
-      return NextResponse.json({ ok: false, error: "Token da Meta não configurado", accounts: [], campaigns: [], adsets: [], ads: [] });
+      return NextResponse.json({
+        ok: false,
+        error: "Token da Meta não configurado. Acesse Integrações e conecte sua conta do Facebook.",
+        accounts: [], campaigns: [], adsets: [], ads: [],
+      });
     }
 
     const usdBrlRate = await getUsdBrlRate();
 
     // 2. Mapeia date_preset para a Graph API
-    let metaDatePreset = "today";
-    if (datePreset === "yesterday") metaDatePreset = "yesterday";
-    else if (datePreset === "last_7d") metaDatePreset = "last_7d";
-    else if (datePreset === "last_30d") metaDatePreset = "last_30d";
-    else if (datePreset === "this_month") metaDatePreset = "this_month";
+    const presetMap: Record<string, string> = {
+      today: "today",
+      yesterday: "yesterday",
+      last_7d: "last_7d",
+      last_30d: "last_30d",
+      last_60d: "last_60d",
+      this_month: "this_month",
+    };
+    const metaDatePreset = presetMap[datePreset] || "today";
 
-    // 3. Busca lista de contas na Meta Graph API com detalhes financeiros (cartão, saldo, status)
+    // 3. Busca TODAS as contas vinculadas ao token via /me/adaccounts
     let metaAccountsRaw: any[] = [];
+    let fetchError: string | null = null;
     try {
       const accRes = await fetch(
-        `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,name,currency,account_status,balance,amount_spent,spend_cap,funding_source_details&access_token=${token}&limit=30`,
+        `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,name,currency,account_status,balance,amount_spent,spend_cap,funding_source_details&access_token=${token}&limit=50`,
         { cache: "no-store" }
       );
       if (accRes.ok) {
         const accData = await accRes.json();
         if (Array.isArray(accData.data)) {
           metaAccountsRaw = accData.data;
+        } else if (accData.error) {
+          fetchError = accData.error.message;
+          console.error("[Meta /me/adaccounts Error]:", accData.error);
         }
       }
     } catch (e) {
       console.error("[Meta Accounts Fetch Error]:", e);
     }
 
-    // Se a busca /me/adaccounts não retornou tudo, complementa com as contas salvas no config
-    const configuredAccountIds: string[] = integration?.config?.ad_account_ids || [
-      "act_1316835733682937",
-      "act_2704031959980850",
-      "act_1552831582460812",
-      "act_994577432497447",
-      "act_857082363539586",
-      "act_991744449908220",
-      "act_27841532405507867",
-    ];
+    // Se a busca /me/adaccounts falhou completamente, usa IDs do config como fallback
+    // Mas NÃO usa IDs hardcoded no código — somente o que foi configurado pelo usuário
+    const configuredAccountIds: string[] = integration?.config?.ad_account_ids || [];
 
-    // 4. Busca todos os eventos reais de conversão do banco de dados (Purchase e InitiateCheckout)
+    // Consolida lista de contas sem duplicatas
+    const accountIdsToProcess = Array.from(
+      new Set([
+        ...metaAccountsRaw.map((a: any) => a.id),
+        ...configuredAccountIds.map((id: string) => (id.startsWith("act_") ? id : `act_${id}`)),
+      ])
+    );
+
+    if (accountIdsToProcess.length === 0) {
+      return NextResponse.json({
+        ok: false,
+        error: fetchError || "Nenhuma conta de anúncio encontrada. Verifique se o token tem permissão ads_management.",
+        accounts: [], campaigns: [], adsets: [], ads: [],
+      });
+    }
+
+    // 4. Busca todos os eventos reais de conversão do banco (Purchase e InitiateCheckout)
     const { data: dbEvents } = await supabase
       .from("events")
-      .select("*")
+      .select("event_name, meta_response, created_at")
       .in("event_name", ["Purchase", "InitiateCheckout"])
       .eq("status", "accepted")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(2000);
 
-    // Mapeia vendas e ICs por UTMs / IDs
+    // Mapeia vendas por UTMs / IDs
     const paidPurchasesByAccount = new Map<string, { revenue: number; count: number }>();
     const paidPurchasesByCampaign = new Map<string, { revenue: number; count: number }>();
     const paidPurchasesByAdset = new Map<string, { revenue: number; count: number }>();
     const paidPurchasesByAd = new Map<string, { revenue: number; count: number }>();
-
     const icsByAccount = new Map<string, number>();
     const icsByCampaign = new Map<string, number>();
     const icsByAdset = new Map<string, number>();
     const icsByAd = new Map<string, number>();
-
     let untrackedSalesCount = 0;
 
     (dbEvents || []).forEach((ev) => {
@@ -106,7 +130,7 @@ export async function GET(request: NextRequest) {
       const customData = metaResp.custom_data || {};
       const tracking = orderDetails.tracking_params || {};
 
-      const val = Number(orderDetails.value || customData.value || (isPurchase ? 172.88 : 0));
+      const val = Number(orderDetails.value || customData.value || 0);
       const utmCampaign = String(tracking.utm_campaign || "");
       const utmMedium = String(tracking.utm_medium || "");
       const utmContent = String(tracking.utm_content || "");
@@ -144,46 +168,56 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // 5. Itera pelas contas ativas da Meta e busca Campanhas, Conjuntos e Anúncios com Insights
+    // 5. Itera pelas contas em paralelo com tratamento de erro granular
     const formattedAccounts: any[] = [];
     const allCampaigns: any[] = [];
     const allAdsets: any[] = [];
     const allAds: any[] = [];
+    const accountErrors: Array<{ id: string; error: string }> = [];
 
-    // Lista consolidada de contas a consultar
-    const accountIdsToProcess = Array.from(
-      new Set([...metaAccountsRaw.map((a) => a.id), ...configuredAccountIds.map((id) => (id.startsWith("act_") ? id : `act_${id}`))])
-    );
-
-    // Consulta em paralelo para máxima velocidade
     const accountPromises = accountIdsToProcess.map(async (accId) => {
-      const rawAcc = metaAccountsRaw.find((a) => a.id === accId) || {};
-      const currency = (rawAcc.currency || (accId.includes("1316835") || accId.includes("270403") || accId.includes("155283") || accId.includes("278415") ? "USD" : "BRL")).toUpperCase();
+      const rawAcc = metaAccountsRaw.find((a: any) => a.id === accId) || {};
+      const currency = ((rawAcc.currency || "BRL") as string).toUpperCase();
       const isUsd = currency === "USD";
 
-      // 5.1 Busca dados da conta + insights do período + hierarquia completa de campanhas
-      const url = `https://graph.facebook.com/v23.0/${accId}?fields=name,account_status,balance,amount_spent,funding_source_details,insights.date_preset(${metaDatePreset}){spend,impressions,clicks,actions},campaigns{id,name,status,daily_budget,lifetime_budget,updated_time,insights.date_preset(${metaDatePreset}){spend,actions},adsets{id,name,status,daily_budget,lifetime_budget,updated_time,insights.date_preset(${metaDatePreset}){spend,actions},ads{id,name,status,updated_time,insights.date_preset(${metaDatePreset}){spend,actions}}}}&access_token=${token}`;
+      // Busca conta + hierarquia completa com effective_status para status real de veiculação
+      const fields = [
+        "name",
+        "account_status",
+        "balance",
+        "amount_spent",
+        "funding_source_details",
+        `insights.date_preset(${metaDatePreset}){spend,impressions,clicks,actions}`,
+        `campaigns{id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,`,
+        `insights.date_preset(${metaDatePreset}){spend,actions},`,
+        `adsets{id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,`,
+        `insights.date_preset(${metaDatePreset}){spend,actions},`,
+        `ads{id,name,status,effective_status,updated_time,`,
+        `insights.date_preset(${metaDatePreset}){spend,actions}}}}`,
+      ].join("");
+
+      const url = `https://graph.facebook.com/v23.0/${accId}?fields=${encodeURIComponent(fields)}&access_token=${token}`;
 
       try {
         const res = await fetch(url, { cache: "no-store" });
-        if (!res.ok) return;
-
         const data = await res.json();
+
+        if (!res.ok || data.error) {
+          const errMsg = data.error?.message || `HTTP ${res.status}`;
+          accountErrors.push({ id: accId, error: errMsg });
+          console.error(`[Meta Account ${accId} Error]:`, errMsg);
+          return; // pula esta conta sem derrubar as outras
+        }
+
         const accName = data.name || rawAcc.name || accId;
-        const accStatus = data.account_status === 1 ? "Ativo" : data.account_status === 2 ? "Desabilitado" : "Pendente";
-        
-        // Cartão de crédito formatado
+        const accStatusCode = data.account_status;
+        const accStatus = accStatusCode === 1 ? "Ativo" : accStatusCode === 2 ? "Desabilitado" : accStatusCode === 3 ? "Não Verificado" : "Pendente";
+
         const cardDisplay = data.funding_source_details?.display_string || rawAcc.funding_source_details?.display_string || "N/A";
-        
-        // Saldo / Ciclo de cobrança atual convertido para BRL
+
         const rawBalance = Number(data.balance || rawAcc.balance || 0) / 100;
         const cycleBrl = convertToBrl(rawBalance, currency, usdBrlRate);
 
-        // Gasto total histórico da conta convertido para BRL
-        const rawHistoricSpent = Number(data.amount_spent || rawAcc.amount_spent || 0) / 100;
-        const historicSpentBrl = convertToBrl(rawHistoricSpent, currency, usdBrlRate);
-
-        // Gasto do período selecionado
         const accInsights = data.insights?.data?.[0] || {};
         const rawPeriodSpend = Number(accInsights.spend || 0);
         const periodSpendBrl = convertToBrl(rawPeriodSpend, currency, usdBrlRate);
@@ -206,7 +240,6 @@ export async function GET(request: NextRequest) {
           status: accStatus,
           card: cardDisplay,
           cycle: cycleBrl,
-          historic_spent: historicSpentBrl,
           spend: periodSpendBrl,
           revenue: accRevenue,
           profit: accProfit,
@@ -220,7 +253,7 @@ export async function GET(request: NextRequest) {
           last_update: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
         });
 
-        // 5.2 Processa Campanhas da conta
+        // Processa Campanhas
         const rawCampaigns = data.campaigns?.data || [];
         rawCampaigns.forEach((camp: any) => {
           const cIns = camp.insights?.data?.[0] || {};
@@ -241,12 +274,16 @@ export async function GET(request: NextRequest) {
           const rawBudget = camp.daily_budget ? Number(camp.daily_budget) / 100 : Number(camp.lifetime_budget || 0) / 100;
           const convertedBudget = convertToBrl(rawBudget, currency, usdBrlRate);
 
+          // Usa effective_status para refletir o status REAL de veiculação
+          const isActive = camp.effective_status === "ACTIVE" || (camp.effective_status === undefined && camp.status === "ACTIVE");
+
           allCampaigns.push({
             id: camp.id,
             name: camp.name,
             account_id: accId,
             account_name: accName,
-            status: camp.status === "ACTIVE" ? "active" : "paused",
+            status: isActive ? "active" : "paused",
+            effective_status: camp.effective_status || camp.status,
             budget: convertedBudget,
             budget_type: camp.daily_budget ? "Diário" : (camp.lifetime_budget ? "Vitalício" : "ABO"),
             spend: cSpend,
@@ -262,7 +299,7 @@ export async function GET(request: NextRequest) {
             last_update: camp.updated_time ? new Date(camp.updated_time).toLocaleString("pt-BR") : "Hoje",
           });
 
-          // 5.3 Processa Conjuntos (AdSets)
+          // Processa AdSets
           const rawAdsets = camp.adsets?.data || [];
           rawAdsets.forEach((as: any) => {
             const asIns = as.insights?.data?.[0] || {};
@@ -283,6 +320,8 @@ export async function GET(request: NextRequest) {
             const asRawBudget = as.daily_budget ? Number(as.daily_budget) / 100 : Number(as.lifetime_budget || 0) / 100;
             const asConvertedBudget = convertToBrl(asRawBudget, currency, usdBrlRate);
 
+            const asIsActive = as.effective_status === "ACTIVE" || (as.effective_status === undefined && as.status === "ACTIVE");
+
             allAdsets.push({
               id: as.id,
               name: as.name,
@@ -290,7 +329,8 @@ export async function GET(request: NextRequest) {
               campaign_name: camp.name,
               account_id: accId,
               account_name: accName,
-              status: as.status === "ACTIVE" ? "active" : "paused",
+              status: asIsActive ? "active" : "paused",
+              effective_status: as.effective_status || as.status,
               budget: asConvertedBudget,
               budget_type: as.daily_budget ? "Diário" : (as.lifetime_budget ? "Vitalício" : "CBO"),
               spend: asSpend,
@@ -306,7 +346,7 @@ export async function GET(request: NextRequest) {
               last_update: as.updated_time ? new Date(as.updated_time).toLocaleString("pt-BR") : "Hoje",
             });
 
-            // 5.4 Processa Anúncios / Criativos (Ads)
+            // Processa Ads
             const rawAds = as.ads?.data || [];
             rawAds.forEach((ad: any) => {
               const adIns = ad.insights?.data?.[0] || {};
@@ -324,6 +364,8 @@ export async function GET(request: NextRequest) {
               const adMargin = adRevenue > 0 ? (adProfit / adRevenue) * 100 : (adSpend > 0 ? -100 : 0);
               const adRoi = adSpend > 0 ? adProfit / adSpend : 0;
 
+              const adIsActive = ad.effective_status === "ACTIVE" || (ad.effective_status === undefined && ad.status === "ACTIVE");
+
               allAds.push({
                 id: ad.id,
                 name: ad.name,
@@ -333,7 +375,8 @@ export async function GET(request: NextRequest) {
                 campaign_name: camp.name,
                 account_id: accId,
                 account_name: accName,
-                status: ad.status === "ACTIVE" ? "active" : "paused",
+                status: adIsActive ? "active" : "paused",
+                effective_status: ad.effective_status || ad.status,
                 budget: 0,
                 budget_type: "Sob AdSet",
                 spend: adSpend,
@@ -351,14 +394,15 @@ export async function GET(request: NextRequest) {
             });
           });
         });
-      } catch (err) {
+      } catch (err: any) {
+        accountErrors.push({ id: accId, error: err.message });
         console.error(`[Meta Account Process Error] ${accId}:`, err);
       }
     });
 
     await Promise.all(accountPromises);
 
-    // Ordenação padrão por gasto decrescente
+    // Ordenação por gasto decrescente
     formattedAccounts.sort((a, b) => b.spend - a.spend);
     allCampaigns.sort((a, b) => b.spend - a.spend);
     allAdsets.sort((a, b) => b.spend - a.spend);
@@ -367,7 +411,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       usdBrlRate,
-      untracked_sales_count: untrackedSalesCount || 23,
+      untracked_sales_count: untrackedSalesCount,
+      account_errors: accountErrors,
       accounts: formattedAccounts,
       campaigns: allCampaigns,
       adsets: allAdsets,
@@ -375,6 +420,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error("[Campaigns List Multi-Tier API Error]:", error);
-    return NextResponse.json({ ok: false, error: error.message, accounts: [], campaigns: [], adsets: [], ads: [] }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: error.message, accounts: [], campaigns: [], adsets: [], ads: [] },
+      { status: 500 }
+    );
   }
 }

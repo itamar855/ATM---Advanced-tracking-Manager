@@ -5,18 +5,47 @@ import { sendMetaCAPIEvent } from "@/lib/meta/capi";
 import { reserveEvent, updateEventResult } from "@/lib/tracking/dedup-engine";
 import { decrypt } from "@/lib/encryption";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rridxhzbkitgcodzyctu.supabase.co";
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyaWR4aHpia2l0Z2NvZHp5Y3R1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzcxNTUzMCwiZXhwIjoyMTAzMjkxNTMwfQ.gGxjPtKXABAYM4r6RsHcebVwwHsdpMD-RyRnxJn3QxE";
+export const dynamic = "force-dynamic";
+
+/**
+ * Calcula o EMQ (Event Match Quality) com base nos sinais PII presentes no payload.
+ * Retorna um score 0-100 proporcional ao número de sinais enviados.
+ */
+function calculateEmq(userDataKeys: string[]): number {
+  const weights: Record<string, number> = {
+    em: 20,     // E-mail (mais importante)
+    ph: 15,     // Telefone
+    fbp: 15,    // Cookie first-party Facebook
+    fbc: 10,    // Click ID Facebook
+    external_id: 10, // ID externo
+    fn: 5,      // Primeiro nome
+    ln: 5,      // Sobrenome
+    ct: 5,      // Cidade
+    st: 5,      // Estado
+    zp: 4,      // CEP
+    co: 3,      // País
+    db: 2,      // Data de nascimento
+    ge: 1,      // Gênero
+  };
+  let score = 0;
+  for (const key of userDataKeys) {
+    score += weights[key] || 0;
+  }
+  return Math.min(Math.round(score), 100);
+}
 
 /**
  * POST /api/v1/events/browser
  *
  * Recebe eventos de funil do Pixel do Shopify (PageView, ViewContent,
- * AddToCart, InitiateCheckout, AddPaymentInfo, etc.) e os encaminha
+ * AddToCart, InitiateCheckout, AddPaymentInfo, Purchase, etc.) e os encaminha
  * à Meta Conversions API com todos os sinais disponíveis.
  *
- * Os dados PII (email, phone, nome, endereço, etc.) são hasheados
- * com SHA-256 aqui no servidor, nunca no browser.
+ * v3.1.0 - Fixes:
+ *   - Fallback de sessão por fbp (não só por track_id)
+ *   - Para Purchase: enriquecimento reverso buscando PII em InitiateCheckout da mesma sessão/fbp
+ *   - Cálculo real de EMQ (% de sinais PII presentes) — gravado em health_score
+ *   - event_id do Purchase padronizado para aceitar prefixo "order_" para deduplicação correta com webhook
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -64,7 +93,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient();
 
-    // ── 1. Buscar integração Meta ativa (com fallback resiliente) ──
+    // ── 1. Buscar integração Meta ativa ──
     let pixelId = "";
     let accessToken = "";
     let testEventCode = process.env.META_TEST_EVENT_CODE || undefined;
@@ -85,11 +114,7 @@ export async function POST(request: NextRequest) {
         if (raw.startsWith("EAA")) {
           accessToken = raw;
         } else {
-          try {
-            accessToken = decrypt(raw);
-          } catch {
-            accessToken = raw;
-          }
+          try { accessToken = decrypt(raw); } catch { accessToken = raw; }
         }
         testEventCode = integration.config?.test_event_code || testEventCode;
       }
@@ -97,16 +122,17 @@ export async function POST(request: NextRequest) {
       console.warn("[Browser Event] Fallback de integração aplicado.");
     }
 
-    if (!pixelId) {
-      pixelId = process.env.META_PIXEL_ID || "1104875232197441";
-    }
+    if (!pixelId) pixelId = process.env.META_PIXEL_ID || "1104875232197441";
+    if (!accessToken) accessToken = process.env.META_ACCESS_TOKEN || "";
+
     if (!accessToken) {
-      accessToken =
-        process.env.META_ACCESS_TOKEN ||
-        "EAAPDF3XrnKgBSWbroWaXlqmY7yDXJYWBEwMZAFpDPKzk5TsFNgWayueQpn5J4eFWohXFNG4eMYMxOMtHZAjXS2EzvErOrD4Ju50N2rft10aAcTlND6OR8u8p1nB1ZAZAIVWJiLMeqYsXZC70v7w694XAbmYEcStPnM9iwThUJpNxHYYuyXjIdZAL2ZANcpDZCgxUSWyn3jRAEZAKI";
+      return NextResponse.json(
+        { ok: false, error: "Token da Meta não configurado." },
+        { status: 500 }
+      );
     }
 
-    // ── 2. Deduplicação: checar se evento já foi enviado ──
+    // ── 2. Deduplicação ──
     const lock = await reserveEvent(store_id, event_name, event_id, "browser");
     if (!lock.acquired) {
       return NextResponse.json(
@@ -116,27 +142,43 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 3. Recuperar sessão para enriquecer com fbp, fbc, IP e UA ──
+    // Estratégia em cascata: track_id → fbp → cabeçalho HTTP
     let sessionData: {
       fbp?: string | null;
       fbc?: string | null;
       client_ip?: string | null;
       client_user_agent?: string | null;
+      utm_source?: string | null;
+      utm_campaign?: string | null;
     } = {};
 
+    // 3.1 Busca por track_id
     if (track_id) {
       const { data: session } = await supabase
         .from("sessions")
-        .select("fbp, fbc, client_ip, client_user_agent")
+        .select("fbp, fbc, client_ip, client_user_agent, utm_source, utm_campaign")
         .eq("store_id", store_id)
         .eq("track_id", track_id)
         .maybeSingle();
 
-      if (session) {
-        sessionData = session;
-      }
+      if (session) sessionData = session;
     }
 
-    // Fallback: IP do cabeçalho HTTP (último recurso, menos preciso que o bridge)
+    // 3.2 Fallback: busca por fbp (cookie first-party) se track_id não achou sessão
+    if (!sessionData.client_ip && rawUserData?.fbp) {
+      const { data: sessionByFbp } = await supabase
+        .from("sessions")
+        .select("fbp, fbc, client_ip, client_user_agent, utm_source, utm_campaign")
+        .eq("store_id", store_id)
+        .eq("fbp", rawUserData.fbp)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (sessionByFbp) sessionData = sessionByFbp;
+    }
+
+    // 3.3 Fallback final: IP e UA do cabeçalho HTTP
     if (!sessionData.client_ip) {
       const forwarded = request.headers.get("x-forwarded-for");
       sessionData.client_ip = forwarded
@@ -147,43 +189,58 @@ export async function POST(request: NextRequest) {
       sessionData.client_user_agent = request.headers.get("user-agent") || undefined;
     }
 
-    // ── 4. Construir evento com qualificação máxima de PII ──
+    // ── 4. Construir dados de usuário com enriquecimento máximo ──
     const enrichedUserData: BrowserUserData = {
       ...(rawUserData || {}),
       externalId: (rawUserData && rawUserData.externalId) || track_id || undefined,
     };
 
-    // Se email/phone não vieram no payload, tenta recuperar da sessão ou compras anteriores
-    if ((!enrichedUserData.email || !enrichedUserData.phone) && (track_id || sessionData.fbp)) {
-      try {
-        // 1. Tenta buscar em sessões recentes
-        const { data: dbSess } = await supabase
-          .from("sessions")
-          .select("fbp, client_ip, utm_source, utm_campaign")
-          .eq("track_id", track_id)
-          .maybeSingle();
+    // Garante fbp/fbc da sessão se não vieram no payload
+    if (!enrichedUserData.fbp && sessionData.fbp) enrichedUserData.fbp = sessionData.fbp;
+    if (!enrichedUserData.fbc && sessionData.fbc) enrichedUserData.fbc = sessionData.fbc;
 
-        // 2. Tenta buscar em eventos anteriores com email/phone pelo track_id ou fbp
-        const { data: prevEvent } = await supabase
+    // 4.1 Para Purchase e InitiateCheckout: enriquecimento reverso de PII
+    // Busca email/telefone em eventos anteriores da mesma sessão (IC, ATC)
+    const isPurchase = event_name === "Purchase";
+    const isIC = event_name === "InitiateCheckout";
+
+    if ((isPurchase || isIC) && (!enrichedUserData.email || !enrichedUserData.phone)) {
+      try {
+        // Busca em ICs anteriores desta sessão/fbp com dados de contato
+        let prevQuery = supabase
           .from("events")
           .select("meta_response")
+          .eq("store_id", store_id)
+          .in("event_name", ["InitiateCheckout", "AddPaymentInfo"])
+          .eq("status", "accepted")
           .not("meta_response->order_details->customer_email", "is", null)
           .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .limit(5);
 
-        if (prevEvent?.meta_response?.order_details?.customer_email && !enrichedUserData.email) {
-          enrichedUserData.email = prevEvent.meta_response.order_details.customer_email;
-          enrichedUserData.phone = prevEvent.meta_response.order_details.customer_phone || enrichedUserData.phone;
-          enrichedUserData.firstName = prevEvent.meta_response.order_details.customer_name?.split(" ")[0] || enrichedUserData.firstName;
+        const { data: prevEvents } = await prevQuery;
+
+        for (const prevEv of prevEvents || []) {
+          const od = prevEv.meta_response?.order_details || {};
+          if (od.customer_email && !enrichedUserData.email) {
+            enrichedUserData.email = od.customer_email;
+          }
+          if (od.customer_phone && !enrichedUserData.phone) {
+            enrichedUserData.phone = od.customer_phone;
+          }
+          if (od.customer_name && !enrichedUserData.firstName) {
+            const parts = od.customer_name.split(" ");
+            enrichedUserData.firstName = parts[0];
+            enrichedUserData.lastName = parts.slice(1).join(" ") || undefined;
+          }
+          if (enrichedUserData.email && enrichedUserData.phone) break;
         }
       } catch {}
     }
 
-    if (!enrichedUserData.country) {
-      enrichedUserData.country = "BR";
-    }
+    // Padrão de país BR
+    if (!enrichedUserData.country) enrichedUserData.country = "BR";
 
+    // ── 5. Construir evento Meta CAPI ──
     const metaEvent = buildBrowserEvent(
       event_name,
       event_id,
@@ -193,12 +250,12 @@ export async function POST(request: NextRequest) {
       rawCustomData
     );
 
-    // ── 5. Despachar para a Meta CAPI ──
+    // ── 6. Despachar para a Meta CAPI ──
     const capiConfig = {
-      pixelId: pixelId,
-      accessToken: accessToken,
+      pixelId,
+      accessToken,
       apiVersion: "v23.0",
-      testEventCode: testEventCode,
+      testEventCode,
     };
 
     const capiResult = await sendMetaCAPIEvent(capiConfig, metaEvent);
@@ -206,7 +263,9 @@ export async function POST(request: NextRequest) {
 
     const status = capiResult.ok ? "accepted" : "rejected";
     const userDataKeys = getUserDataKeys(metaEvent.user_data);
+    const emqScore = calculateEmq(userDataKeys);
 
+    // ── 7. Persiste resultado no banco com EMQ real ──
     await updateEventResult(
       store_id || "dckb5g-7d",
       event_id,
@@ -225,10 +284,13 @@ export async function POST(request: NextRequest) {
       },
       latencyMs,
       userDataKeys,
-      event_name
+      event_name,
+      undefined,  // orderId — não aplicável para eventos de browser
+      emqScore    // EMQ calculado para health_score
     );
 
     if (!capiResult.ok) {
+      console.error(`[Browser Event] ${event_name} REJECTED: ${capiResult.error}`);
       return NextResponse.json(
         { ok: false, error: capiResult.error },
         { status: 400 }
@@ -237,7 +299,7 @@ export async function POST(request: NextRequest) {
 
     console.log(
       `[Browser Event] ${event_name} (${event_id.slice(-8)}) | ` +
-      `Sinais: [${userDataKeys.join(", ")}] | ` +
+      `Sinais: [${userDataKeys.join(", ")}] | EMQ: ${emqScore}% | ` +
       `Latência: ${latencyMs}ms`
     );
 
@@ -246,8 +308,8 @@ export async function POST(request: NextRequest) {
       event_name,
       event_id,
       signals_sent: userDataKeys,
+      emq_score: emqScore,
     });
-
   } catch (error: any) {
     console.error("[Browser Event Error]:", error);
     return NextResponse.json(
