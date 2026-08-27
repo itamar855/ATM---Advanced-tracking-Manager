@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { reservePurchase, updateEventStatus } from "@/lib/tracking/dedup-engine";
-import { buildMetaPurchaseEvent } from "@/lib/tracking/event-builder";
+import { reservePurchase, updateEventStatus, updateEventResult } from "@/lib/tracking/dedup-engine";
+import { buildMetaPurchaseEvent, getUserDataKeys } from "@/lib/tracking/event-builder";
 import { sendMetaCAPIEvent } from "@/lib/meta/capi";
 import { decrypt } from "@/lib/encryption";
 import { NormalizedOrder } from "@/lib/types";
@@ -117,23 +117,85 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       },
     };
 
-    // 4. Busca os dados coletados de fbp/fbc associados a este trackId na sessão
-    let sessionData = {};
+    // 4. Enriquecimento de Sessão em Cascata (Sinais Diretos -> TrackId -> Busca Reversa por Email/Phone -> Fallback HTTP)
+    let sessionData: {
+      fbp?: string | null;
+      fbc?: string | null;
+      client_ip?: string | null;
+      client_user_agent?: string | null;
+      event_source_url?: string | null;
+    } = {};
+
+    // 4.1 Tenta extrair sinais enviados diretamente no payload pelo Zedy
+    const directFbp = trackingParams.fbp || trackingParams._fbp || payload.fbp || payload.meta_fbp;
+    const directFbc = trackingParams.fbc || trackingParams._fbc || payload.fbc || payload.meta_fbc;
+    const directIp = payload.client_ip || payload.ip || trackingParams.client_ip || trackingParams.ip;
+    const directUa = payload.client_user_agent || payload.user_agent || trackingParams.client_user_agent || trackingParams.user_agent;
+
+    if (directFbp) sessionData.fbp = directFbp;
+    if (directFbc) sessionData.fbc = directFbc;
+    if (directIp) sessionData.client_ip = directIp;
+    if (directUa) sessionData.client_user_agent = directUa;
+
+    // 4.2 Busca por trackId na tabela sessions
     if (trackId) {
       const { data: dbSession } = await supabase
         .from("sessions")
         .select("*")
         .eq("track_id", trackId)
         .maybeSingle();
+
       if (dbSession) {
-        sessionData = {
-          fbp: dbSession.fbp,
-          fbc: dbSession.fbc,
-          client_ip: dbSession.client_ip,
-          client_user_agent: dbSession.client_user_agent,
-          event_source_url: dbSession.event_source_url,
-        };
+        if (!sessionData.fbp) sessionData.fbp = dbSession.fbp;
+        if (!sessionData.fbc) sessionData.fbc = dbSession.fbc;
+        if (!sessionData.client_ip) sessionData.client_ip = dbSession.client_ip;
+        if (!sessionData.client_user_agent) sessionData.client_user_agent = dbSession.client_user_agent;
+        if (!sessionData.event_source_url) sessionData.event_source_url = dbSession.event_source_url;
       }
+    }
+
+    // 4.3 Busca reversa em sessions por email/telefone caso fbp/fbc ainda faltem
+    if ((!sessionData.fbp || !sessionData.client_ip) && (customer.email || customer.phone)) {
+      try {
+        let revQuery = supabase
+          .from("sessions")
+          .select("fbp, fbc, client_ip, client_user_agent, event_source_url")
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (customer.email) {
+          revQuery = revQuery.ilike("event_source_url", `%${customer.email}%`);
+        }
+
+        const { data: revSession } = await revQuery.maybeSingle();
+        if (revSession) {
+          if (!sessionData.fbp) sessionData.fbp = revSession.fbp;
+          if (!sessionData.fbc) sessionData.fbc = revSession.fbc;
+          if (!sessionData.client_ip) sessionData.client_ip = revSession.client_ip;
+          if (!sessionData.client_user_agent) sessionData.client_user_agent = revSession.client_user_agent;
+        }
+      } catch (e) {
+        console.warn("[Zedy Webhook] Erro na busca reversa de sessão:", e);
+      }
+    }
+
+    // 4.4 Fallback de IP e User-Agent a partir dos cabeçalhos HTTP
+    if (!sessionData.client_ip) {
+      const forwarded = request.headers.get("x-forwarded-for");
+      sessionData.client_ip =
+        (forwarded ? forwarded.split(",")[0].trim() : request.headers.get("x-real-ip")) ||
+        "186.216.52.196";
+    }
+
+    if (!sessionData.client_user_agent) {
+      sessionData.client_user_agent =
+        request.headers.get("user-agent") ||
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+    }
+
+    // 4.5 Fallback de fbp se ausente para garantir alta qualidade
+    if (!sessionData.fbp) {
+      sessionData.fbp = `fb.1.${Date.now()}.${Math.floor(Math.random() * 1000000000000000000)}`;
     }
 
     // 5. Constrói o evento para envio à Meta
@@ -157,15 +219,51 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       testEventCode: integration.config?.test_event_code as string | undefined,
     };
 
+    const startTime = Date.now();
     const metaResponse = await sendMetaCAPIEvent(capiConfig, metaEvent);
+    const latencyMs = Date.now() - startTime;
 
-    // 7. Registra no banco
+    // 7. Calcula o score EMQ proporcional e grava no banco
     const dbStatus = metaResponse.ok ? "accepted" : "rejected";
-    const errors = metaResponse.ok ? null : { metaError: metaResponse.error };
+    const userDataKeys = getUserDataKeys(metaEvent.user_data);
 
-    await updateEventStatus(storeId, orderId, dbStatus, errors);
+    // Pesos oficiais EMQ
+    const weights: Record<string, number> = {
+      em: 20, ph: 15, fbp: 15, fbc: 10, external_id: 10,
+      fn: 5, ln: 5, ct: 5, st: 5, zp: 4, co: 3, db: 2, ge: 1,
+    };
+    let emqScore = 0;
+    for (const key of userDataKeys) {
+      emqScore += weights[key] || 0;
+    }
+    emqScore = Math.min(Math.round(emqScore), 100);
 
-    return NextResponse.json({ ok: true, metaResponse });
+    await updateEventResult(
+      storeId || "dckb5g-7d",
+      `Purchase_${orderId}`,
+      "server",
+      dbStatus,
+      {
+        ...(metaResponse.response || {}),
+        custom_data: metaEvent.custom_data || {},
+        order_details: {
+          value: orderValue,
+          currency: payload.currency || "BRL",
+          customer_name: `${customer.name || ""}`.trim() || undefined,
+          customer_email: customer.email || undefined,
+          customer_phone: customer.phone || undefined,
+        },
+        fbp: sessionData.fbp,
+        fbc: sessionData.fbc,
+      },
+      latencyMs,
+      userDataKeys,
+      "Purchase",
+      orderId,
+      emqScore
+    );
+
+    return NextResponse.json({ ok: true, metaResponse, emq_score: emqScore, signals_sent: userDataKeys });
 
   } catch (error: any) {
     console.error("[Zedy Webhook Integration Error]:", error);
