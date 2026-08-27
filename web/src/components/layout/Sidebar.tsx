@@ -52,6 +52,17 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [activeOffer, setActiveOffer] = useState("Oferta BR - Gaiolas 🚀");
 
+  const handleLogout = async () => {
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      window.location.href = "/login";
+    } catch {
+      window.location.href = "/login";
+    }
+  };
+
   return (
     <aside
       className={cn(
@@ -139,21 +150,30 @@ export default function Sidebar() {
         </nav>
       </div>
 
-      {/* Perfil & Status do Usuário */}
+      {/* Perfil & Status do Usuário + Logout */}
       <div className="p-3 border-t border-[#1E2330]">
-        <div className="flex items-center gap-2.5 p-1.5 rounded-lg bg-[#141824] border border-zinc-800/60">
-          <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-blue-600 to-emerald-500 flex items-center justify-center font-bold text-white text-[10px] shrink-0">
-            IT
-          </div>
-          {!collapsed && (
-            <div className="flex flex-col min-w-0 flex-1">
-              <span className="text-[11px] font-bold text-white truncate">Itamar Almeida</span>
-              <span className="text-[9px] text-emerald-400 flex items-center gap-1 font-medium leading-none">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                Plano PRO Ativo
-              </span>
+        <div className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-[#141824] border border-zinc-800/60">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-blue-600 to-emerald-500 flex items-center justify-center font-bold text-white text-[10px] shrink-0">
+              IT
             </div>
-          )}
+            {!collapsed && (
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="text-[11px] font-bold text-white truncate">Itamar Almeida</span>
+                <span className="text-[9px] text-emerald-400 flex items-center gap-1 font-medium leading-none">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  Plano PRO Ativo
+                </span>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={handleLogout}
+            className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0"
+            title="Sair da Conta (Logout)"
+          >
+            <LogOut size={15} />
+          </button>
         </div>
       </div>
     </aside>
