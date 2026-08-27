@@ -89,6 +89,8 @@ export async function GET(request: NextRequest) {
         status: e.status || "accepted",
         healthScore: e.health_score || 95,
         value: val,
+        fbtraceId: metaResp.fbtrace_id || (metaResp.events_received ? "CAPI-OK" : undefined),
+        attemptCount: e.attempt_count || 1,
         createdAt: e.created_at,
         signals: {
           fbp: userKeys.includes("fbp"),

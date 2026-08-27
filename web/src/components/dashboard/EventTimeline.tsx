@@ -21,6 +21,8 @@ interface Event {
   status: "accepted" | "rejected" | "pending" | "deduped";
   healthScore: number;
   value: number;
+  fbtraceId?: string;
+  attemptCount?: number;
   createdAt: string;
   signals: {
     fbp: boolean;
@@ -191,6 +193,14 @@ export function EventTimeline({ events }: EventTimelineProps) {
                         <span className="text-[11px] text-[var(--color-text-muted)] font-mono">
                           {event.orderId}
                         </span>
+                        {event.fbtraceId && (
+                          <span
+                            className="px-1.5 py-0.5 rounded text-[8px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                            title={`Confirmado pela Meta CAPI: ${event.fbtraceId}`}
+                          >
+                            ✓ Meta Trace: {event.fbtraceId.slice(0, 10)}...
+                          </span>
+                        )}
                       </div>
 
                       {/* Sinais em badges */}
