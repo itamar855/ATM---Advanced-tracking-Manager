@@ -47,8 +47,18 @@ function calculateEmq(userDataKeys: string[]): number {
  *   - Cálculo real de EMQ (% de sinais PII presentes) — gravado em health_score
  *   - event_id do Purchase padronizado para aceitar prefixo "order_" para deduplicação correta com webhook
  */
+function jsonWithCors(data: any, status = 200, origin = "*") {
+  const res = NextResponse.json(data, { status });
+  res.headers.set("Access-Control-Allow-Origin", origin);
+  res.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.headers.set("Access-Control-Allow-Headers", "Content-Type");
+  res.headers.set("Access-Control-Allow-Credentials", "true");
+  return res;
+}
+
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
+  const origin = request.headers.get("origin") || "*";
 
   try {
     const body = await request.json();
@@ -73,9 +83,10 @@ export async function POST(request: NextRequest) {
 
     // ── Validações básicas ──
     if (!store_id || !event_name || !event_id) {
-      return NextResponse.json(
+      return jsonWithCors(
         { ok: false, error: "store_id, event_name e event_id são obrigatórios" },
-        { status: 400 }
+        400,
+        origin
       );
     }
 
@@ -85,9 +96,10 @@ export async function POST(request: NextRequest) {
       "Search", "Lead", "CompleteRegistration", "Subscribe",
     ];
     if (!validEvents.includes(event_name)) {
-      return NextResponse.json(
+      return jsonWithCors(
         { ok: false, error: `event_name inválido: ${event_name}` },
-        { status: 400 }
+        400,
+        origin
       );
     }
 
@@ -126,18 +138,20 @@ export async function POST(request: NextRequest) {
     if (!accessToken) accessToken = process.env.META_ACCESS_TOKEN || "";
 
     if (!accessToken) {
-      return NextResponse.json(
+      return jsonWithCors(
         { ok: false, error: "Token da Meta não configurado." },
-        { status: 500 }
+        500,
+        origin
       );
     }
 
     // ── 2. Deduplicação ──
     const lock = await reserveEvent(store_id, event_name, event_id, "browser");
     if (!lock.acquired) {
-      return NextResponse.json(
+      return jsonWithCors(
         { ok: true, message: `Evento ${event_name} deduplicado (${lock.state})`, deduplicated: true },
-        { status: 200 }
+        200,
+        origin
       );
     }
 
@@ -291,9 +305,10 @@ export async function POST(request: NextRequest) {
 
     if (!capiResult.ok) {
       console.error(`[Browser Event] ${event_name} REJECTED: ${capiResult.error}`);
-      return NextResponse.json(
+      return jsonWithCors(
         { ok: false, error: capiResult.error },
-        { status: 400 }
+        400,
+        origin
       );
     }
 
@@ -303,18 +318,19 @@ export async function POST(request: NextRequest) {
       `Latência: ${latencyMs}ms`
     );
 
-    return NextResponse.json({
+    return jsonWithCors({
       ok: true,
       event_name,
       event_id,
       signals_sent: userDataKeys,
       emq_score: emqScore,
-    });
+    }, 200, origin);
   } catch (error: any) {
     console.error("[Browser Event Error]:", error);
-    return NextResponse.json(
+    return jsonWithCors(
       { ok: false, error: "Erro interno no servidor" },
-      { status: 500 }
+      500,
+      origin
     );
   }
 }

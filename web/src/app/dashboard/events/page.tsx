@@ -15,9 +15,10 @@ export default function EventsPage() {
     async function loadEvents(silent = false) {
       if (!silent) setLoading(true);
       try {
+        const ts = Date.now();
         const [eventsRes, liveRes] = await Promise.all([
-          fetch("/api/v1/events/list", { cache: "no-store" }),
-          fetch("/api/v1/live", { cache: "no-store" }),
+          fetch(`/api/v1/events/list?t=${ts}`, { cache: "no-store" }),
+          fetch(`/api/v1/live?t=${ts}`, { cache: "no-store" }),
         ]);
 
         if (eventsRes.ok) {

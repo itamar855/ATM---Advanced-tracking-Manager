@@ -37,14 +37,26 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const supabase = await createClient();
 
-    // 2. Busca integração ativa da Meta CAPI
-    const { data: integration } = await supabase
+    // 2. Busca integração ativa da Meta CAPI (por storeId ou integração mestre ativa)
+    let { data: integration } = await supabase
       .from("integrations")
       .select("*")
       .eq("store_id", storeId)
       .eq("platform", "meta")
       .eq("status", "active")
       .maybeSingle();
+
+    if (!integration) {
+      const { data: fallbackIntegration } = await supabase
+        .from("integrations")
+        .select("*")
+        .eq("platform", "meta")
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      integration = fallbackIntegration;
+    }
 
     if (!integration) {
       await updateEventStatus(storeId, orderId, "failed", { error: "Sem integração Meta ativa" });
@@ -127,7 +139,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // 5. Constrói o evento para envio à Meta
     const metaEvent = buildMetaPurchaseEvent(normalizedOrder, sessionData);
 
-    const decryptedMetaToken = decrypt(integration.access_token_enc.toString());
+    const rawToken = integration.access_token_enc.toString();
+    let decryptedMetaToken = rawToken;
+    if (!rawToken.startsWith("EAA")) {
+      try {
+        decryptedMetaToken = decrypt(rawToken);
+      } catch {
+        decryptedMetaToken = rawToken;
+      }
+    }
 
     // 6. Envia à Meta Conversions API
     const capiConfig = {

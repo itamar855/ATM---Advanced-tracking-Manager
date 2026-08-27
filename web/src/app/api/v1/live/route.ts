@@ -54,12 +54,14 @@ export async function GET(request: NextRequest) {
     const onlineCount = Math.max(uniqueOnlineVisitors.size, 1);
     const cartCount = uniqueInCart.size;
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       ok: true,
       onlineNow: onlineCount,
       inCartNow: cartCount,
       recentEventsCount: (recentEvents || []).length,
     });
+    res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    return res;
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error.message, onlineNow: 1, inCartNow: 0 }, { status: 500 });
   }

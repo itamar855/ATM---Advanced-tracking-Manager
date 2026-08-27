@@ -103,12 +103,14 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       ok: true,
       count: formattedEvents.length,
       totalPurchases: Math.max(rawPurchases.length, countPurchases),
       events: formattedEvents,
     });
+    res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    return res;
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error.message, events: [] }, { status: 500 });
   }
