@@ -270,13 +270,20 @@ function generateATMScript(storeId: string, apiBase: string): string {
     }
   }
 
-  // ── Execução Imediata do PageView ────────────────────────────────────────
+  // ── Execução Imediata do PageView e Heartbeat ────────────────────────────
 
   var _path = window.location.pathname;
   var _currency = (_ctx.shop && _ctx.shop.currency) || "BRL";
 
   captureSession();
   sendEvent("PageView", null);
+
+  // Heartbeat periódico (a cada 45s) para monitoramento em tempo real de visitantes
+  setInterval(function () {
+    try {
+      captureSession();
+    } catch (e) {}
+  }, 45000);
 
   // ── ViewContent na Página de Produto ──────────────────────────────────────
 

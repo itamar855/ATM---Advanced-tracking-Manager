@@ -12,41 +12,54 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient();
 
     const now = Date.now();
-    const threeMinutesAgoIso = new Date(now - 3 * 60 * 1000).toISOString();
-    const tenMinutesAgoIso = new Date(now - 10 * 60 * 1000).toISOString();
+    const fiveMinutesAgoIso = new Date(now - 5 * 60 * 1000).toISOString();
+    const fifteenMinutesAgoIso = new Date(now - 15 * 60 * 1000).toISOString();
 
-    // 1. Busca sessões ativas nos últimos 3 minutos da tabela sessions
-    const { data: recentSessions, error: sErr } = await supabase
-      .from("sessions")
-      .select("track_id, created_at, updated_at, client_ip, utm_campaign")
-      .gte("created_at", threeMinutesAgoIso);
+    // 1. Busca sessões ativas nos últimos 5 minutos (via updated_at ou created_at)
+    const [{ data: updatedSessions }, { data: createdSessions }, { data: recentEvents }] = await Promise.all([
+      supabase
+        .from("sessions")
+        .select("track_id, client_ip, updated_at")
+        .gte("updated_at", fiveMinutesAgoIso)
+        .limit(500),
+      supabase
+        .from("sessions")
+        .select("track_id, client_ip, created_at")
+        .gte("created_at", fiveMinutesAgoIso)
+        .limit(500),
+      supabase
+        .from("events")
+        .select("id, event_name, order_id, event_id, created_at, source")
+        .gte("created_at", fifteenMinutesAgoIso)
+        .order("created_at", { ascending: false })
+        .limit(500),
+    ]);
 
-    // 2. Busca eventos nos últimos 10 minutos para detectar carrinhos e compras
-    const { data: recentEvents, error: eErr } = await supabase
-      .from("events")
-      .select("id, event_name, order_id, event_id, created_at, source")
-      .gte("created_at", tenMinutesAgoIso)
-      .order("created_at", { ascending: false });
-
-    // Conta visitantes online únicos (por track_id ou client_ip ou eventos recentes)
+    // Consolida visitantes online únicos
     const uniqueOnlineVisitors = new Set<string>();
-    (recentSessions || []).forEach((s) => {
+
+    (updatedSessions || []).forEach((s) => {
       if (s.track_id) uniqueOnlineVisitors.add(s.track_id);
       else if (s.client_ip) uniqueOnlineVisitors.add(s.client_ip);
     });
 
-    // Também verifica eventos dos últimos 3 minutos
+    (createdSessions || []).forEach((s) => {
+      if (s.track_id) uniqueOnlineVisitors.add(s.track_id);
+      else if (s.client_ip) uniqueOnlineVisitors.add(s.client_ip);
+    });
+
+    // Também inclui visitantes com eventos recentes nos últimos 5 minutos
     (recentEvents || []).forEach((ev) => {
       const evTime = new Date(ev.created_at).getTime();
-      if (evTime >= now - 3 * 60 * 1000) {
+      if (evTime >= now - 5 * 60 * 1000) {
         uniqueOnlineVisitors.add(ev.event_id || ev.id);
       }
     });
 
-    // Conta carrinhos ativos únicos nos últimos 10 minutos
+    // Conta carrinhos ativos e checkouts únicos nos últimos 15 minutos
     const uniqueInCart = new Set<string>();
     (recentEvents || []).forEach((ev) => {
-      if (ev.event_name === "AddToCart" || ev.event_name === "InitiateCheckout") {
+      if (ev.event_name === "AddToCart" || ev.event_name === "InitiateCheckout" || ev.event_name === "ViewContent") {
         uniqueInCart.add(ev.order_id || ev.event_id || ev.id);
       }
     });

@@ -110,23 +110,10 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
-    const allAccountIds: string[] = integration?.config?.ad_account_ids || [];
+    const configuredAccountIds: string[] = integration?.config?.ad_account_ids || [];
 
-    // 2. Busca checkout_started_at da loja para a regra de datas
-    // Tenta buscar da tabela stores, com fallback para config da integração
-    let checkoutStartedAt: string | null = null;
-    try {
-      const { data: storeData } = await supabase
-        .from("stores")
-        .select("config, created_at")
-        .limit(1)
-        .maybeSingle();
-
-      checkoutStartedAt =
-        storeData?.config?.checkout_started_at ||
-        integration?.config?.checkout_started_at ||
-        null;
-    } catch {}
+    // 2. Resolve data de conexão da plataforma (só exibe métricas a partir da conexão)
+    const platformConnectedAt = integration?.created_at || "2026-08-26T00:00:00.000Z";
 
     // 3. Resolve intervalo de datas com regra effective_start_date
     const presetMap: Record<string, string> = {
@@ -138,21 +125,37 @@ export async function GET(request: NextRequest) {
       this_month: "this_month",
     };
     const metaDatePreset = presetMap[datePreset] || "today";
-    const { startDate, endDate, effectiveStartDate } = resolveDateRange(datePreset, checkoutStartedAt);
+    const { startDate, endDate, effectiveStartDate } = resolveDateRange(datePreset, platformConnectedAt);
 
     let totalSpendBrl = 0;
     let totalSpendOriginal = 0;
     let totalImpressions = 0;
     let totalClicks = 0;
-    const availableAccounts: Array<{ id: string; name: string; currency: string; spend: number; spendBrl: number }> = [];
+    const availableAccounts: Array<{ id: string; name: string; currency: string; status: string; spend: number; spendBrl: number }> = [];
 
-    // 4. Consulta gastos na Meta Graph API pelo período
-    if (token && allAccountIds.length > 0) {
-      const spendPromises = allAccountIds.map(async (accId) => {
+    // 4. Busca lista de contas e consulta gastos na Meta Graph API pelo período
+    let accountIdsToQuery = configuredAccountIds;
+    if (token && accountIdsToQuery.length === 0) {
+      try {
+        const meRes = await fetch(
+          `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,account_status&access_token=${token}&limit=50`,
+          { cache: "no-store" }
+        );
+        if (meRes.ok) {
+          const meData = await meRes.json();
+          if (Array.isArray(meData.data)) {
+            accountIdsToQuery = meData.data.map((a: any) => a.id);
+          }
+        }
+      } catch {}
+    }
+
+    if (token && accountIdsToQuery.length > 0) {
+      const spendPromises = accountIdsToQuery.map(async (accId) => {
         const formattedId = accId.startsWith("act_") ? accId : `act_${accId}`;
         try {
           const res = await fetch(
-            `https://graph.facebook.com/v23.0/${formattedId}?fields=name,currency,insights.date_preset(${metaDatePreset}){spend,impressions,clicks}&access_token=${token}`,
+            `https://graph.facebook.com/v23.0/${formattedId}?fields=name,currency,account_status,insights.date_preset(${metaDatePreset}){spend,impressions,clicks}&access_token=${token}`,
             { cache: "no-store" }
           );
           if (res.ok) {
@@ -162,6 +165,7 @@ export async function GET(request: NextRequest) {
               return;
             }
             const currency = (accData.currency || "BRL").toUpperCase();
+            const isActive = accData.account_status === 1;
             const ins = accData.insights?.data?.[0];
             const origSpend = Number(ins?.spend || 0);
             const imp = Number(ins?.impressions || 0);
@@ -172,11 +176,15 @@ export async function GET(request: NextRequest) {
               id: formattedId,
               name: accData.name || formattedId,
               currency,
+              status: isActive ? "active" : "disabled",
               spend: origSpend,
               spendBrl: convertedSpendBrl,
             });
 
-            if (selectedAccountId === "all" || selectedAccountId === formattedId) {
+            // Só soma aos totais se a conta for ATIVA e bater com o filtro de conta selecionada
+            const matchesFilter = selectedAccountId === "all" ? isActive : selectedAccountId === formattedId;
+
+            if (matchesFilter) {
               totalSpendOriginal += origSpend;
               totalSpendBrl += convertedSpendBrl;
               totalImpressions += imp;
@@ -191,11 +199,10 @@ export async function GET(request: NextRequest) {
       await Promise.all(spendPromises);
     }
 
-    // 5. Busca vendas aprovadas NO PERÍODO (usando effectiveStartDate)
-    // Isso garante que gasto e vendas são do mesmo intervalo temporal
+    // 5. Busca vendas aprovadas NO PERÍODO CONECTADO (usando effectiveStartDate)
     const { data: allPurchases } = await supabase
       .from("events")
-      .select("event_name, meta_response, created_at")
+      .select("id, event_name, meta_response, created_at")
       .eq("event_name", "Purchase")
       .eq("status", "accepted")
       .gte("created_at", effectiveStartDate)
@@ -221,10 +228,25 @@ export async function GET(request: NextRequest) {
     let iqSalesCount = 0;
     let naSalesCount = 0;
 
+    const targetAccount = availableAccounts.find((a) => a.id === selectedAccountId);
+    const targetAccNameClean = targetAccount ? targetAccount.name.toLowerCase().replace(/[^a-z0-9]/g, "") : "";
+
     (allPurchases || []).forEach((ev) => {
       const metaResp = ev.meta_response || {};
       const orderDetails = metaResp.order_details || {};
       const customData = metaResp.custom_data || {};
+      const tracking = orderDetails.tracking_params || {};
+
+      const utmCampaign = String(customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const utmSource = String(customData.utm_source || orderDetails.utm_source || tracking.utm_source || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+      // Se uma conta específica foi selecionada, só contabiliza vendas atribuídas a ela
+      if (selectedAccountId !== "all") {
+        const matchesAccount =
+          (targetAccNameClean && (utmCampaign.includes(targetAccNameClean) || utmSource.includes(targetAccNameClean))) ||
+          (String(customData.utm_source || "").includes(selectedAccountId));
+        if (!matchesAccount) return;
+      }
 
       // Valor: prioriza custom_data.value (que é sempre preenchido pelo webhook)
       const val = Number(
@@ -305,7 +327,7 @@ export async function GET(request: NextRequest) {
       usdBrlRate,
       date_preset: datePreset,
       effective_start_date: effectiveStartDate,
-      checkout_started_at: checkoutStartedAt,
+      platform_connected_at: platformConnectedAt,
       metrics: {
         net_revenue: Math.round(netRevenue * 100) / 100,
         ad_spend: Math.round(totalSpend * 100) / 100,
