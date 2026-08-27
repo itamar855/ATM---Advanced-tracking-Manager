@@ -94,9 +94,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       "";
 
     // Calcula valor total com base no commission ou somatório de priceInCents
-    const rawValue = payload.commission?.totalPriceInCents || 
+    const rawValue = payload.commission?.totalPriceInCents ||
       (payload.products || []).reduce((acc: number, p: any) => acc + (p.priceInCents * (p.quantity || 1)), 0);
     const orderValue = Number(rawValue || 0) / 100; // Converte centavos para reais
+
+    // Método de pagamento — Zedy pode enviar em vários campos
+    const paymentMethod =
+      payload.paymentMethod ||
+      payload.payment_method ||
+      payload.gateway ||
+      payload.payment_type ||
+      (payload.commission?.paymentMethod) ||
+      "";
 
     const normalizedOrder: NormalizedOrder = {
       orderId,
@@ -262,13 +271,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       dbStatus,
       {
         ...(metaResponse.response || {}),
-        custom_data: metaEvent.custom_data || {},
+        // custom_data contém value e utm_source — lidos pelo dashboard para faturamento e atribuição
+        custom_data: {
+          ...(metaEvent.custom_data || {}),
+          value: orderValue,
+          currency: payload.currency || "BRL",
+          utm_source: utmSource || undefined,
+          utm_campaign: utmCampaign || undefined,
+          utm_medium: utmMedium || undefined,
+          payment_method: paymentMethod || undefined,
+        },
         order_details: {
           value: orderValue,
           currency: payload.currency || "BRL",
           customer_name: `${customer.name || ""}`.trim() || undefined,
           customer_email: customer.email || undefined,
           customer_phone: customer.phone || undefined,
+          payment_method: paymentMethod || undefined,
+          utm_source: utmSource || undefined,
+          utm_campaign: utmCampaign || undefined,
         },
         fbp: sessionData.fbp,
         fbc: sessionData.fbc,

@@ -13,7 +13,8 @@ export default function EventsPage() {
     let active = true;
 
     async function loadEvents(silent = false) {
-      if (!silent) setLoading(true);
+      // Nunca travar a tela com spinner após o primeiro carregamento
+      if (!silent && events.length === 0) setLoading(true);
       try {
         const ts = Date.now();
         const [eventsRes, liveRes] = await Promise.all([
@@ -40,7 +41,7 @@ export default function EventsPage() {
       } catch (error) {
         console.error("[Events Page] Erro ao carregar eventos:", error);
       } finally {
-        if (active && !silent) setLoading(false);
+        if (active) setLoading(false);
       }
     }
 
@@ -54,6 +55,7 @@ export default function EventsPage() {
       active = false;
       clearInterval(interval);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) {

@@ -225,26 +225,49 @@ export async function GET(request: NextRequest) {
       const metaResp = ev.meta_response || {};
       const orderDetails = metaResp.order_details || {};
       const customData = metaResp.custom_data || {};
-      const tracking = orderDetails.tracking_params || {};
 
-      const val = Number(orderDetails.value || customData.value || 0);
+      // Valor: prioriza custom_data.value (que é sempre preenchido pelo webhook)
+      const val = Number(
+        customData.value ||
+        orderDetails.value ||
+        customData.order_value ||
+        0
+      );
       netRevenue += val;
       paidSalesCount += 1;
 
-      // Classifica Método de Pagamento
-      const method = String(orderDetails.payment_method || "").toLowerCase();
-      if (method.includes("pix") || method === "") pixCount++; // sem method = pix (default Vega)
-      else if (method.includes("card") || method.includes("cartao") || method.includes("credit")) cardCount++;
+      // Classifica Método de Pagamento — busca em múltiplos caminhos
+      const method = String(
+        orderDetails.payment_method ||
+        customData.payment_method ||
+        customData.payment_type ||
+        orderDetails.payment_type ||
+        metaResp.payment_method ||
+        ""
+      ).toLowerCase();
+      if (method.includes("pix")) pixCount++;
+      else if (method.includes("card") || method.includes("cartao") || method.includes("credit") || method.includes("visa") || method.includes("master")) cardCount++;
       else if (method.includes("boleto")) boletoCount++;
+      else if (method === "") pixCount++; // default para plataformas que não enviam método (Zedy → assume Pix)
       else otherCount++;
 
-      // Classifica Fonte de Tráfego
-      const src = String(tracking.utm_source || "").toLowerCase();
-      if (src.includes("meta") || src.includes("facebook") || src.includes("fb") || src.includes("insta")) {
+      // Classifica Fonte de Tráfego — prioriza custom_data.utm_source (onde o Zedy salva)
+      const src = String(
+        customData.utm_source ||
+        orderDetails.utm_source ||
+        (orderDetails.tracking_params || {}).utm_source ||
+        ""
+      ).toLowerCase();
+
+      if (src.includes("meta") || src.includes("facebook") || src === "fb" || src.startsWith("fb") || src.includes("insta")) {
         metaSalesCount++;
-      } else if (src.includes("iq") || src.includes("google") || src.includes("kwai") || src.includes("tiktok")) {
+      } else if (src.includes("iq") || src.startsWith("igj") || src.includes("google") || src.includes("kwai") || src.includes("tiktok")) {
+        // IQ (Instagram Quality) codes começam com "igj"
         iqSalesCount++;
+      } else if (src === "" || src === "organic" || src === "undefined") {
+        naSalesCount++;
       } else {
+        // UTM source desconhecido — classifica como N/A
         naSalesCount++;
       }
     });
