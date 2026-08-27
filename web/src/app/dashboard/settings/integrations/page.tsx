@@ -74,6 +74,15 @@ function IntegrationsContent() {
   const [oauthErrorMsg, setOauthErrorMsg] = useState("");
   const [oauthSuccessMsg, setOauthSuccessMsg] = useState("");
 
+  // Integração Zedy API Token & Sync
+  const [zedyToken, setZedyToken] = useState("");
+  const [zedyMaskedToken, setZedyMaskedToken] = useState("");
+  const [zedyConnected, setZedyConnected] = useState(false);
+  const [savingZedyToken, setSavingZedyToken] = useState(false);
+  const [syncingZedy, setSyncingZedy] = useState(false);
+  const [zedySyncMsg, setZedySyncMsg] = useState("");
+  const [zedyLastSync, setZedyLastSync] = useState<string | null>(null);
+
   const storeId = "dckb5g-7d";
 
   const host =
@@ -149,6 +158,76 @@ function IntegrationsContent() {
     }
   }, [searchParams]);
 
+  // Carrega configurações do Zedy
+  const loadZedyConfig = async () => {
+    try {
+      const res = await fetch("/api/v1/zedy/credentials", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok) {
+          setZedyConnected(Boolean(data.connected));
+          if (data.masked_token) setZedyMaskedToken(data.masked_token);
+          if (data.last_sync) setZedyLastSync(data.last_sync);
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao carregar credenciais Zedy:", err);
+    }
+  };
+
+  // Salva o Token de API do Zedy
+  const handleSaveZedyToken = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!zedyToken.trim()) return;
+
+    setSavingZedyToken(true);
+    setZedySyncMsg("");
+    try {
+      const res = await fetch("/api/v1/zedy/credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: zedyToken.trim(), store_id: storeId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setZedyConnected(true);
+        setZedyMaskedToken(data.masked_token || `${zedyToken.slice(0, 8)}...${zedyToken.slice(-4)}`);
+        setZedyToken("");
+        setZedySyncMsg("Token Zedy salvo e criptografado com sucesso!");
+        setTimeout(() => setZedySyncMsg(""), 4000);
+      } else {
+        setZedySyncMsg(data.error || "Erro ao salvar token Zedy");
+      }
+    } catch (err: any) {
+      setZedySyncMsg(err.message || "Erro de conexão ao salvar token Zedy");
+    } finally {
+      setSavingZedyToken(false);
+    }
+  };
+
+  // Sincroniza pedidos Zedy sob demanda
+  const handleSyncZedyOrders = async () => {
+    setSyncingZedy(true);
+    setZedySyncMsg("");
+    try {
+      const res = await fetch("/api/v1/sync/zedy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setZedySyncMsg(data.message || "Sincronização concluída com sucesso!");
+        if (data.last_sync) setZedyLastSync(data.last_sync);
+      } else {
+        setZedySyncMsg(data.error || "Erro na sincronização Zedy");
+      }
+    } catch (err: any) {
+      setZedySyncMsg(err.message || "Erro de conexão ao sincronizar");
+    } finally {
+      setSyncingZedy(false);
+    }
+  };
+
   // Carrega configurações salvas ao abrir a página
   const loadConfig = async () => {
     setFetchingAccounts(true);
@@ -180,6 +259,7 @@ function IntegrationsContent() {
 
   useEffect(() => {
     loadConfig();
+    loadZedyConfig();
   }, []);
 
   // Testa o token (fornecido no input ou o já salvo no banco) e lista as contas
@@ -805,35 +885,74 @@ function IntegrationsContent() {
         </div>
       </div>
 
-      {/* ── Zedy Checkout Card ── */}
-      <div className="glass-card p-6 space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[var(--color-brand-400)]/10 flex items-center justify-center text-[var(--color-brand-300)]">
-            <LinkIcon size={20} />
+      {/* ── Zedy Checkout Card (Webhooks + API Token + Sincronização) ── */}
+      <div className="glass-card p-6 space-y-5 border-l-4 border-l-[var(--color-brand-400)]">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[var(--color-brand-400)]/10 flex items-center justify-center text-[var(--color-brand-300)] shrink-0">
+              <LinkIcon size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                  Zedy Checkout (Webhooks & API Sync)
+                </h3>
+                {zedyConnected ? (
+                  <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20 flex items-center gap-1">
+                    <CheckCircle2 size={10} /> Conectado
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 text-[10px] font-medium bg-zinc-500/10 text-zinc-400 rounded-full border border-zinc-500/20">
+                    Webhook Ativo
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                Rastreabilidade de compras pagas via Webhook em tempo real + Reconciliação via API Token
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-              Zedy Checkout (Webhooks)
-            </h3>
-            <p className="text-xs text-[var(--color-text-muted)]">
-              Envie eventos de transações aprovadas e pagas direto para a Meta Conversions API (CAPI)
-            </p>
-          </div>
+
+          <button
+            type="button"
+            onClick={handleSyncZedyOrders}
+            disabled={syncingZedy}
+            className="btn-secondary py-2 px-3.5 text-xs font-semibold flex items-center gap-2"
+            title="Sincronizar pedidos recentes da Zedy"
+          >
+            <RefreshCw size={13} className={syncingZedy ? "animate-spin text-blue-400" : ""} />
+            <span>{syncingZedy ? "Sincronizando..." : "Sincronizar Pedidos"}</span>
+          </button>
         </div>
 
-        <div className="p-4 rounded-lg bg-[var(--color-bg-primary)] border border-[var(--color-border-subtle)] space-y-3">
-          <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
-            Copie a URL abaixo e configure na sua conta Zedy em <b>Configurações &gt; Webhooks &gt; Adicionar Webhook</b> para capturar compras automáticas.
-          </p>
+        {/* Mensagem de Feedback Zedy */}
+        {zedySyncMsg && (
+          <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs flex items-center gap-2">
+            <Sparkles size={14} className="shrink-0" />
+            <span>{zedySyncMsg}</span>
+          </div>
+        )}
 
+        {/* 1. Webhook do Zedy */}
+        <div className="p-4 rounded-lg bg-[var(--color-bg-primary)] border border-[var(--color-border-subtle)] space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[var(--color-text-secondary)]">
+              1. URL do Webhook Zedy
+            </span>
+            <span className="text-[10px] text-emerald-400 font-medium">Tempo Real (100% CAPI)</span>
+          </div>
+          <p className="text-[11px] text-[var(--color-text-muted)]">
+            Configure no painel Zedy em <b>Configurações &gt; Webhooks &gt; Adicionar Webhook</b> para o evento de pedido aprovado/pago:
+          </p>
           <div className="flex items-center gap-2">
             <input
               type="text"
               readOnly
               value={zedyWebhookUrl}
-              className="input text-xs font-mono select-all bg-[var(--color-bg-surface)] py-2"
+              className="input text-xs font-mono select-all bg-[var(--color-bg-surface)] py-2 flex-1"
             />
             <button
+              type="button"
               onClick={() => {
                 navigator.clipboard.writeText(zedyWebhookUrl);
                 setCopiedZedy(true);
@@ -845,6 +964,47 @@ function IntegrationsContent() {
             </button>
           </div>
         </div>
+
+        {/* 2. Token de API do Zedy */}
+        <form onSubmit={handleSaveZedyToken} className="p-4 rounded-lg bg-[var(--color-bg-primary)] border border-[var(--color-border-subtle)] space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[var(--color-text-secondary)]">
+              2. Token de API Zedy (Para Sincronização Direta)
+            </span>
+            {zedyMaskedToken && (
+              <span className="text-[10px] text-emerald-400 font-mono">
+                Token Ativo: {zedyMaskedToken}
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-[var(--color-text-muted)]">
+            Gere um token no painel Zedy em <b>API Tokens &gt; Novo token de API</b> para permitir reconciliação sob demanda:
+          </p>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              value={zedyToken}
+              onChange={(e) => setZedyToken(e.target.value)}
+              placeholder={zedyMaskedToken ? "Cole um novo token para substituir..." : "Ex: zdy_5c8e40e58c..."}
+              className="input text-xs font-mono bg-[var(--color-bg-surface)] py-2 flex-1"
+            />
+            <button
+              type="submit"
+              disabled={savingZedyToken || !zedyToken.trim()}
+              className="btn-primary shrink-0 py-2 px-4 text-xs font-semibold flex items-center gap-1.5"
+            >
+              {savingZedyToken ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+              Salvar Token
+            </button>
+          </div>
+
+          {zedyLastSync && (
+            <p className="text-[10px] text-[var(--color-text-muted)] pt-1">
+              Última sincronização: {new Date(zedyLastSync).toLocaleString("pt-BR")}
+            </p>
+          )}
+        </form>
       </div>
 
       {/* ── Instalação do Pixel Shopify (snippet único, auto-configurado) ── */}
