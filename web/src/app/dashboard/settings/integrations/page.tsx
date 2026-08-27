@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Plug,
@@ -43,7 +43,7 @@ interface TokenDiagnostics {
   tokenType?: string;
 }
 
-export default function IntegrationsPage() {
+function IntegrationsContent() {
   const searchParams = useSearchParams();
 
   const [loading, setLoading] = useState(false);
@@ -907,5 +907,20 @@ export default function IntegrationsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function IntegrationsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-8 text-center text-xs text-[var(--color-text-muted)] flex items-center justify-center gap-2">
+          <Loader2 size={16} className="animate-spin text-blue-400" />
+          <span>Carregando integrações...</span>
+        </div>
+      }
+    >
+      <IntegrationsContent />
+    </Suspense>
   );
 }
