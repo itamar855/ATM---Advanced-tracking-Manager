@@ -210,10 +210,21 @@ function generateATMScript(storeId: string, apiBase: string): string {
       utm_id: _utms.utm_id,
     });
 
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(ATM.apiBase + "/capture", payload);
-    } else {
-      fetch(ATM.apiBase + "/capture", { method: "POST", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true });
+    if (window.fetch) {
+      fetch(ATM.apiBase + "/capture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        keepalive: true,
+        mode: "cors",
+      }).catch(function () {});
+    } else if (navigator.sendBeacon) {
+      try {
+        var blob = new Blob([payload], { type: "application/json" });
+        navigator.sendBeacon(ATM.apiBase + "/capture", blob);
+      } catch (e) {
+        navigator.sendBeacon(ATM.apiBase + "/capture", payload);
+      }
     }
   }
 
@@ -241,10 +252,21 @@ function generateATMScript(storeId: string, apiBase: string): string {
     });
 
     var url = ATM.apiBase + "/events/browser";
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(url, payload);
-    } else {
-      fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true });
+    if (window.fetch) {
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        keepalive: true,
+        mode: "cors",
+      }).catch(function () {});
+    } else if (navigator.sendBeacon) {
+      try {
+        var blob = new Blob([payload], { type: "application/json" });
+        navigator.sendBeacon(url, blob);
+      } catch (e) {
+        navigator.sendBeacon(url, payload);
+      }
     }
   }
 

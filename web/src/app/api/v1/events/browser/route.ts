@@ -61,7 +61,17 @@ export async function POST(request: NextRequest) {
   const origin = request.headers.get("origin") || "*";
 
   try {
-    const body = await request.json();
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch {
+      try {
+        const text = await request.text();
+        body = JSON.parse(text);
+      } catch {
+        body = {};
+      }
+    }
 
     const {
       store_id,

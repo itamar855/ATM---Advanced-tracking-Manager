@@ -3,6 +3,18 @@ import { createAdminClient } from "@/lib/supabase/server";
 
 export async function POST(request: NextRequest) {
   try {
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch {
+      try {
+        const text = await request.text();
+        body = JSON.parse(text);
+      } catch {
+        body = {};
+      }
+    }
+
     const {
       store_id,
       track_id,
@@ -16,7 +28,7 @@ export async function POST(request: NextRequest) {
       utm_campaign,
       utm_content,
       utm_term,
-    } = await request.json();
+    } = body;
 
     if (!track_id || !/^[A-Za-z0-9_-]{16,80}$/.test(track_id)) {
       return NextResponse.json({ ok: false, error: "track_id inválido" }, { status: 400 });
