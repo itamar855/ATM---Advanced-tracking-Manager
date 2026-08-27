@@ -254,7 +254,7 @@ function IntegrationsContent() {
       {/* Navegação por Abas Estilo Apple / UTMify */}
       <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-[#0E1118] border border-[#1E2330] overflow-x-auto shadow-inner">
         {[
-          { key: "anuncios", label: "Anúncios", icon: Radio, count: "5" },
+          { key: "anuncios", label: "Meta Ads", icon: Radio, count: "Ativo" },
           { key: "webhooks", label: "Webhooks & Checkouts", icon: Plug, count: "2" },
           { key: "utms", label: "UTMs", icon: Sliders },
           { key: "pixel", label: "Pixel", icon: Code2 },
@@ -513,43 +513,6 @@ function IntegrationsContent() {
               </div>
             )}
           </div>
-
-          {/* Demais Redes: Google Ads, Kwai, TikTok, Taboola */}
-          {[
-            { id: "google", name: "Google Ads", icon: Globe, color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20" },
-            { id: "kwai", name: "Kwai Ads", icon: Radio, color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20" },
-            { id: "tiktok", name: "TikTok Ads", icon: Flame, color: "text-pink-400", bg: "bg-pink-500/10", border: "border-pink-500/20" },
-            { id: "taboola", name: "Taboola", icon: Layers, color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20" },
-          ].map((net) => {
-            const isExp = expandedPlatforms[net.id];
-            const Icon = net.icon;
-            return (
-              <div key={net.id} className="rounded-2xl border border-zinc-800/80 bg-[#0E1118] overflow-hidden">
-                <div
-                  onClick={() => setExpandedPlatforms((prev) => ({ ...prev, [net.id]: !prev[net.id] }))}
-                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-[#141824] transition-colors"
-                >
-                  <div className="flex items-center gap-3.5">
-                    <div className={`w-9 h-9 rounded-xl ${net.bg} border ${net.border} flex items-center justify-center ${net.color}`}>
-                      <Icon size={18} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-white">{net.name}</h4>
-                      <p className="text-[11px] text-zinc-500">Sincronização de custos e conversões offline</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 font-medium">
-                      Disponível
-                    </span>
-                    <button type="button" className="text-zinc-500">
-                      {isExp ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
         </div>
       )}
 
