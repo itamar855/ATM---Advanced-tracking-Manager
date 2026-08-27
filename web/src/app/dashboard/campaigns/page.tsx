@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+export const dynamic = "force-dynamic";
+
+import { useState, useEffect, Suspense } from "react";
 import { Loader2 } from "lucide-react";
 import {
   UtmifyCampaignManager,
@@ -10,7 +12,7 @@ import {
   AdItem,
 } from "@/components/campaigns/UtmifyCampaignManager";
 
-export default function CampaignsPage() {
+function CampaignsContent() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [datePreset, setDatePreset] = useState("today");
@@ -93,5 +95,19 @@ export default function CampaignsPage() {
         apiError={apiError}
       />
     </div>
+  );
+}
+
+export default function CampaignsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-[80vh] items-center justify-center">
+          <Loader2 size={36} className="animate-spin text-blue-500" />
+        </div>
+      }
+    >
+      <CampaignsContent />
+    </Suspense>
   );
 }

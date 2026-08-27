@@ -254,7 +254,9 @@ export function UtmifyCampaignManager({
 
     if (activeTab === "accounts") {
       return accounts.filter((acc) => {
-        const matchName = acc.name.toLowerCase().includes(term) || acc.id.includes(term);
+        const accName = String(acc.name || "").toLowerCase();
+        const accId = String(acc.id || "").toLowerCase();
+        const matchName = accName.includes(term) || accId.includes(term);
         const matchStatus = statusFilter === "all" || (statusFilter === "active" ? acc.status === "Ativo" : acc.status !== "Ativo");
         return matchName && matchStatus;
       });
@@ -262,9 +264,11 @@ export function UtmifyCampaignManager({
 
     if (activeTab === "campaigns") {
       return campaigns.filter((camp) => {
+        const campName = String(camp.name || "").toLowerCase();
+        const campId = String(camp.id || "").toLowerCase();
         const matchAcc = !selectedAccountId || camp.account_id === selectedAccountId;
         const matchAccSelect = filterAccountSelect === "all" || camp.account_id === filterAccountSelect;
-        const matchName = camp.name.toLowerCase().includes(term) || camp.id.includes(term);
+        const matchName = campName.includes(term) || campId.includes(term);
         const matchStatus = statusFilter === "all" || camp.status === statusFilter;
         return matchAcc && matchAccSelect && matchName && matchStatus;
       });
@@ -272,10 +276,12 @@ export function UtmifyCampaignManager({
 
     if (activeTab === "adsets") {
       return adsets.filter((as) => {
+        const asName = String(as.name || "").toLowerCase();
+        const asId = String(as.id || "").toLowerCase();
         const matchCamp = !selectedCampaignId || as.campaign_id === selectedCampaignId;
         const matchAcc = !selectedAccountId || as.account_id === selectedAccountId;
         const matchAccSelect = filterAccountSelect === "all" || as.account_id === filterAccountSelect;
-        const matchName = as.name.toLowerCase().includes(term) || as.id.includes(term);
+        const matchName = asName.includes(term) || asId.includes(term);
         const matchStatus = statusFilter === "all" || as.status === statusFilter;
         return matchCamp && matchAcc && matchAccSelect && matchName && matchStatus;
       });
@@ -283,11 +289,13 @@ export function UtmifyCampaignManager({
 
     if (activeTab === "ads") {
       return ads.filter((ad) => {
+        const adName = String(ad.name || "").toLowerCase();
+        const adId = String(ad.id || "").toLowerCase();
         const matchAdset = !selectedAdsetId || ad.adset_id === selectedAdsetId;
         const matchCamp = !selectedCampaignId || ad.campaign_id === selectedCampaignId;
         const matchAcc = !selectedAccountId || ad.account_id === selectedAccountId;
         const matchAccSelect = filterAccountSelect === "all" || ad.account_id === filterAccountSelect;
-        const matchName = ad.name.toLowerCase().includes(term) || ad.id.includes(term);
+        const matchName = adName.includes(term) || adId.includes(term);
         const matchStatus = statusFilter === "all" || ad.status === statusFilter;
         return matchAdset && matchCamp && matchAcc && matchAccSelect && matchName && matchStatus;
       });
@@ -340,7 +348,10 @@ export function UtmifyCampaignManager({
 
   // ── Helpers de Formatação ────────────────────────────────────────────────
 
-  const fmtBrl = (val: number) => `R$ ${val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtBrl = (val?: number) => {
+    const n = typeof val === "number" && !isNaN(val) ? val : 0;
+    return `R$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
 
   const selectedAccountObj = accounts.find((a) => a.id === selectedAccountId);
   const selectedCampaignObj = campaigns.find((c) => c.id === selectedCampaignId);
