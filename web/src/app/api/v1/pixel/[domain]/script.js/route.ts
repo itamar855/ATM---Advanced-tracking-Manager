@@ -463,6 +463,116 @@ function generateATMScript(storeId: string, apiBase: string): string {
     }
   }
 
+  // ── Zedy Link Decoration (track_id → Checkout Externo) ──────────────────
+  // Injeta automaticamente o _ztid + fbp + fbc + UTMs em todos os links
+  // que apontem para o checkout do Zedy, garantindo que o webhook receba
+  // o track_id e consiga amarrar a venda com a sessão do navegador.
+
+  var ZEDY_HOSTS = [
+    "link.zedy.com.br",
+    "checkout.zedy.com.br",
+    "pay.zedy.com.br",
+    "zedy.com.br/checkout",
+    "zedypay.com",
+  ];
+
+  function isZedyLink(href) {
+    if (!href) return false;
+    var lower = href.toLowerCase();
+    return ZEDY_HOSTS.some(function (h) { return lower.indexOf(h) !== -1; });
+  }
+
+  function decorateHref(href) {
+    try {
+      // Monta URL completa mesmo que seja relativa
+      var base = (href.startsWith("http") ? href : window.location.origin + href);
+      var url = new URL(base);
+      // Só injeta se ainda não tiver track_id
+      if (!url.searchParams.get("track_id") && !url.searchParams.get("_ztid")) {
+        url.searchParams.set("track_id", _tid);
+      }
+      if (_fbp && !url.searchParams.get("fbp")) url.searchParams.set("fbp", _fbp);
+      if (_fbc && !url.searchParams.get("fbc")) url.searchParams.set("fbc", _fbc);
+      if (_utms.utm_source && !url.searchParams.get("utm_source")) url.searchParams.set("utm_source", _utms.utm_source);
+      if (_utms.utm_campaign && !url.searchParams.get("utm_campaign")) url.searchParams.set("utm_campaign", _utms.utm_campaign);
+      if (_utms.utm_medium && !url.searchParams.get("utm_medium")) url.searchParams.set("utm_medium", _utms.utm_medium);
+      if (_utms.utm_content && !url.searchParams.get("utm_content")) url.searchParams.set("utm_content", _utms.utm_content);
+      if (_utms.utm_term && !url.searchParams.get("utm_term")) url.searchParams.set("utm_term", _utms.utm_term);
+      if (_utms.fbclid && !url.searchParams.get("fbclid")) url.searchParams.set("fbclid", _utms.fbclid);
+      return url.toString();
+    } catch (err) {
+      return href;
+    }
+  }
+
+  // Decora um elemento <a> se for link do Zedy
+  function decorateEl(el) {
+    if (el.tagName !== "A") return;
+    var href = el.getAttribute("href");
+    if (!isZedyLink(href)) return;
+    if (el.dataset.atmDecorated) return;
+    el.setAttribute("href", decorateHref(href));
+    el.dataset.atmDecorated = "1";
+  }
+
+  // 1. Varredura estática de todos os links já existentes
+  function decorateAll() {
+    var links = document.querySelectorAll("a[href]");
+    for (var i = 0; i < links.length; i++) {
+      decorateEl(links[i]);
+    }
+  }
+
+  // 2. MutationObserver para links adicionados dinamicamente (mini-cart, SPAs, etc.)
+  try {
+    var _observer = new MutationObserver(function (mutations) {
+      for (var m = 0; m < mutations.length; m++) {
+        var nodes = mutations[m].addedNodes;
+        for (var n = 0; n < nodes.length; n++) {
+          var node = nodes[n];
+          if (!node || node.nodeType !== 1) continue;
+          if (node.tagName === "A") {
+            decorateEl(node);
+          } else if (node.querySelectorAll) {
+            var inner = node.querySelectorAll("a[href]");
+            for (var k = 0; k < inner.length; k++) {
+              decorateEl(inner[k]);
+            }
+          }
+        }
+      }
+    });
+    _observer.observe(document.body || document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+  } catch (err) {}
+
+  // 3. Interceptador de clique como último fallback (para links não capturados)
+  document.addEventListener("click", function (e) {
+    var el = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+    if (!el) return;
+    var href = el.getAttribute("href");
+    if (!isZedyLink(href)) return;
+    var decorated = decorateHref(href);
+    if (decorated !== href) {
+      e.preventDefault();
+      el.setAttribute("href", decorated);
+      // Respeita target="_blank"
+      if (el.getAttribute("target") === "_blank") {
+        window.open(decorated, "_blank", "noopener");
+      } else {
+        window.location.href = decorated;
+      }
+    }
+  }, true);
+
+  // Executa decoração estática imediatamente e após DOM ready
+  decorateAll();
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", decorateAll);
+  }
+
 })();
 `;
 }

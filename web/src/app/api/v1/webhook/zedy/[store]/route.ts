@@ -69,12 +69,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     
     // Zedy envia parâmetros de rastreamento no objeto trackingParameters
     const trackingParams = payload.trackingParameters || {};
-    const utmSource = trackingParams.utm_source || "";
-    const utmCampaign = trackingParams.utm_campaign || "";
-    const utmMedium = trackingParams.utm_medium || "";
-    const utmContent = trackingParams.utm_content || "";
-    const utmTerm = trackingParams.utm_term || "";
-    const trackId = trackingParams.track_id || trackingParams._ztid || payload.track_id || "";
+    const utmSource = trackingParams.utm_source || payload.utm_source || "";
+    const utmCampaign = trackingParams.utm_campaign || payload.utm_campaign || "";
+    const utmMedium = trackingParams.utm_medium || payload.utm_medium || "";
+    const utmContent = trackingParams.utm_content || payload.utm_content || "";
+    const utmTerm = trackingParams.utm_term || payload.utm_term || "";
+
+    // track_id injetado pelo Pixel ATM via Link Decoration (vem no payload ou em checkoutUrl)
+    const checkoutUrlParams = (() => {
+      try {
+        const checkoutUrl = payload.checkoutUrl || payload.checkout_url || payload.orderUrl || trackingParams.checkout_url || "";
+        if (checkoutUrl) return new URL(checkoutUrl).searchParams;
+        return new URLSearchParams();
+      } catch { return new URLSearchParams(); }
+    })();
+
+    const trackId =
+      trackingParams.track_id ||
+      trackingParams._ztid ||
+      payload.track_id ||
+      payload._ztid ||
+      checkoutUrlParams.get("track_id") ||
+      checkoutUrlParams.get("_ztid") ||
+      "";
 
     // Calcula valor total com base no commission ou somatório de priceInCents
     const rawValue = payload.commission?.totalPriceInCents || 
