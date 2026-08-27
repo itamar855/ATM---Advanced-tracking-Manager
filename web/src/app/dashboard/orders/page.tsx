@@ -56,6 +56,40 @@ export default function OrdersPage() {
     return () => clearInterval(interval);
   }, []);
 
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [syncingZedy, setSyncingZedy] = useState(false);
+  const [jsonInput, setJsonInput] = useState("");
+  const [syncFeedback, setSyncFeedback] = useState("");
+
+  const handleSyncZedy = async (mode: "auto" | "json") => {
+    setSyncingZedy(true);
+    setSyncFeedback("");
+    try {
+      const body = mode === "json" && jsonInput.trim() ? { raw_json: jsonInput.trim() } : {};
+      const res = await fetch("/api/v1/sync/zedy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSyncFeedback(`✓ ${data.message || `${data.synced_count} pedidos sincronizados!`}`);
+        loadOrders(true);
+        if (mode === "json") setJsonInput("");
+        setTimeout(() => {
+          setSyncFeedback("");
+          setSyncModalOpen(false);
+        }, 2500);
+      } else {
+        setSyncFeedback(`✗ ${data.error || "Erro ao sincronizar"}`);
+      }
+    } catch (e: any) {
+      setSyncFeedback(`✗ ${e.message || "Erro de conexão"}`);
+    } finally {
+      setSyncingZedy(false);
+    }
+  };
+
   const filteredOrders = orders.filter((o) => {
     const term = searchTerm.toLowerCase();
     const matchTerm =
@@ -82,11 +116,19 @@ export default function OrdersPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold flex items-center gap-1.5">
             <PackageCheck size={14} />
             <span>{orders.length} Pedido(s) Sincronizado(s)</span>
           </div>
+
+          <button
+            onClick={() => setSyncModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-[0_0_12px_rgba(16,185,129,0.3)] transition-all active:scale-95"
+          >
+            <RotateCw size={12} className={syncingZedy ? "animate-spin" : ""} />
+            <span>Sincronizar Pedidos Zedy</span>
+          </button>
 
           <button
             onClick={() => loadOrders(true)}
@@ -98,6 +140,70 @@ export default function OrdersPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Modal de Sincronização Zedy ── */}
+      {syncModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#11141E] border border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                ⚡ Sincronizar Pedidos do Zedy Checkout
+              </h3>
+              <button
+                onClick={() => setSyncModalOpen(false)}
+                className="text-zinc-500 hover:text-white text-xs font-bold px-2 py-1 rounded"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Reconcilie os pedidos de hoje para alimentar as métricas do painel e atribuir o faturamento às campanhas <b>USD 1, USD 2, USD 3</b>.
+            </p>
+
+            {syncFeedback && (
+              <div className={cn("p-3 rounded-lg text-xs font-medium", syncFeedback.startsWith("✓") ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20")}>
+                {syncFeedback}
+              </div>
+            )}
+
+            {/* Opção 1: Sync Automático via Token */}
+            <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2">
+              <span className="text-xs font-semibold text-zinc-200 block">Opção 1: Sincronização Direta via API</span>
+              <p className="text-[11px] text-zinc-500">Puxa automaticamente usando o token configurado no sistema.</p>
+              <button
+                onClick={() => handleSyncZedy("auto")}
+                disabled={syncingZedy}
+                className="w-full py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all"
+              >
+                <RotateCw size={13} className={syncingZedy ? "animate-spin" : ""} />
+                <span>{syncingZedy ? "Sincronizando..." : "Puxar Pedidos do Zedy Agora"}</span>
+              </button>
+            </div>
+
+            {/* Opção 2: Colar JSON / Array de Pedidos */}
+            <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2">
+              <span className="text-xs font-semibold text-zinc-200 block">Opção 2: Importar / Colar JSON de Pedidos do Zedy</span>
+              <p className="text-[11px] text-zinc-500">Cole o JSON exportado do painel da Zedy ou listagem de vendas:</p>
+              <textarea
+                value={jsonInput}
+                onChange={(e) => setJsonInput(e.target.value)}
+                placeholder='[{"id":"Z-27SD508I3H2635860","totalPriceInCents":17288,"status":"paid", ...}]'
+                rows={3}
+                className="w-full bg-[#0A0D14] border border-zinc-800 rounded-lg p-2 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-blue-500"
+              />
+              <button
+                onClick={() => handleSyncZedy("json")}
+                disabled={syncingZedy || !jsonInput.trim()}
+                className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-40"
+              >
+                <PackageCheck size={13} />
+                <span>Importar e Processar Lote</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 2. Cards de Resumo ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
