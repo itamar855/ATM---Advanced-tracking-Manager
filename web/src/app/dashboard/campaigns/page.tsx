@@ -20,30 +20,37 @@ export default function CampaignsPage() {
   const [adsets, setAdsets] = useState<AdsetItem[]>([]);
   const [ads, setAds] = useState<AdItem[]>([]);
   const [untrackedSalesCount, setUntrackedSalesCount] = useState(23);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
     else setIsRefreshing(true);
+    setApiError(null);
 
     try {
       const res = await fetch(`/api/v1/meta/campaigns/list?date_preset=${datePreset}`, {
         cache: "no-store",
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.ok) {
-          setAccounts(data.accounts || []);
-          setCampaigns(data.campaigns || []);
-          setAdsets(data.adsets || []);
-          setAds(data.ads || []);
-          if (data.untracked_sales_count !== undefined) {
-            setUntrackedSalesCount(data.untracked_sales_count);
-          }
+      const data = await res.json();
+      if (data.ok) {
+        setAccounts(data.accounts || []);
+        setCampaigns(data.campaigns || []);
+        setAdsets(data.adsets || []);
+        setAds(data.ads || []);
+        if (data.untracked_sales_count !== undefined) {
+          setUntrackedSalesCount(data.untracked_sales_count);
         }
+      } else {
+        setApiError(data.error || "Não foi possível carregar os dados da Meta Ads.");
+        setAccounts(data.accounts || []);
+        setCampaigns(data.campaigns || []);
+        setAdsets(data.adsets || []);
+        setAds(data.ads || []);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("[Campaigns Page] Erro ao carregar dados:", err);
+      setApiError("Erro de conexão ao carregar campanhas da Meta.");
     } finally {
       if (!silent) setLoading(false);
       setIsRefreshing(false);
@@ -83,6 +90,7 @@ export default function CampaignsPage() {
         setDatePreset={setDatePreset}
         onRefresh={() => loadData(true)}
         isRefreshing={isRefreshing}
+        apiError={apiError}
       />
     </div>
   );

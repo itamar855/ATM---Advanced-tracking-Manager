@@ -126,6 +126,7 @@ interface UtmifyCampaignManagerProps {
   setDatePreset: (preset: string) => void;
   onRefresh: () => void;
   isRefreshing?: boolean;
+  apiError?: string | null;
 }
 
 export function UtmifyCampaignManager({
@@ -138,6 +139,7 @@ export function UtmifyCampaignManager({
   setDatePreset,
   onRefresh,
   isRefreshing = false,
+  apiError = null,
 }: UtmifyCampaignManagerProps) {
   // Estado da Aba Ativa
   const [activeTab, setActiveTab] = useState<TabType>("accounts");
@@ -445,6 +447,26 @@ export function UtmifyCampaignManager({
           )}
         </button>
       </div>
+
+      {/* ── Banner de Alerta de Token / Erro da Meta ── */}
+      {apiError && (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between flex-wrap gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <AlertTriangle size={18} className="text-amber-400 shrink-0" />
+            <div>
+              <p className="font-bold text-amber-200">Aviso sobre Conexão Meta Ads:</p>
+              <p className="text-zinc-300 mt-0.5">{apiError}</p>
+            </div>
+          </div>
+          <a
+            href="/dashboard/settings/integrations"
+            className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs transition-colors shrink-0 flex items-center gap-1.5"
+          >
+            <Sparkles size={13} />
+            <span>Configurar em Integrações</span>
+          </a>
+        </div>
+      )}
 
       {/* ── 2. Toolbar Superior de Filtros e Status ───────────────────────── */}
       <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-3.5 space-y-3 shadow-lg">

@@ -180,45 +180,37 @@ export async function GET(request: NextRequest) {
       const currency = ((rawAcc.currency || "BRL") as string).toUpperCase();
       const isUsd = currency === "USD";
 
-      // Busca conta + hierarquia completa com effective_status para status real de veiculação
-      const fields = [
-        "name",
-        "account_status",
-        "balance",
-        "amount_spent",
-        "funding_source_details",
-        `insights.date_preset(${metaDatePreset}){spend,impressions,clicks,actions}`,
-        `campaigns{id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,`,
-        `insights.date_preset(${metaDatePreset}){spend,actions},`,
-        `adsets{id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,`,
-        `insights.date_preset(${metaDatePreset}){spend,actions},`,
-        `ads{id,name,status,effective_status,updated_time,`,
-        `insights.date_preset(${metaDatePreset}){spend,actions}}}}`,
-      ].join("");
-
-      const url = `https://graph.facebook.com/v23.0/${accId}?fields=${encodeURIComponent(fields)}&access_token=${token}`;
+      // 5.1 Busca detalhes da conta + insights do período
+      const accFields = "name,account_status,balance,amount_spent,currency,funding_source_details,insights.date_preset(" + metaDatePreset + "){spend,impressions,clicks,actions}";
+      const accUrl = `https://graph.facebook.com/v23.0/${accId}?fields=${encodeURIComponent(accFields)}&access_token=${token}`;
 
       try {
-        const res = await fetch(url, { cache: "no-store" });
-        const data = await res.json();
+        const [accRes, campRes, adsetRes, adRes] = await Promise.all([
+          fetch(accUrl, { cache: "no-store" }),
+          fetch(`https://graph.facebook.com/v23.0/${accId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,insights.date_preset(${metaDatePreset}){spend,actions}&access_token=${token}&limit=100`, { cache: "no-store" }),
+          fetch(`https://graph.facebook.com/v23.0/${accId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id,insights.date_preset(${metaDatePreset}){spend,actions}&access_token=${token}&limit=100`, { cache: "no-store" }),
+          fetch(`https://graph.facebook.com/v23.0/${accId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id,insights.date_preset(${metaDatePreset}){spend,actions}&access_token=${token}&limit=100`, { cache: "no-store" }),
+        ]);
 
-        if (!res.ok || data.error) {
-          const errMsg = data.error?.message || `HTTP ${res.status}`;
+        const accData = await accRes.json();
+
+        if (!accRes.ok || accData.error) {
+          const errMsg = accData.error?.message || `HTTP ${accRes.status}`;
           accountErrors.push({ id: accId, error: errMsg });
           console.error(`[Meta Account ${accId} Error]:`, errMsg);
-          return; // pula esta conta sem derrubar as outras
+          return;
         }
 
-        const accName = data.name || rawAcc.name || accId;
-        const accStatusCode = data.account_status;
+        const accName = accData.name || rawAcc.name || accId;
+        const accStatusCode = accData.account_status;
         const accStatus = accStatusCode === 1 ? "Ativo" : accStatusCode === 2 ? "Desabilitado" : accStatusCode === 3 ? "Não Verificado" : "Pendente";
 
-        const cardDisplay = data.funding_source_details?.display_string || rawAcc.funding_source_details?.display_string || "N/A";
+        const cardDisplay = accData.funding_source_details?.display_string || rawAcc.funding_source_details?.display_string || "N/A";
 
-        const rawBalance = Number(data.balance || rawAcc.balance || 0) / 100;
+        const rawBalance = Number(accData.balance || rawAcc.balance || 0) / 100;
         const cycleBrl = convertToBrl(rawBalance, currency, usdBrlRate);
 
-        const accInsights = data.insights?.data?.[0] || {};
+        const accInsights = accData.insights?.data?.[0] || {};
         const rawPeriodSpend = Number(accInsights.spend || 0);
         const periodSpendBrl = convertToBrl(rawPeriodSpend, currency, usdBrlRate);
 
@@ -253,8 +245,10 @@ export async function GET(request: NextRequest) {
           last_update: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
         });
 
-        // Processa Campanhas
-        const rawCampaigns = data.campaigns?.data || [];
+        // 5.2 Processa Campanhas
+        const campData = campRes.ok ? await campRes.json() : {};
+        const rawCampaigns = Array.isArray(campData.data) ? campData.data : [];
+
         rawCampaigns.forEach((camp: any) => {
           const cIns = camp.insights?.data?.[0] || {};
           const cRawSpend = Number(cIns.spend || 0);
@@ -274,7 +268,6 @@ export async function GET(request: NextRequest) {
           const rawBudget = camp.daily_budget ? Number(camp.daily_budget) / 100 : Number(camp.lifetime_budget || 0) / 100;
           const convertedBudget = convertToBrl(rawBudget, currency, usdBrlRate);
 
-          // Usa effective_status para refletir o status REAL de veiculação
           const isActive = camp.effective_status === "ACTIVE" || (camp.effective_status === undefined && camp.status === "ACTIVE");
 
           allCampaigns.push({
@@ -298,100 +291,109 @@ export async function GET(request: NextRequest) {
             roi: cRoi,
             last_update: camp.updated_time ? new Date(camp.updated_time).toLocaleString("pt-BR") : "Hoje",
           });
+        });
 
-          // Processa AdSets
-          const rawAdsets = camp.adsets?.data || [];
-          rawAdsets.forEach((as: any) => {
-            const asIns = as.insights?.data?.[0] || {};
-            const asRawSpend = Number(asIns.spend || 0);
-            const asSpend = convertToBrl(asRawSpend, currency, usdBrlRate);
+        // 5.3 Processa AdSets (Conjuntos)
+        const adsetData = adsetRes.ok ? await adsetRes.json() : {};
+        const rawAdsets = Array.isArray(adsetData.data) ? adsetData.data : [];
 
-            const asPurchases = paidPurchasesByAdset.get(as.id) || { revenue: 0, count: 0 };
-            const asRevenue = asPurchases.revenue;
-            const asSales = asPurchases.count;
-            const asProfit = asRevenue - asSpend;
-            const asRoas = asSpend > 0 ? asRevenue / asSpend : (asRevenue > 0 ? 99.9 : 0);
-            const asCpa = asSales > 0 ? asSpend / asSales : 0;
-            const asIc = icsByAdset.get(as.id) || 0;
-            const asCpi = asIc > 0 ? asSpend / asIc : 0;
-            const asMargin = asRevenue > 0 ? (asProfit / asRevenue) * 100 : (asSpend > 0 ? -100 : 0);
-            const asRoi = asSpend > 0 ? asProfit / asSpend : 0;
+        rawAdsets.forEach((as: any) => {
+          const asIns = as.insights?.data?.[0] || {};
+          const asRawSpend = Number(asIns.spend || 0);
+          const asSpend = convertToBrl(asRawSpend, currency, usdBrlRate);
 
-            const asRawBudget = as.daily_budget ? Number(as.daily_budget) / 100 : Number(as.lifetime_budget || 0) / 100;
-            const asConvertedBudget = convertToBrl(asRawBudget, currency, usdBrlRate);
+          const asPurchases = paidPurchasesByAdset.get(as.id) || { revenue: 0, count: 0 };
+          const asRevenue = asPurchases.revenue;
+          const asSales = asPurchases.count;
+          const asProfit = asRevenue - asSpend;
+          const asRoas = asSpend > 0 ? asRevenue / asSpend : (asRevenue > 0 ? 99.9 : 0);
+          const asCpa = asSales > 0 ? asSpend / asSales : 0;
+          const asIc = icsByAdset.get(as.id) || 0;
+          const asCpi = asIc > 0 ? asSpend / asIc : 0;
+          const asMargin = asRevenue > 0 ? (asProfit / asRevenue) * 100 : (asSpend > 0 ? -100 : 0);
+          const asRoi = asSpend > 0 ? asProfit / asSpend : 0;
 
-            const asIsActive = as.effective_status === "ACTIVE" || (as.effective_status === undefined && as.status === "ACTIVE");
+          const asRawBudget = as.daily_budget ? Number(as.daily_budget) / 100 : Number(as.lifetime_budget || 0) / 100;
+          const asConvertedBudget = convertToBrl(asRawBudget, currency, usdBrlRate);
 
-            allAdsets.push({
-              id: as.id,
-              name: as.name,
-              campaign_id: camp.id,
-              campaign_name: camp.name,
-              account_id: accId,
-              account_name: accName,
-              status: asIsActive ? "active" : "paused",
-              effective_status: as.effective_status || as.status,
-              budget: asConvertedBudget,
-              budget_type: as.daily_budget ? "Diário" : (as.lifetime_budget ? "Vitalício" : "CBO"),
-              spend: asSpend,
-              revenue: asRevenue,
-              profit: asProfit,
-              roas: asRoas,
-              sales: asSales,
-              cpa: asCpa,
-              ic: asIc,
-              cpi: asCpi,
-              margin: asMargin,
-              roi: asRoi,
-              last_update: as.updated_time ? new Date(as.updated_time).toLocaleString("pt-BR") : "Hoje",
-            });
+          const asIsActive = as.effective_status === "ACTIVE" || (as.effective_status === undefined && as.status === "ACTIVE");
 
-            // Processa Ads
-            const rawAds = as.ads?.data || [];
-            rawAds.forEach((ad: any) => {
-              const adIns = ad.insights?.data?.[0] || {};
-              const adRawSpend = Number(adIns.spend || 0);
-              const adSpend = convertToBrl(adRawSpend, currency, usdBrlRate);
+          const parentCamp = allCampaigns.find((c) => c.id === as.campaign_id);
 
-              const adPurchases = paidPurchasesByAd.get(ad.id) || { revenue: 0, count: 0 };
-              const adRevenue = adPurchases.revenue;
-              const adSales = adPurchases.count;
-              const adProfit = adRevenue - adSpend;
-              const adRoas = adSpend > 0 ? adRevenue / adSpend : (adRevenue > 0 ? 99.9 : 0);
-              const adCpa = adSales > 0 ? adSpend / adSales : 0;
-              const adIc = icsByAd.get(ad.id) || 0;
-              const adCpi = adIc > 0 ? adSpend / adIc : 0;
-              const adMargin = adRevenue > 0 ? (adProfit / adRevenue) * 100 : (adSpend > 0 ? -100 : 0);
-              const adRoi = adSpend > 0 ? adProfit / adSpend : 0;
+          allAdsets.push({
+            id: as.id,
+            name: as.name,
+            campaign_id: as.campaign_id || (parentCamp?.id || ""),
+            campaign_name: parentCamp?.name || "Campanha",
+            account_id: accId,
+            account_name: accName,
+            status: asIsActive ? "active" : "paused",
+            effective_status: as.effective_status || as.status,
+            budget: asConvertedBudget,
+            budget_type: as.daily_budget ? "Diário" : (as.lifetime_budget ? "Vitalício" : "CBO"),
+            spend: asSpend,
+            revenue: asRevenue,
+            profit: asProfit,
+            roas: asRoas,
+            sales: asSales,
+            cpa: asCpa,
+            ic: asIc,
+            cpi: asCpi,
+            margin: asMargin,
+            roi: asRoi,
+            last_update: as.updated_time ? new Date(as.updated_time).toLocaleString("pt-BR") : "Hoje",
+          });
+        });
 
-              const adIsActive = ad.effective_status === "ACTIVE" || (ad.effective_status === undefined && ad.status === "ACTIVE");
+        // 5.4 Processa Ads (Anúncios)
+        const adData = adRes.ok ? await adRes.json() : {};
+        const rawAds = Array.isArray(adData.data) ? adData.data : [];
 
-              allAds.push({
-                id: ad.id,
-                name: ad.name,
-                adset_id: as.id,
-                adset_name: as.name,
-                campaign_id: camp.id,
-                campaign_name: camp.name,
-                account_id: accId,
-                account_name: accName,
-                status: adIsActive ? "active" : "paused",
-                effective_status: ad.effective_status || ad.status,
-                budget: 0,
-                budget_type: "Sob AdSet",
-                spend: adSpend,
-                revenue: adRevenue,
-                profit: adProfit,
-                roas: adRoas,
-                sales: adSales,
-                cpa: adCpa,
-                ic: adIc,
-                cpi: adCpi,
-                margin: adMargin,
-                roi: adRoi,
-                last_update: ad.updated_time ? new Date(ad.updated_time).toLocaleString("pt-BR") : "Hoje",
-              });
-            });
+        rawAds.forEach((ad: any) => {
+          const adIns = ad.insights?.data?.[0] || {};
+          const adRawSpend = Number(adIns.spend || 0);
+          const adSpend = convertToBrl(adRawSpend, currency, usdBrlRate);
+
+          const adPurchases = paidPurchasesByAd.get(ad.id) || { revenue: 0, count: 0 };
+          const adRevenue = adPurchases.revenue;
+          const adSales = adPurchases.count;
+          const adProfit = adRevenue - adSpend;
+          const adRoas = adSpend > 0 ? adRevenue / adSpend : (adRevenue > 0 ? 99.9 : 0);
+          const adCpa = adSales > 0 ? adSpend / adSales : 0;
+          const adIc = icsByAd.get(ad.id) || 0;
+          const adCpi = adIc > 0 ? adSpend / adIc : 0;
+          const adMargin = adRevenue > 0 ? (adProfit / adRevenue) * 100 : (adSpend > 0 ? -100 : 0);
+          const adRoi = adSpend > 0 ? adProfit / adSpend : 0;
+
+          const adIsActive = ad.effective_status === "ACTIVE" || (ad.effective_status === undefined && ad.status === "ACTIVE");
+
+          const parentAdset = allAdsets.find((as) => as.id === ad.adset_id);
+          const parentCamp = allCampaigns.find((c) => c.id === (ad.campaign_id || parentAdset?.campaign_id));
+
+          allAds.push({
+            id: ad.id,
+            name: ad.name,
+            adset_id: ad.adset_id || (parentAdset?.id || ""),
+            adset_name: parentAdset?.name || "Conjunto",
+            campaign_id: ad.campaign_id || (parentCamp?.id || ""),
+            campaign_name: parentCamp?.name || "Campanha",
+            account_id: accId,
+            account_name: accName,
+            status: adIsActive ? "active" : "paused",
+            effective_status: ad.effective_status || ad.status,
+            budget: 0,
+            budget_type: "Sob AdSet",
+            spend: adSpend,
+            revenue: adRevenue,
+            profit: adProfit,
+            roas: adRoas,
+            sales: adSales,
+            cpa: adCpa,
+            ic: adIc,
+            cpi: adCpi,
+            margin: adMargin,
+            roi: adRoi,
+            last_update: ad.updated_time ? new Date(ad.updated_time).toLocaleString("pt-BR") : "Hoje",
           });
         });
       } catch (err: any) {
