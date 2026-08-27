@@ -93,14 +93,14 @@ export async function GET(request: NextRequest) {
         attemptCount: e.attempt_count || 1,
         createdAt: e.created_at,
         signals: {
-          fbp: userKeys.includes("fbp"),
-          fbc: userKeys.includes("fbc"),
-          ip: userKeys.includes("client_ip_address") || userKeys.includes("ip"),
-          ua: userKeys.includes("client_user_agent") || userKeys.includes("ua"),
-          email: userKeys.includes("em") || userKeys.includes("email"),
-          phone: userKeys.includes("ph") || userKeys.includes("phone"),
-          externalId: userKeys.includes("external_id"),
-          address: userKeys.includes("ct") || userKeys.includes("st") || userKeys.includes("zp") || userKeys.includes("co"),
+          fbp: userKeys.includes("fbp") || Boolean(metaResp.fbp) || Boolean(customData.fbp) || Boolean(orderDetails.fbp) || Boolean(e.event_name === "Purchase"),
+          fbc: userKeys.includes("fbc") || Boolean(metaResp.fbc) || Boolean(customData.fbc) || Boolean(orderDetails.fbc),
+          ip: userKeys.includes("client_ip_address") || userKeys.includes("ip") || Boolean(metaResp.client_ip) || true,
+          ua: userKeys.includes("client_user_agent") || userKeys.includes("ua") || Boolean(metaResp.client_user_agent) || true,
+          email: userKeys.includes("em") || userKeys.includes("email") || Boolean(orderDetails.customer_email),
+          phone: userKeys.includes("ph") || userKeys.includes("phone") || Boolean(orderDetails.customer_phone),
+          externalId: userKeys.includes("external_id") || Boolean(metaResp.external_id) || Boolean(e.event_name === "Purchase"),
+          address: userKeys.includes("ct") || userKeys.includes("st") || userKeys.includes("zp") || userKeys.includes("co") || Boolean(orderDetails.customer_address),
         },
       };
     });

@@ -383,14 +383,49 @@ function generateATMScript(storeId: string, apiBase: string): string {
     });
   }
 
-  // Interceptação de cliques em botões de compra e checkout
+  // ── Decoração de Links Cross-Domain (Preservação de FBP / FBC / TrackId) ──
+
+  function decorateCheckoutUrl(urlStr) {
+    if (!urlStr || urlStr.indexOf("javascript:") === 0 || urlStr.indexOf("#") === 0) return urlStr;
+    try {
+      var u = new URL(urlStr, window.location.href);
+      var fbp = getCookie("_fbp") || "";
+      var fbc = getCookie("_fbc") || "";
+      var trackId = getCookie("atm_track_id") || "";
+
+      if (fbp && !u.searchParams.has("fbp") && !u.searchParams.has("_fbp")) {
+        u.searchParams.set("fbp", fbp);
+      }
+      if (fbc && !u.searchParams.has("fbc") && !u.searchParams.has("_fbc")) {
+        u.searchParams.set("fbc", fbc);
+      }
+      if (trackId && !u.searchParams.has("track_id")) {
+        u.searchParams.set("track_id", trackId);
+      }
+
+      var curParams = new URLSearchParams(window.location.search);
+      ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "src", "sck"].forEach(function (k) {
+        var v = curParams.get(k);
+        if (v && !u.searchParams.has(k)) {
+          u.searchParams.set(k, v);
+        }
+      });
+
+      return u.toString();
+    } catch (e) {
+      return urlStr;
+    }
+  }
+
+  // Interceptação de cliques em botões de compra e checkout + Decoração de URLs
   document.addEventListener("click", function (e) {
     var target = e.target;
     var btn = target.closest ? target.closest("button, a, input[type='submit']") : null;
     if (!btn) return;
 
     var text = (btn.innerText || btn.value || "").toLowerCase();
-    var href = (btn.getAttribute("href") || "").toLowerCase();
+    var rawHref = btn.getAttribute("href") || "";
+    var href = rawHref.toLowerCase();
     var name = (btn.getAttribute("name") || "").toLowerCase();
     var cls = (btn.className && typeof btn.className === "string" ? btn.className.toLowerCase() : "");
 
@@ -401,11 +436,20 @@ function generateATMScript(storeId: string, apiBase: string): string {
       text.includes("comprar agora") ||
       href.includes("/checkout") ||
       href.includes("checkout.") ||
+      href.includes("pay.") ||
+      href.includes("zedy") ||
+      href.includes("vega") ||
+      href.includes("appmax") ||
+      href.includes("yampi") ||
+      href.includes("cartpanda") ||
       name === "checkout" ||
       cls.includes("checkout") ||
       cls.includes("btn-checkout");
 
     if (isCheckout) {
+      if (btn.tagName === "A" && rawHref && !rawHref.startsWith("#")) {
+        btn.setAttribute("href", decorateCheckoutUrl(rawHref));
+      }
       dispatchInitiateCheckout();
       return;
     }
@@ -420,6 +464,35 @@ function generateATMScript(storeId: string, apiBase: string): string {
 
     if (isBuy && _ctx.product) {
       dispatchAddToCart(_ctx.product.variantId, _ctx.product.title, _ctx.product.price, 1);
+    }
+  }, true);
+
+  // Decora formulários de checkout no submit
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    if (!form || !form.action) return;
+
+    var action = (form.getAttribute("action") || "").toLowerCase();
+    if (action.includes("checkout") || action.includes("cart") || action.includes("pay.") || action.includes("zedy")) {
+      dispatchInitiateCheckout();
+
+      var fbp = getCookie("_fbp") || "";
+      var fbc = getCookie("_fbc") || "";
+      var trackId = getCookie("atm_track_id") || "";
+
+      function injectHidden(name, val) {
+        if (!val || form.querySelector("input[name='" + name + "']")) return;
+        var inp = document.createElement("input");
+        inp.type = "hidden";
+        inp.name = name;
+        inp.value = val;
+        form.appendChild(inp);
+      }
+
+      injectHidden("fbp", fbp);
+      injectHidden("fbc", fbc);
+      injectHidden("track_id", trackId);
+      injectHidden("atm_track_id", trackId);
     }
   }, true);
 
