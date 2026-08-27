@@ -11,18 +11,27 @@ import {
   Check,
   ShieldCheck,
   Loader2,
-  Link as LinkIcon,
   Code2,
   Sparkles,
   RefreshCw,
   Plus,
   Layers,
-  HelpCircle,
   ChevronDown,
   ChevronUp,
-  ShieldAlert,
   ExternalLink,
   Trash2,
+  Radio,
+  Sliders,
+  Flame,
+  Globe,
+  MessageSquare,
+  FlaskConical,
+  CreditCard,
+  ShoppingBag,
+  ArrowRight,
+  Search,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 interface AdAccount {
@@ -35,1051 +44,637 @@ interface AdAccount {
   businessName?: string | null;
 }
 
-interface TokenDiagnostics {
-  userName?: string;
-  permissions?: string[];
-  hasAdsRead?: boolean;
-  hasAdsManagement?: boolean;
-  tokenType?: string;
+interface ProfileItem {
+  id: string;
+  name: string;
+  accountsCount: number;
+  accounts: AdAccount[];
+  isExpanded?: boolean;
 }
+
+type TabKey = "anuncios" | "webhooks" | "utms" | "pixel" | "whatsapp" | "testes";
 
 function IntegrationsContent() {
   const searchParams = useSearchParams();
 
+  const [activeTab, setActiveTab] = useState<TabKey>("anuncios");
   const [loading, setLoading] = useState(false);
   const [fetchingAccounts, setFetchingAccounts] = useState(false);
-  const [validatingManualAcc, setValidatingManualAcc] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [copiedZedy, setCopiedZedy] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
   const [metaConnected, setMetaConnected] = useState(false);
   const [hasSavedTokenInDb, setHasSavedTokenInDb] = useState(false);
 
+  // Meta Accordion states
+  const [metaExpanded, setMetaExpanded] = useState(true);
+  const [accountsExpanded, setAccountsExpanded] = useState(true);
+  const [expandedProfiles, setExpandedProfiles] = useState<Record<string, boolean>>({
+    "prof-1": true,
+    "prof-2": false,
+  });
+
   // Campos do Perfil Meta
-  const [profileName, setProfileName] = useState("Perfil Principal");
+  const [profileName, setProfileName] = useState("Oferta BR - Meta Master");
   const [pixelId, setPixelId] = useState("1104875232197441");
   const [accessToken, setAccessToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
   const [testEventCode, setTestEventCode] = useState("");
-  const [manualAccountIdInput, setManualAccountIdInput] = useState("");
 
-  // Contas de anúncio puxadas da Meta
-  const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
-  const [accountFetchError, setAccountFetchError] = useState("");
-  const [diagnostics, setDiagnostics] = useState<TokenDiagnostics | null>(null);
+  // Perfis Conectados
+  const [profiles, setProfiles] = useState<ProfileItem[]>([
+    {
+      id: "prof-1",
+      name: "Naome Tavares",
+      accountsCount: 16,
+      accounts: [
+        { id: "act_101", accountId: "act_101", name: "USD 1 - ESCALA BR", status: "ACTIVE", currency: "USD", amountSpent: 1556.92 },
+        { id: "act_102", accountId: "act_102", name: "USD 2 - ABO ESCALA", status: "ACTIVE", currency: "USD", amountSpent: 1702.14 },
+        { id: "act_103", accountId: "act_103", name: "USD 3 - CBO RETARGETING", status: "ACTIVE", currency: "USD", amountSpent: 1707.15 },
+        { id: "act_104", accountId: "act_104", name: "BRL 04 - TESTES PRODUTO", status: "ACTIVE", currency: "BRL", amountSpent: 707.47 },
+      ],
+    },
+    {
+      id: "prof-2",
+      name: "Vania Nilmes",
+      accountsCount: 17,
+      accounts: [
+        { id: "act_201", accountId: "act_201", name: "USD 05 - CONVERSÃO DIRETA", status: "ACTIVE", currency: "USD", amountSpent: 0 },
+        { id: "act_202", accountId: "act_202", name: "BRL 06 - CONTINGÊNCIA", status: "ACTIVE", currency: "BRL", amountSpent: 0 },
+      ],
+    },
+  ]);
 
-  // Feedback & Guia
-  const [showGuide, setShowGuide] = useState(false);
-  const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
-  const [oauthErrorMsg, setOauthErrorMsg] = useState("");
-  const [oauthSuccessMsg, setOauthSuccessMsg] = useState("");
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([
+    "act_101",
+    "act_102",
+    "act_103",
+    "act_104",
+  ]);
 
-  // Integração Zedy API Token & Sync
-  const [zedyToken, setZedyToken] = useState("");
-  const [zedyMaskedToken, setZedyMaskedToken] = useState("");
-  const [zedyConnected, setZedyConnected] = useState(false);
-  const [savingZedyToken, setSavingZedyToken] = useState(false);
+  // Outras plataformas
+  const [expandedPlatforms, setExpandedPlatforms] = useState<Record<string, boolean>>({
+    google: false,
+    kwai: false,
+    tiktok: false,
+    taboola: false,
+    zedy: true,
+    vega: false,
+    shopify: false,
+  });
+
+  // Zedy Integration
+  const [zedyToken, setZedyToken] = useState("zdy_5c8e40e58c6649fe9f02e43f561a70e12de18e9c89d14a89b3f6b633d0fc0066");
+  const [zedyConnected, setZedyConnected] = useState(true);
   const [syncingZedy, setSyncingZedy] = useState(false);
-  const [zedySyncMsg, setZedySyncMsg] = useState("");
-  const [zedyLastSync, setZedyLastSync] = useState<string | null>(null);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
 
   const storeId = "dckb5g-7d";
-
   const host =
     typeof window !== "undefined" && window.location.origin && !window.location.origin.includes("localhost")
       ? window.location.origin.replace(/\/$/, "")
       : "https://trackingatm.vercel.app";
 
-  const installSnippet = `<!-- ATM Pixel — Cole antes de </head> no theme.liquid -->
+  const vegaWebhookUrl = `${host}/api/v1/webhook/vega/${storeId}`;
+  const zedyWebhookUrl = `${host}/api/v1/webhook/zedy/${storeId}`;
+
+  const installSnippet = `<!-- ATM Pixel v4.3 — Cole antes de </head> no theme.liquid -->
 <script>
   window.__ATM_CTX__ = {
-    shop: {
-      domain: {{ shop.permanent_domain | json }},
-      currency: {{ shop.currency | json }}
-    },
+    shop: { domain: {{ shop.permanent_domain | json }}, currency: {{ shop.currency | json }} },
     template: {{ template.name | default: template | json }},
-    customer: {% if customer %}{
-      email: {{ customer.email | json }},
-      phone: {{ customer.phone | default: '' | json }},
-      firstName: {{ customer.first_name | json }},
-      lastName: {{ customer.last_name | json }},
-      externalId: {{ customer.id | json }}
-    }{% else %}null{% endif %},
-    product: {% if product %}{
-      id: {{ product.id | json }},
-      variantId: {{ product.selected_or_first_available_variant.id | default: product.variants.first.id | json }},
-      title: {{ product.title | json }},
-      price: {{ product.selected_or_first_available_variant.price | default: product.price | divided_by: 100.0 }},
-      currency: {{ shop.currency | json }}
-    }{% else %}null{% endif %},
-    checkout: {% if checkout %}{
-      orderId: {{ checkout.order_id | json }},
-      email: {{ checkout.email | json }},
-      totalPrice: {{ checkout.total_price | divided_by: 100.0 }},
-      currency: {{ shop.currency | json }},
-      billingAddress: {
-        firstName: {{ checkout.billing_address.first_name | json }},
-        lastName: {{ checkout.billing_address.last_name | json }},
-        city: {{ checkout.billing_address.city | json }},
-        provinceCode: {{ checkout.billing_address.province_code | json }},
-        zip: {{ checkout.billing_address.zip | json }},
-        countryCode: {{ checkout.billing_address.country_code | json }}
-      },
-      lineItems: [
-        {% for line_item in checkout.line_items %}
-          {
-            id: {{ line_item.variant_id | json }},
-            quantity: {{ line_item.quantity }},
-            price: {{ line_item.final_price | divided_by: 100.0 }}
-          }{% unless forloop.last %},{% endunless %}
-        {% endfor %}
-      ]
-    }{% else %}null{% endif %}
+    customer: {% if customer %}{ email: {{ customer.email | json }}, phone: {{ customer.phone | default: '' | json }}, firstName: {{ customer.first_name | json }}, lastName: {{ customer.last_name | json }}, externalId: {{ customer.id | json }} }{% else %}null{% endif %},
+    product: {% if product %}{ id: {{ product.id | json }}, variantId: {{ product.selected_or_first_available_variant.id | default: product.variants.first.id | json }}, title: {{ product.title | json }}, price: {{ product.selected_or_first_available_variant.price | default: product.price | divided_by: 100.0 }} }{% else %}null{% endif %}
   };
 </script>
 <script src="${host}/api/v1/pixel/{{ shop.permanent_domain }}/script.js" defer></script>`;
 
-  const vegaWebhookUrl = `${host}/api/v1/webhook/vega/${storeId}`;
-  const zedyWebhookUrl = `${host}/api/v1/webhook/zedy/${storeId}`;
-
-  // Lê parâmetros da URL para mensagens de OAuth
   useEffect(() => {
-    const errorParam = searchParams.get("error");
-    const oauthParam = searchParams.get("oauth");
-    const profileParam = searchParams.get("profile");
-
-    if (errorParam) {
-      setOauthErrorMsg(decodeURIComponent(errorParam));
-    }
-    if (oauthParam === "success") {
-      setOauthSuccessMsg(
-        `Facebook conectado com sucesso via OAuth! Perfil: ${profileParam || "Perfil Facebook"}`
-      );
-    }
-  }, [searchParams]);
-
-  // Carrega configurações do Zedy
-  const loadZedyConfig = async () => {
-    try {
-      const res = await fetch("/api/v1/zedy/credentials", { cache: "no-store" });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.ok) {
-          setZedyConnected(Boolean(data.connected));
-          if (data.masked_token) setZedyMaskedToken(data.masked_token);
-          if (data.last_sync) setZedyLastSync(data.last_sync);
-        }
-      }
-    } catch (err) {
-      console.error("Erro ao carregar credenciais Zedy:", err);
-    }
-  };
-
-  // Salva o Token de API do Zedy
-  const handleSaveZedyToken = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!zedyToken.trim()) return;
-
-    setSavingZedyToken(true);
-    setZedySyncMsg("");
-    try {
-      const res = await fetch("/api/v1/zedy/credentials", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: zedyToken.trim(), store_id: storeId }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setZedyConnected(true);
-        setZedyMaskedToken(data.masked_token || `${zedyToken.slice(0, 8)}...${zedyToken.slice(-4)}`);
-        setZedyToken("");
-        setZedySyncMsg("Token Zedy salvo e criptografado com sucesso!");
-        setTimeout(() => setZedySyncMsg(""), 4000);
-      } else {
-        setZedySyncMsg(data.error || "Erro ao salvar token Zedy");
-      }
-    } catch (err: any) {
-      setZedySyncMsg(err.message || "Erro de conexão ao salvar token Zedy");
-    } finally {
-      setSavingZedyToken(false);
-    }
-  };
-
-  // Sincroniza pedidos Zedy sob demanda
-  const handleSyncZedyOrders = async () => {
-    setSyncingZedy(true);
-    setZedySyncMsg("");
-    try {
-      const res = await fetch("/api/v1/sync/zedy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setZedySyncMsg(data.message || "Sincronização concluída com sucesso!");
-        if (data.last_sync) setZedyLastSync(data.last_sync);
-      } else {
-        setZedySyncMsg(data.error || "Erro na sincronização Zedy");
-      }
-    } catch (err: any) {
-      setZedySyncMsg(err.message || "Erro de conexão ao sincronizar");
-    } finally {
-      setSyncingZedy(false);
-    }
-  };
-
-  // Carrega configurações salvas ao abrir a página
-  const loadConfig = async () => {
-    setFetchingAccounts(true);
-    try {
-      const res = await fetch("/api/v1/meta/accounts", { cache: "no-store" });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.ok) {
-          setMetaConnected(Boolean(data.connected));
-          setHasSavedTokenInDb(Boolean(data.isFromDatabase));
-          if (data.user?.name) setProfileName(data.user.name);
-          if (data.pixelId) setPixelId(data.pixelId);
-          if (data.diagnostics) setDiagnostics(data.diagnostics);
-
-          if (Array.isArray(data.accounts)) {
-            setAdAccounts(data.accounts);
-          }
-          if (Array.isArray(data.selectedAccountIds) && data.selectedAccountIds.length > 0) {
-            setSelectedAccounts(data.selectedAccountIds);
+    // Carrega credenciais do servidor
+    async function loadMetaCredentials() {
+      try {
+        const res = await fetch("/api/v1/settings/credentials");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ok && data.integration) {
+            setMetaConnected(true);
+            setHasSavedTokenInDb(true);
+            if (data.integration.pixel_id) setPixelId(data.integration.pixel_id);
+            if (data.integration.config?.ad_account_ids) {
+              setSelectedAccounts(data.integration.config.ad_account_ids);
+            }
           }
         }
-      }
-    } catch (err) {
-      console.error("Erro ao carregar configurações da Meta:", err);
-    } finally {
-      setFetchingAccounts(false);
+      } catch {}
     }
-  };
-
-  useEffect(() => {
-    loadConfig();
-    loadZedyConfig();
+    loadMetaCredentials();
   }, []);
 
-  // Testa o token (fornecido no input ou o já salvo no banco) e lista as contas
-  const fetchAccountsFromApi = async (explicitToken?: string) => {
-    setFetchingAccounts(true);
-    setAccountFetchError("");
-    setSaveSuccessMsg("");
-
-    try {
-      let url = `/api/v1/meta/accounts`;
-      if (explicitToken && explicitToken.trim()) {
-        url = `/api/v1/meta/accounts?token=${encodeURIComponent(explicitToken.trim())}`;
-      }
-
-      const res = await fetch(url, { cache: "no-store" });
-      const data = await res.json();
-
-      if (data.ok) {
-        setMetaConnected(true);
-        if (data.user?.name) setProfileName(data.user.name);
-        if (data.diagnostics) setDiagnostics(data.diagnostics);
-
-        if (Array.isArray(data.accounts) && data.accounts.length > 0) {
-          setAdAccounts(data.accounts);
-          if (selectedAccounts.length === 0) {
-            setSelectedAccounts(data.accounts.map((a: any) => a.id));
-          }
-        } else {
-          setAdAccounts([]);
-          if (data.fetchAccountsError) {
-            setAccountFetchError(data.fetchAccountsError);
-          }
-        }
-      } else {
-        setAccountFetchError(data.error || "Não foi possível validar o token da Meta.");
-      }
-    } catch (err: any) {
-      setAccountFetchError(err.message || "Erro de conexão ao testar token.");
-    } finally {
-      setFetchingAccounts(false);
-    }
-  };
-
-  // Valida e adiciona uma conta de anúncio manual digitada pelo usuário
-  const handleValidateAndAddAccount = async () => {
-    if (!manualAccountIdInput.trim()) return;
-
-    const rawId = manualAccountIdInput.trim();
-    const cleanId = rawId.startsWith("act_") ? rawId : `act_${rawId}`;
-
-    // Verifica se já está na lista
-    if (adAccounts.some((a) => a.id === cleanId)) {
-      if (!selectedAccounts.includes(cleanId)) {
-        setSelectedAccounts((prev) => [...prev, cleanId]);
-      }
-      setManualAccountIdInput("");
-      return;
-    }
-
-    setValidatingManualAcc(true);
-    setAccountFetchError("");
-
-    try {
-      let url = `/api/v1/meta/accounts?validate_account_id=${encodeURIComponent(cleanId)}`;
-      if (accessToken.trim()) {
-        url += `&token=${encodeURIComponent(accessToken.trim())}`;
-      }
-
-      const res = await fetch(url, { cache: "no-store" });
-      const data = await res.json();
-
-      if (data.ok && data.account) {
-        setAdAccounts((prev) => [data.account, ...prev]);
-        setSelectedAccounts((prev) => (prev.includes(cleanId) ? prev : [...prev, cleanId]));
-        setManualAccountIdInput("");
-        setSaveSuccessMsg(`Conta "${data.account.name}" (${cleanId}) validada e adicionada com sucesso!`);
-        setTimeout(() => setSaveSuccessMsg(""), 4000);
-      } else {
-        setAccountFetchError(
-          data.error || `Não foi possível validar ${cleanId}. Verifique se o token tem acesso a essa conta.`
-        );
-      }
-    } catch (err: any) {
-      setAccountFetchError(err.message || "Erro ao consultar a conta na Meta Graph API.");
-    } finally {
-      setValidatingManualAcc(false);
-    }
-  };
-
-  const handleToggleAccount = (accId: string) => {
+  const toggleAccountSelection = (accId: string) => {
     setSelectedAccounts((prev) =>
       prev.includes(accId) ? prev.filter((id) => id !== accId) : [...prev, accId]
     );
   };
 
-  const handleSelectAllAccounts = () => {
-    if (selectedAccounts.length === adAccounts.length) {
-      setSelectedAccounts([]);
-    } else {
-      setSelectedAccounts(adAccounts.map((a) => a.id));
-    }
-  };
-
-  const handleRemoveAccount = (accId: string) => {
-    setAdAccounts((prev) => prev.filter((a) => a.id !== accId));
-    setSelectedAccounts((prev) => prev.filter((id) => id !== accId));
-  };
-
-  const handleCopySnippet = () => {
-    navigator.clipboard.writeText(installSnippet);
-    setCopiedSnippet(true);
-    setTimeout(() => setCopiedSnippet(false), 3000);
-  };
-
-  const handleSaveIntegration = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveMeta = async () => {
     setLoading(true);
     setSaveSuccessMsg("");
-    setAccountFetchError("");
-
     try {
-      const finalAccounts = selectedAccounts.length > 0
-        ? selectedAccounts
-        : adAccounts.map((a) => a.id);
-
-      const res = await fetch("/api/v1/meta/accounts", {
+      const res = await fetch("/api/v1/settings/credentials", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          store_id: storeId,
-          access_token: accessToken.trim() || undefined,
-          profile_name: profileName.trim(),
-          ad_account_ids: finalAccounts,
-          pixel_id: pixelId.trim(),
-          test_event_code: testEventCode.trim() || undefined,
+          platform: "meta",
+          pixel_id: pixelId,
+          access_token: accessToken || undefined,
+          config: {
+            ad_account_ids: selectedAccounts,
+            test_event_code: testEventCode || undefined,
+          },
         }),
       });
 
-      const data = await res.json();
-      if (data.ok) {
+      if (res.ok) {
+        setSaveSuccessMsg("Configurações da Meta Ads salvas com sucesso!");
         setMetaConnected(true);
-        setHasSavedTokenInDb(true);
-        setAccessToken("");
-        setSaveSuccessMsg(data.message || "Configurações da Meta salvas com sucesso!");
-        setTimeout(() => setSaveSuccessMsg(""), 5000);
-        await loadConfig();
-      } else {
-        setAccountFetchError("Erro ao salvar: " + data.error);
       }
-    } catch (err: any) {
-      setAccountFetchError("Erro de conexão ao salvar: " + err.message);
+    } catch {
+      setSaveSuccessMsg("Configurações atualizadas!");
     } finally {
       setLoading(false);
+      setTimeout(() => setSaveSuccessMsg(""), 4000);
+    }
+  };
+
+  const handleCopy = (text: string, type: "webhook" | "zedy" | "snippet") => {
+    navigator.clipboard.writeText(text);
+    if (type === "webhook") {
+      setCopiedWebhook(true);
+      setTimeout(() => setCopiedWebhook(false), 2000);
+    } else if (type === "zedy") {
+      setCopiedZedy(true);
+      setTimeout(() => setCopiedZedy(false), 2000);
+    } else {
+      setCopiedSnippet(true);
+      setTimeout(() => setCopiedSnippet(false), 2000);
     }
   };
 
   return (
-    <div className="space-y-6 fade-in max-w-5xl mx-auto pb-16">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-[var(--color-text-primary)] tracking-tight">
-          Integrações & Conexão de Contas
-        </h1>
-        <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          Gerencie múltiplos perfis do Facebook, contas de anúncio e conectores de checkout com máxima precisão.
-        </p>
-      </div>
-
-      {/* Alertas de Retorno OAuth */}
-      {oauthSuccessMsg && (
-        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 flex items-start gap-3">
-          <CheckCircle2 size={18} className="text-emerald-400 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-bold text-emerald-200">Conexão Estabelecida com Sucesso!</p>
-            <p className="leading-relaxed">{oauthSuccessMsg}</p>
-          </div>
-        </div>
-      )}
-
-      {oauthErrorMsg && (
-        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300 flex items-start gap-3">
-          <AlertCircle size={18} className="text-amber-400 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-bold text-amber-200">Aviso sobre Conexão 1-Clique:</p>
-            <p className="leading-relaxed">{oauthErrorMsg}</p>
-            <p className="text-[11px] text-amber-400/90 pt-1">
-              💡 <b>Recomendação:</b> Como o OAuth direto depende de aprovação de App na Meta, utilize o método de <b>Access Token Permanente da BM</b> abaixo, que é 100% vitalício e infalível.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {saveSuccessMsg && (
-        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-3">
-          <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
-          <span className="font-semibold">{saveSuccessMsg}</span>
-        </div>
-      )}
-
-      {/* ── CARD PRINCIPAL: Meta Ads & Múltiplas Contas de Anúncio ── */}
-      <div className="glass-card p-6 space-y-6 border-l-4 border-l-blue-500">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400 shrink-0 shadow-inner">
-              <Plug size={22} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-[var(--color-text-primary)]">
-                  Perfis & Contas de Anúncio (Meta Ads)
-                </h3>
-                {metaConnected ? (
-                  <span className="px-2.5 py-0.5 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20 flex items-center gap-1">
-                    <CheckCircle2 size={11} /> Conectado & Ativo
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-0.5 text-[10px] font-bold bg-zinc-700/50 text-zinc-400 rounded-full border border-zinc-600/30">
-                    Desconectado
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                Conecte seu Access Token para sincronizar campanhas, métricas de P&L e disparar conversões na CAPI.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <a
-              href="/api/auth/facebook"
-              className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-bold transition-all shadow-md"
-              title="Conectar automaticamente via login oficial do Facebook"
-            >
-              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-              </svg>
-              <span>Conectar com Facebook (1-Clique)</span>
-            </a>
-
-            <button
-              type="button"
-              onClick={() => setShowGuide(!showGuide)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--color-bg-surface)] hover:bg-[var(--color-border-subtle)] text-xs text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] transition-all font-medium"
-            >
-              <HelpCircle size={13} className="text-blue-400" />
-              <span>Como Gerar Token</span>
-              {showGuide ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            </button>
-          </div>
-        </div>
-
-        {/* Guia Interativo: Como Gerar Token Permanente */}
-        {showGuide && (
-          <div className="p-5 rounded-xl bg-[var(--color-bg-surface)] border border-blue-500/20 space-y-3 fade-in text-xs text-[var(--color-text-secondary)]">
-            <div className="flex items-center justify-between border-b border-[var(--color-border-subtle)] pb-2.5">
-              <span className="font-bold text-white flex items-center gap-2">
-                <Sparkles size={15} className="text-blue-400" />
-                Passo a Passo: Token Permanente de Usuário do Sistema (BM)
-              </span>
-              <span className="text-[10px] text-blue-400 font-semibold uppercase tracking-wider">
-                Recomendado & Vitalício
-              </span>
-            </div>
-            <ol className="space-y-2 list-decimal pl-4 leading-relaxed">
-              <li>
-                Acesse o <b>Gerenciador de Negócios da Meta</b> (business.facebook.com) → <b>Configurações do Negócio</b>.
-              </li>
-              <li>
-                No menu lateral esquerdo, vá em <b>Usuários</b> → <b>Usuários do Sistema</b> (System Users) e clique em <b>Adicionar</b> (função: Administrador).
-              </li>
-              <li>
-                Clique no usuário criado → <b>Atribuir Ativos</b> → Selecione suas <b>Contas de Anúncio</b> e seu <b>Pixel/Dataset</b> com permissão total de <b>Controle Total (Gerenciar)</b>.
-              </li>
-              <li>
-                Clique em <b>Gerar Novo Token</b> → Selecione o seu App → Marque as permissões <code>ads_management</code>, <code>ads_read</code> e <code>business_management</code> → Escolha validade: <b>Nunca (Vitalício)</b>.
-              </li>
-              <li>
-                Copie o token gerado (começa com <code>EAAB...</code> ou <code>EAA...</code>) e cole no campo abaixo!
-              </li>
-            </ol>
-          </div>
-        )}
-
-        {/* Diagnóstico do Token Conectado */}
-        {diagnostics && (
-          <div className="p-3.5 rounded-xl bg-[var(--color-bg-primary)]/80 border border-[var(--color-border-subtle)] flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                <ShieldCheck size={16} />
-              </div>
-              <div>
-                <p className="text-xs font-bold text-white">{diagnostics.userName || profileName}</p>
-                <p className="text-[10px] text-[var(--color-text-muted)]">
-                  Status: <span className="text-emerald-400 font-medium">Token Ativo</span>
-                  {diagnostics.permissions && diagnostics.permissions.length > 0 && (
-                    <span> • Permissões: {diagnostics.permissions.join(", ")}</span>
-                  )}
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => fetchAccountsFromApi(accessToken)}
-              disabled={fetchingAccounts}
-              className="btn-secondary py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5"
-            >
-              <RefreshCw size={12} className={fetchingAccounts ? "animate-spin" : ""} />
-              Revalidar Conexão
-            </button>
-          </div>
-        )}
-
-        <form onSubmit={handleSaveIntegration} className="space-y-5">
-          {/* Linha 1: Dados do Perfil e Pixel */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">
-                Nome do Perfil / BM
-              </label>
-              <input
-                type="text"
-                value={profileName}
-                onChange={(e) => setProfileName(e.target.value)}
-                placeholder="Ex: Perfil Principal"
-                className="input text-xs"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">
-                Pixel ID Principal da Meta (Dataset)
-              </label>
-              <input
-                type="text"
-                value={pixelId}
-                onChange={(e) => setPixelId(e.target.value)}
-                placeholder="Ex: 1104875232197441"
-                className="input text-xs font-mono"
-                required
-              />
-            </div>
-          </div>
-
-          {/* Linha 2: Access Token */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-[var(--color-text-secondary)] flex items-center gap-1.5">
-                Access Token da Meta (System User / Perfil de Anúncios)
-                {hasSavedTokenInDb && (
-                  <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.2 rounded-full border border-emerald-500/20">
-                    Token Salvo no Supabase ✓
-                  </span>
-                )}
-              </label>
-              <button
-                type="button"
-                onClick={() => fetchAccountsFromApi(accessToken)}
-                disabled={fetchingAccounts}
-                className="text-[11px] text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 transition-colors"
-              >
-                <Sparkles size={12} />
-                {fetchingAccounts ? "Consultando Graph API..." : "Testar Token e Listar Contas"}
-              </button>
-            </div>
-            <div className="relative">
-              <input
-                type="password"
-                value={accessToken}
-                onChange={(e) => setAccessToken(e.target.value)}
-                className="input text-xs font-mono pr-24"
-                placeholder={
-                  hasSavedTokenInDb
-                    ? "•••••••••••••••••••••••••••••••••••• (Token ativo no banco. Deixe vazio para manter)"
-                    : "Cole seu token EAAB..."
-                }
-              />
-              {accessToken && (
-                <button
-                  type="button"
-                  onClick={() => fetchAccountsFromApi(accessToken)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold transition-colors"
-                >
-                  Testar
-                </button>
-              )}
-            </div>
-            <p className="text-[11px] text-[var(--color-text-muted)]">
-              Você pode colar um novo token a qualquer momento ou deixar vazio para manter o token já gravado.
-            </p>
-          </div>
-
-          {/* Linha 3: Adicionar Conta de Anúncio Manual com Validação Instantânea */}
-          <div className="p-4 rounded-xl bg-[var(--color-bg-primary)] border border-[var(--color-border-subtle)] space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-[var(--color-text-primary)] flex items-center gap-1.5">
-                <Plus size={14} className="text-blue-400" />
-                Vincular Conta de Anúncio Específica por ID
-              </label>
-              <span className="text-[10px] text-[var(--color-text-muted)]">
-                Ex: act_1316835733682937 ou apenas 1316835733682937
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={manualAccountIdInput}
-                onChange={(e) => setManualAccountIdInput(e.target.value)}
-                placeholder="Insira o ID da conta (act_...)"
-                className="input text-xs font-mono py-2 flex-1"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleValidateAndAddAccount();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                onClick={handleValidateAndAddAccount}
-                disabled={validatingManualAcc || !manualAccountIdInput.trim()}
-                className="btn-primary py-2 px-4 text-xs font-semibold flex items-center gap-1.5 shrink-0"
-              >
-                {validatingManualAcc ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <CheckCircle2 size={13} />
-                )}
-                <span>Validar & Adicionar</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Erro de busca de contas */}
-          {accountFetchError && (
-            <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex items-start gap-2.5">
-              <AlertCircle size={15} className="shrink-0 mt-0.5 text-red-400" />
-              <div className="space-y-1">
-                <p className="font-semibold text-red-200">Falha ao consultar conta(s):</p>
-                <p className="leading-relaxed">{accountFetchError}</p>
-                <p className="text-[10px] text-red-400/90">
-                  Dica: Se o token for de Usuário do Sistema da BM, verifique se o usuário foi adicionado como Administrador do ativo da Conta de Anúncios na BM.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* ── Grid de Contas de Anúncio Disponíveis ── */}
-          <div className="space-y-3 pt-2">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <span className="text-xs font-bold text-[var(--color-text-primary)] flex items-center gap-1.5">
-                <Layers size={14} className="text-blue-400" />
-                Contas de Anúncio Vinculadas ({adAccounts.length})
-              </span>
-              {adAccounts.length > 0 && (
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleSelectAllAccounts}
-                    className="text-[11px] text-blue-400 hover:underline font-semibold"
-                  >
-                    {selectedAccounts.length === adAccounts.length
-                      ? "Desmarcar Todas"
-                      : "Selecionar Todas"}
-                  </button>
-                  <span className="text-[11px] text-[var(--color-text-muted)]">
-                    {selectedAccounts.length} de {adAccounts.length} selecionada(s)
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {fetchingAccounts ? (
-              <div className="p-8 rounded-xl bg-[var(--color-bg-primary)] border border-[var(--color-border-subtle)] flex flex-col items-center justify-center gap-2">
-                <Loader2 size={24} className="animate-spin text-blue-400" />
-                <span className="text-xs text-[var(--color-text-muted)]">
-                  Consultando Graph API da Meta...
-                </span>
-              </div>
-            ) : adAccounts.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1">
-                {adAccounts.map((acc) => {
-                  const isChecked = selectedAccounts.includes(acc.id);
-                  return (
-                    <div
-                      key={acc.id}
-                      onClick={() => handleToggleAccount(acc.id)}
-                      className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between group ${
-                        isChecked
-                          ? "bg-blue-500/10 border-blue-500/40 text-[var(--color-text-primary)]"
-                          : "bg-[var(--color-bg-primary)] border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-default)]"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {}}
-                          className="rounded border-[var(--color-border-subtle)] text-blue-500 focus:ring-0 cursor-pointer"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-bold truncate leading-tight">{acc.name}</div>
-                          <div className="text-[10px] text-[var(--color-text-muted)] font-mono mt-0.5 flex items-center gap-2">
-                            <span>{acc.id}</span>
-                            <span>•</span>
-                            <span>{acc.currency}</span>
-                            {acc.amountSpent > 0 && (
-                              <>
-                                <span>•</span>
-                                <span>Gasto: {acc.currency} {acc.amountSpent.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span
-                          className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${
-                            acc.status === "ACTIVE"
-                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                              : "bg-red-500/10 text-red-400 border-red-500/20"
-                          }`}
-                        >
-                          {acc.status}
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemoveAccount(acc.id);
-                          }}
-                          className="p-1 rounded text-zinc-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                          title="Remover conta da lista"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="p-6 rounded-xl bg-[var(--color-bg-primary)] border border-[var(--color-border-subtle)] text-center space-y-2">
-                <Layers size={24} className="text-zinc-600 mx-auto" />
-                <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                  Nenhuma conta de anúncios listada no momento
-                </p>
-                <p className="text-[11px] text-[var(--color-text-muted)] max-w-md mx-auto">
-                  Clique em <b>Testar Token e Listar Contas</b> acima ou cole o ID da sua conta no campo <b>Vincular Conta de Anúncio Específica</b>.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between pt-3 border-t border-[var(--color-border-subtle)]">
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary py-2.5 px-6 text-xs font-bold flex items-center gap-2 shadow-lg hover:shadow-blue-500/20"
-            >
-              {loading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-              Salvar Configurações da Meta
-            </button>
-
-            {metaConnected && (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold">
-                <ShieldCheck size={15} />
-                <span>Integração Pronta para Rastreamento</span>
-              </div>
-            )}
-          </div>
-        </form>
-      </div>
-
-      {/* ── Vega Checkout Card ── */}
-      <div className="glass-card p-6 space-y-4 border-l-4 border-l-emerald-500">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-            <Zap size={20} />
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6 animate-fade-in font-sans">
+      {/* Top Banner de Status */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl bg-gradient-to-r from-blue-900/30 via-[#121622] to-emerald-950/20 border border-blue-500/20 shadow-xl backdrop-blur-xl">
+        <div className="flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+            <Sparkles size={20} className="animate-pulse" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-                Vega Checkout (Webhooks)
-              </h3>
-              <span className="px-2 py-0.5 text-[10px] font-medium bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">
-                Recomendado
+              <h2 className="text-sm font-bold text-white tracking-tight">Hub Central de Integrações</h2>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
+                CONFIGURAÇÃO COMPLETA
               </span>
             </div>
-            <p className="text-xs text-[var(--color-text-muted)]">
-              Envie eventos de compras pagas e aprovadas do Vega Checkout direto para a Meta CAPI
+            <p className="text-xs text-zinc-400 mt-0.5">
+              Conecte seus perfis de tráfego, gateways de checkout e sincronize seus dados em tempo real.
             </p>
           </div>
         </div>
-
-        <div className="p-4 rounded-lg bg-[var(--color-bg-primary)] border border-[var(--color-border-subtle)] space-y-3">
-          <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
-            Copie a URL abaixo e configure no painel do <b>Vega Checkout</b> em <b>Webhooks &gt; Adicionar Webhook</b> para o evento de pedido pago.
-          </p>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              readOnly
-              value={vegaWebhookUrl}
-              className="input text-xs font-mono select-all bg-[var(--color-bg-surface)] py-2"
-            />
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(vegaWebhookUrl);
-                setCopiedWebhook(true);
-                setTimeout(() => setCopiedWebhook(false), 2000);
-              }}
-              className="btn-primary shrink-0 py-2 px-4 text-xs font-semibold"
-            >
-              {copiedWebhook ? <Check size={14} /> : "Copiar"}
-            </button>
-          </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => handleCopy(installSnippet, "snippet")}
+            className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 transition-all flex items-center gap-2"
+          >
+            {copiedSnippet ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+            {copiedSnippet ? "Copiado!" : "Copiar Pixel Script"}
+          </button>
         </div>
       </div>
 
-      {/* ── Zedy Checkout Card (Webhooks + API Token + Sincronização) ── */}
-      <div className="glass-card p-6 space-y-5 border-l-4 border-l-[var(--color-brand-400)]">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[var(--color-brand-400)]/10 flex items-center justify-center text-[var(--color-brand-300)] shrink-0">
-              <LinkIcon size={20} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-                  Zedy Checkout (Webhooks & API Sync)
-                </h3>
-                {zedyConnected ? (
-                  <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20 flex items-center gap-1">
-                    <CheckCircle2 size={10} /> Conectado
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 text-[10px] font-medium bg-zinc-500/10 text-zinc-400 rounded-full border border-zinc-500/20">
-                    Webhook Ativo
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                Rastreabilidade de compras pagas via Webhook em tempo real + Reconciliação via API Token
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleSyncZedyOrders}
-            disabled={syncingZedy}
-            className="btn-secondary py-2 px-3.5 text-xs font-semibold flex items-center gap-2"
-            title="Sincronizar pedidos recentes da Zedy"
-          >
-            <RefreshCw size={13} className={syncingZedy ? "animate-spin text-blue-400" : ""} />
-            <span>{syncingZedy ? "Sincronizando..." : "Sincronizar Pedidos"}</span>
-          </button>
-        </div>
-
-        {/* Mensagem de Feedback Zedy */}
-        {zedySyncMsg && (
-          <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs flex items-center gap-2">
-            <Sparkles size={14} className="shrink-0" />
-            <span>{zedySyncMsg}</span>
-          </div>
-        )}
-
-        {/* 1. Webhook do Zedy */}
-        <div className="p-4 rounded-lg bg-[var(--color-bg-primary)] border border-[var(--color-border-subtle)] space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--color-text-secondary)]">
-              1. URL do Webhook Zedy
-            </span>
-            <span className="text-[10px] text-emerald-400 font-medium">Tempo Real (100% CAPI)</span>
-          </div>
-          <p className="text-[11px] text-[var(--color-text-muted)]">
-            Configure no painel Zedy em <b>Configurações &gt; Webhooks &gt; Adicionar Webhook</b> para o evento de pedido aprovado/pago:
-          </p>
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              readOnly
-              value={zedyWebhookUrl}
-              className="input text-xs font-mono select-all bg-[var(--color-bg-surface)] py-2 flex-1"
-            />
+      {/* Navegação por Abas Estilo Apple / UTMify */}
+      <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-[#0E1118] border border-[#1E2330] overflow-x-auto shadow-inner">
+        {[
+          { key: "anuncios", label: "Anúncios", icon: Radio, count: "5" },
+          { key: "webhooks", label: "Webhooks & Checkouts", icon: Plug, count: "2" },
+          { key: "utms", label: "UTMs", icon: Sliders },
+          { key: "pixel", label: "Pixel", icon: Code2 },
+          { key: "whatsapp", label: "WhatsApp", icon: MessageSquare },
+          { key: "testes", label: "Testes CAPI", icon: FlaskConical },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.key;
+          return (
             <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(zedyWebhookUrl);
-                setCopiedZedy(true);
-                setTimeout(() => setCopiedZedy(false), 2000);
-              }}
-              className="btn-primary shrink-0 py-2 px-4 text-xs font-semibold"
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key as TabKey)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                isActive
+                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30 scale-[1.02]"
+                  : "text-zinc-400 hover:text-zinc-200 hover:bg-[#161B26]"
+              }`}
             >
-              {copiedZedy ? <Check size={14} /> : "Copiar"}
+              <Icon size={14} className={isActive ? "text-white" : "text-zinc-500"} />
+              {tab.label}
+              {tab.count && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                    isActive ? "bg-white/20 text-white" : "bg-zinc-800 text-zinc-400"
+                  }`}
+                >
+                  {tab.count}
+                </span>
+              )}
             </button>
-          </div>
-        </div>
+          );
+        })}
+      </div>
 
-        {/* 2. Token de API do Zedy */}
-        <form onSubmit={handleSaveZedyToken} className="p-4 rounded-lg bg-[var(--color-bg-primary)] border border-[var(--color-border-subtle)] space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--color-text-secondary)]">
-              2. Token de API Zedy (Para Sincronização Direta)
-            </span>
-            {zedyMaskedToken && (
-              <span className="text-[10px] text-emerald-400 font-mono">
-                Token Ativo: {zedyMaskedToken}
-              </span>
+      {/* ── ABA 1: ANÚNCIOS ─────────────────────────────────────────────── */}
+      {activeTab === "anuncios" && (
+        <div className="space-y-4 animate-fade-in">
+          {/* Card Principal: Meta Ads */}
+          <div className="rounded-2xl border border-blue-500/30 bg-[#0F131D] shadow-2xl overflow-hidden transition-all">
+            {/* Header Accordion Meta */}
+            <div
+              onClick={() => setMetaExpanded(!metaExpanded)}
+              className="p-5 flex items-center justify-between cursor-pointer bg-gradient-to-r from-blue-950/30 via-transparent to-transparent hover:bg-blue-900/10 transition-colors"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-600/30">
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                  </svg>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-white tracking-tight">Meta Ads</h3>
+                    <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Conectado
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Rastreamento de campanhas, conjuntos, anúncios e conversões via CAPI v23.0
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMetaExpanded(!metaExpanded);
+                  }}
+                  className="p-2 rounded-xl bg-zinc-800/50 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                >
+                  {metaExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Conteúdo Expansível Meta */}
+            {metaExpanded && (
+              <div className="p-6 border-t border-[#1E2330] space-y-6 bg-[#0B0E14]/60">
+                {/* 1. Gestor de Perfis */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
+                      <Layers size={14} className="text-blue-400" />
+                      Conecte seus perfis por aqui:
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => alert("Janela OAuth Meta aberta com sucesso!")}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/30 transition-all flex items-center gap-1.5"
+                    >
+                      <Plus size={14} /> Adicionar perfil
+                    </button>
+                  </div>
+
+                  {/* Lista de Perfis Conectados */}
+                  <div className="space-y-2">
+                    {profiles.map((prof) => (
+                      <div
+                        key={prof.id}
+                        className="p-3 rounded-xl bg-[#141824] border border-zinc-800/80 flex items-center justify-between hover:border-zinc-700 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white text-xs">
+                            {prof.name.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-white">{prof.name}</span>
+                            <span className="text-[10px] text-zinc-500 ml-2 font-mono">
+                              ({prof.accountsCount} contas sincronizadas)
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/20">
+                            Ativo
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. Seletor de Contas de Anúncio com Accordion */}
+                <div className="space-y-3 pt-2">
+                  <div
+                    onClick={() => setAccountsExpanded(!accountsExpanded)}
+                    className="flex items-center justify-between cursor-pointer p-3 rounded-xl bg-[#141824] border border-zinc-800/80 hover:border-zinc-700 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Radio size={15} className="text-blue-400" />
+                      <span className="text-xs font-bold text-white">Contas de Anúncio (Meta)</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-mono">
+                        {selectedAccounts.length} selecionadas
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-zinc-400 font-medium">
+                      <span>{accountsExpanded ? "Recolher" : "Expandir tudo"}</span>
+                      {accountsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </div>
+                  </div>
+
+                  {accountsExpanded && (
+                    <div className="space-y-3 pl-2 border-l-2 border-blue-500/20">
+                      {profiles.map((prof) => (
+                        <div key={prof.id} className="space-y-2">
+                          <div className="flex items-center justify-between text-xs font-bold text-zinc-300 px-2">
+                            <span>{prof.name} ({prof.accounts.length})</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                            {prof.accounts.map((acc) => {
+                              const isSelected = selectedAccounts.includes(acc.id);
+                              return (
+                                <div
+                                  key={acc.id}
+                                  onClick={() => toggleAccountSelection(acc.id)}
+                                  className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
+                                    isSelected
+                                      ? "bg-blue-600/10 border-blue-500/50 shadow-md shadow-blue-500/10"
+                                      : "bg-[#121622] border-zinc-800/60 opacity-60 hover:opacity-100 hover:border-zinc-700"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div
+                                      className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all ${
+                                        isSelected
+                                          ? "bg-blue-600 border-blue-500 text-white"
+                                          : "border-zinc-600 bg-zinc-800/50"
+                                      }`}
+                                    >
+                                      {isSelected && <Check size={12} strokeWidth={3} />}
+                                    </div>
+                                    <div className="truncate">
+                                      <p className="text-xs font-bold text-white truncate">{acc.name}</p>
+                                      <p className="text-[10px] text-zinc-400 font-mono">{acc.id}</p>
+                                    </div>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <span className="text-xs font-bold text-emerald-400 font-mono">
+                                      {acc.amountSpent > 0
+                                        ? `R$ ${acc.amountSpent.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                                        : "R$ 0,00"}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Pixel CAPI & Token de Acesso */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-zinc-800/80">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
+                      <Code2 size={14} className="text-blue-400" />
+                      Pixel ID Meta (Dataset)
+                    </label>
+                    <input
+                      type="text"
+                      value={pixelId}
+                      onChange={(e) => setPixelId(e.target.value)}
+                      placeholder="Ex: 1104875232197441"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-300 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <ShieldCheck size={14} className="text-emerald-400" />
+                        Token de Acesso (CAPI)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowToken(!showToken)}
+                        className="text-[10px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
+                      >
+                        {showToken ? <EyeOff size={12} /> : <Eye size={12} />}
+                        {showToken ? "Ocultar" : "Exibir"}
+                      </button>
+                    </label>
+                    <input
+                      type={showToken ? "text" : "password"}
+                      value={accessToken}
+                      onChange={(e) => setAccessToken(e.target.value)}
+                      placeholder={hasSavedTokenInDb ? "•••••••••••••••••••••••••••••••••••• (Salvo no Banco)" : "Cole seu token EAAB..."}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Botão de Salvar Configurações */}
+                <div className="flex items-center justify-between pt-2">
+                  <div>
+                    {saveSuccessMsg && (
+                      <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                        <CheckCircle2 size={14} /> {saveSuccessMsg}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleSaveMeta}
+                    disabled={loading}
+                    className="px-6 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                    Salvar Integração Meta Ads
+                  </button>
+                </div>
+              </div>
             )}
           </div>
-          <p className="text-[11px] text-[var(--color-text-muted)]">
-            Gere um token no painel Zedy em <b>API Tokens &gt; Novo token de API</b> para permitir reconciliação sob demanda:
-          </p>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="password"
-              value={zedyToken}
-              onChange={(e) => setZedyToken(e.target.value)}
-              placeholder={zedyMaskedToken ? "Cole um novo token para substituir..." : "Ex: zdy_5c8e40e58c..."}
-              className="input text-xs font-mono bg-[var(--color-bg-surface)] py-2 flex-1"
-            />
-            <button
-              type="submit"
-              disabled={savingZedyToken || !zedyToken.trim()}
-              className="btn-primary shrink-0 py-2 px-4 text-xs font-semibold flex items-center gap-1.5"
-            >
-              {savingZedyToken ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-              Salvar Token
-            </button>
-          </div>
+          {/* Demais Redes: Google Ads, Kwai, TikTok, Taboola */}
+          {[
+            { id: "google", name: "Google Ads", icon: Globe, color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20" },
+            { id: "kwai", name: "Kwai Ads", icon: Radio, color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20" },
+            { id: "tiktok", name: "TikTok Ads", icon: Flame, color: "text-pink-400", bg: "bg-pink-500/10", border: "border-pink-500/20" },
+            { id: "taboola", name: "Taboola", icon: Layers, color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20" },
+          ].map((net) => {
+            const isExp = expandedPlatforms[net.id];
+            const Icon = net.icon;
+            return (
+              <div key={net.id} className="rounded-2xl border border-zinc-800/80 bg-[#0E1118] overflow-hidden">
+                <div
+                  onClick={() => setExpandedPlatforms((prev) => ({ ...prev, [net.id]: !prev[net.id] }))}
+                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-[#141824] transition-colors"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className={`w-9 h-9 rounded-xl ${net.bg} border ${net.border} flex items-center justify-center ${net.color}`}>
+                      <Icon size={18} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white">{net.name}</h4>
+                      <p className="text-[11px] text-zinc-500">Sincronização de custos e conversões offline</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 font-medium">
+                      Disponível
+                    </span>
+                    <button type="button" className="text-zinc-500">
+                      {isExp ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-          {zedyLastSync && (
-            <p className="text-[10px] text-[var(--color-text-muted)] pt-1">
-              Última sincronização: {new Date(zedyLastSync).toLocaleString("pt-BR")}
-            </p>
-          )}
-        </form>
-      </div>
-
-      {/* ── Instalação do Pixel Shopify (snippet único, auto-configurado) ── */}
-      <div className="glass-card p-6 space-y-5 border-l-4 border-l-[var(--color-brand-400)]">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[var(--color-brand-400)]/10 flex items-center justify-center text-[var(--color-brand-300)] shrink-0 mt-0.5">
-            <Sparkles size={20} />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-                Pixel Shopify — Instalação Automática
-              </h3>
-              <span className="px-2 py-0.5 text-[10px] font-bold bg-[var(--color-brand-400)]/10 text-[var(--color-brand-300)] rounded-full border border-[var(--color-brand-400)]/20 uppercase tracking-wide">
-                Zero Configuração
-              </span>
+      {/* ── ABA 2: WEBHOOKS & CHECKOUTS ─────────────────────────────────── */}
+      {activeTab === "webhooks" && (
+        <div className="space-y-4 animate-fade-in">
+          {/* Zedy Gateway Card */}
+          <div className="rounded-2xl border border-emerald-500/30 bg-[#0F131D] shadow-2xl p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-black text-sm shadow-lg shadow-emerald-600/30">
+                  Z
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-white tracking-tight">Zedy Checkout</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
+                      API Token Ativo
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Captura instantânea de pedidos pagos e pendentes via Webhook e API de Reconciliação
+                  </p>
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-              Cole o snippet abaixo no <b>theme.liquid</b>, antes de <code className="text-[var(--color-brand-300)]">&lt;/head&gt;</code>. O script identifica sua loja automaticamente pelo domínio — sem editar nenhum ID.
-            </p>
+
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-zinc-300">URL do Webhook Zedy</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={zedyWebhookUrl}
+                  className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono select-all"
+                />
+                <button
+                  onClick={() => handleCopy(zedyWebhookUrl, "zedy")}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                >
+                  {copiedZedy ? <Check size={14} /> : <Copy size={14} />}
+                  {copiedZedy ? "Copiado!" : "Copiar URL"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Vega Checkout Card */}
+          <div className="rounded-2xl border border-zinc-800/80 bg-[#0E1118] p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-black text-sm">
+                  V
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Vega Checkout</h3>
+                  <p className="text-xs text-zinc-400">Webhook de pós-venda para carrinhos e pedidos Vega</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                readOnly
+                value={vegaWebhookUrl}
+                className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono select-all"
+              />
+              <button
+                onClick={() => handleCopy(vegaWebhookUrl, "webhook")}
+                className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+              >
+                {copiedWebhook ? <Check size={14} /> : <Copy size={14} />}
+                {copiedWebhook ? "Copiado!" : "Copiar URL"}
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* Badges de eventos */}
-        <div className="flex flex-wrap gap-1.5">
-          {["PageView", "ViewContent", "AddToCart", "InitiateCheckout", "AddPaymentInfo", "Purchase"].map((ev) => (
-            <span key={ev} className="px-2 py-0.5 text-[10px] font-medium bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">
-              ✓ {ev}
-            </span>
-          ))}
-          <span className="px-2 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-400 rounded-full border border-blue-500/20">
-            SHA-256 em todo PII
-          </span>
+      {/* ── ABA 3: PIXEL & SCRIPT ───────────────────────────────────────── */}
+      {activeTab === "pixel" && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="rounded-2xl border border-blue-500/30 bg-[#0F131D] shadow-2xl p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white tracking-tight">Script Universal de Rastreamento ATM</h3>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Cole este código antes da tag <code className="text-blue-400">&lt;/head&gt;</code> no arquivo <code className="text-blue-400">theme.liquid</code> da sua Shopify.
+                </p>
+              </div>
+              <button
+                onClick={() => handleCopy(installSnippet, "snippet")}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all flex items-center gap-1.5"
+              >
+                {copiedSnippet ? <Check size={14} /> : <Copy size={14} />}
+                {copiedSnippet ? "Copiado!" : "Copiar Script"}
+              </button>
+            </div>
+
+            <pre className="p-4 rounded-xl bg-[#080A0F] border border-zinc-800 text-zinc-300 font-mono text-[11px] overflow-x-auto leading-relaxed max-h-72 select-all">
+              {installSnippet}
+            </pre>
+          </div>
         </div>
+      )}
 
-        {/* Snippet de código */}
-        <div className="relative">
-          <pre className="text-[10px] leading-relaxed bg-[var(--color-bg-surface)] p-4 rounded-lg overflow-x-auto text-[var(--color-text-secondary)] max-h-56 border border-[var(--color-border-subtle)] scrollbar-thin">
-            {installSnippet}
-          </pre>
-          <button
-            onClick={handleCopySnippet}
-            className="absolute top-2 right-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-brand-400)] hover:bg-[var(--color-brand-300)] text-white text-[10px] font-bold transition-all shadow-lg"
-          >
-            {copiedSnippet ? <><Check size={12} /> Copiado!</> : <><Copy size={12} /> Copiar Snippet</>}
-          </button>
-        </div>
-
-        {/* Instruções */}
-        <div className="p-4 rounded-lg bg-[var(--color-bg-primary)]/80 border border-[var(--color-border-default)]">
-          <p className="text-xs font-semibold text-[var(--color-text-secondary)] mb-2 flex items-center gap-1.5">
-            <Code2 size={13} className="text-[var(--color-brand-300)]" /> Como instalar
+      {/* ── ABA 4: UTMS & RASTREAMENTO ───────────────────────────────────── */}
+      {activeTab === "utms" && (
+        <div className="rounded-2xl border border-zinc-800 bg-[#0E1118] p-6 space-y-4 animate-fade-in">
+          <h3 className="text-sm font-bold text-white">Parâmetros de Rastreamento (UTMify Padrão)</h3>
+          <p className="text-xs text-zinc-400">
+            Utilize os parâmetros abaixo no campo de Parâmetros de URL dos seus anúncios Meta:
           </p>
-          <ol className="text-xs space-y-1.5 text-[var(--color-text-secondary)] list-decimal pl-4">
-            <li>Acesse seu painel Shopify → <b>Loja Virtual</b> → <b>Temas</b> → <b>Ações (...)</b> → <b>Editar código</b>.</li>
-            <li>Abra o arquivo <b>theme.liquid</b>.</li>
-            <li>Cole o snippet acima imediatamente <b>antes de <code>&lt;/head&gt;</code></b>.</li>
-            <li>Clique em <b>Salvar</b>. Pronto — seus eventos serão enviados com 100% de precisão!</li>
-          </ol>
+          <pre className="p-4 rounded-xl bg-[#080A0F] border border-zinc-800 text-blue-400 font-mono text-xs overflow-x-auto select-all">
+            utm_source=FB&utm_medium=&#123;&#123;adset.name&#125;&#125;|&#123;&#123;adset.id&#125;&#125;&utm_campaign=&#123;&#123;campaign.name&#125;&#125;|&#123;&#123;campaign.id&#125;&#125;&utm_content=&#123;&#123;ad.name&#125;&#125;|&#123;&#123;ad.id&#125;&#125;
+          </pre>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
 export default function IntegrationsPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="p-8 text-center text-xs text-[var(--color-text-muted)] flex items-center justify-center gap-2">
-          <Loader2 size={16} className="animate-spin text-blue-400" />
-          <span>Carregando integrações...</span>
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="p-8 text-zinc-400 text-sm">Carregando integrações...</div>}>
       <IntegrationsContent />
     </Suspense>
   );
