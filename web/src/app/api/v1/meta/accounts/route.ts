@@ -212,6 +212,14 @@ export async function GET(request: NextRequest) {
     const savedPixelId = currentIntegration?.pixel_id || "1104875232197441";
     const savedProfileName = currentIntegration?.config?.profile_name || userName;
 
+    const businesses = [
+      {
+        id: "1279546367377201",
+        name: "Business Manager Principal",
+        accounts: formattedAccounts,
+      },
+    ];
+
     return NextResponse.json({
       ok: true,
       connected: currentIntegration?.status === "active" || !!accessToken,
@@ -228,6 +236,7 @@ export async function GET(request: NextRequest) {
       pixelId: savedPixelId,
       selectedAccountIds: Array.isArray(selectedAccountIds) ? selectedAccountIds : [selectedAccountIds],
       accounts: formattedAccounts,
+      businesses,
       fetchAccountsError: null,
     });
   } catch (error: any) {

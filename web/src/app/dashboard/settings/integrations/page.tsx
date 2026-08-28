@@ -31,7 +31,8 @@ import {
   ArrowRight,
   Search,
   Eye,
-  EyeOff
+  EyeOff,
+  Building2
 } from "lucide-react";
 
 interface AdAccount {
@@ -44,10 +45,17 @@ interface AdAccount {
   businessName?: string | null;
 }
 
+interface BusinessManagerItem {
+  id: string;
+  name: string;
+  accounts: AdAccount[];
+}
+
 interface ProfileItem {
   id: string;
   name: string;
   accountsCount: number;
+  businesses?: BusinessManagerItem[];
   accounts: AdAccount[];
   isExpanded?: boolean;
 }
@@ -210,10 +218,19 @@ function IntegrationsContent() {
               amountSpent: Number(a.spend || a.amountSpent || 0),
             }));
 
+            const bmList: BusinessManagerItem[] = [
+              {
+                id: "1279546367377201",
+                name: "Business Manager Principal",
+                accounts: realAccounts,
+              },
+            ];
+
             const realProfile: ProfileItem = {
               id: "prof-main",
-              name: "Perfil Principal (Meta Ads)",
+              name: "Itamar Almeida (Meta Ads)",
               accountsCount: realAccounts.length,
+              businesses: bmList,
               accounts: realAccounts,
             };
 
@@ -469,57 +486,113 @@ function IntegrationsContent() {
                   </div>
 
                   {accountsExpanded && (
-                    <div className="space-y-3 pl-2 border-l-2 border-blue-500/20">
+                    <div className="space-y-4 pl-1">
                       {profiles.length === 0 ? (
-                        <div className="p-3 text-xs text-zinc-500 text-center">
+                        <div className="p-4 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-500 text-center">
                           Conecte um perfil acima para visualizar e selecionar suas contas de anúncio.
                         </div>
                       ) : (
                         profiles.map((prof) => (
-                          <div key={prof.id} className="space-y-2">
-                            <div className="flex items-center justify-between text-xs font-bold text-zinc-300 px-2">
-                              <span>{prof.name} ({prof.accounts.length})</span>
+                          <div key={prof.id} className="space-y-3 p-3 rounded-2xl bg-[#0B0E14] border border-zinc-800/80">
+                            {/* Header do Perfil */}
+                            <div className="flex items-center justify-between text-xs font-bold text-zinc-200 px-1">
+                              <div className="flex items-center gap-2">
+                                <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-[10px] text-white font-bold">
+                                  {prof.name.slice(0, 2).toUpperCase()}
+                                </div>
+                                <span>{prof.name}</span>
+                              </div>
+                              <span className="text-[11px] text-zinc-400 font-mono">
+                                {prof.accounts.filter((a) => selectedAccounts.includes(a.id)).length} de {prof.accounts.length} contas selecionadas
+                              </span>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                            {prof.accounts.map((acc) => {
-                              const isSelected = selectedAccounts.includes(acc.id);
+                            {/* Agrupamento por Business Manager */}
+                            {(prof.businesses && prof.businesses.length > 0
+                              ? prof.businesses
+                              : [{ id: "1279546367377201", name: "Business Manager Principal", accounts: prof.accounts }]
+                            ).map((bm) => {
+                              const allBmSelected = bm.accounts.length > 0 && bm.accounts.every((a) => selectedAccounts.includes(a.id));
+                              const toggleAllBm = () => {
+                                if (allBmSelected) {
+                                  const bmIds = new Set(bm.accounts.map((a) => a.id));
+                                  setSelectedAccounts((prev) => prev.filter((id) => !bmIds.has(id)));
+                                } else {
+                                  const toAdd = bm.accounts.map((a) => a.id).filter((id) => !selectedAccounts.includes(id));
+                                  setSelectedAccounts((prev) => [...prev, ...toAdd]);
+                                }
+                              };
+
                               return (
-                                <div
-                                  key={acc.id}
-                                  onClick={() => toggleAccountSelection(acc.id)}
-                                  className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                                    isSelected
-                                      ? "bg-blue-600/10 border-blue-500/50 shadow-md shadow-blue-500/10"
-                                      : "bg-[#121622] border-zinc-800/60 opacity-60 hover:opacity-100 hover:border-zinc-700"
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div
-                                      className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all ${
-                                        isSelected
-                                          ? "bg-blue-600 border-blue-500 text-white"
-                                          : "border-zinc-600 bg-zinc-800/50"
-                                      }`}
+                                <div key={bm.id} className="rounded-xl border border-blue-500/20 bg-[#121622] p-3.5 space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                                        <Building2 size={15} />
+                                      </div>
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs font-bold text-white">{bm.name}</span>
+                                          <span className="text-[10px] px-2 py-0.2 rounded-full bg-blue-500/20 text-blue-400 font-mono">
+                                            ID: {bm.id}
+                                          </span>
+                                        </div>
+                                        <p className="text-[10px] text-zinc-400 mt-0.5">
+                                          {bm.accounts.length} contas de anúncio disponíveis
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={toggleAllBm}
+                                      className="text-[11px] px-2.5 py-1 rounded-lg bg-[#181D2A] hover:bg-[#1E2435] border border-zinc-700 text-zinc-300 font-semibold transition-colors"
                                     >
-                                      {isSelected && <Check size={12} strokeWidth={3} />}
-                                    </div>
-                                    <div className="truncate">
-                                      <p className="text-xs font-bold text-white truncate">{acc.name}</p>
-                                      <p className="text-[10px] text-zinc-400 font-mono">{acc.id}</p>
-                                    </div>
+                                      {allBmSelected ? "Desmarcar Todas" : "Selecionar Todas"}
+                                    </button>
                                   </div>
-                                  <div className="text-right shrink-0">
-                                    <span className="text-xs font-bold text-emerald-400 font-mono">
-                                      {acc.amountSpent > 0
-                                        ? `R$ ${acc.amountSpent.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
-                                        : "R$ 0,00"}
-                                    </span>
+
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
+                                    {bm.accounts.map((acc) => {
+                                      const isSelected = selectedAccounts.includes(acc.id);
+                                      return (
+                                        <div
+                                          key={acc.id}
+                                          onClick={() => toggleAccountSelection(acc.id)}
+                                          className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
+                                            isSelected
+                                              ? "bg-blue-600/15 border-blue-500/60 shadow-md shadow-blue-500/10"
+                                              : "bg-[#0E1118] border-zinc-800/60 opacity-60 hover:opacity-100 hover:border-zinc-700"
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-3 min-w-0">
+                                            <div
+                                              className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all ${
+                                                isSelected
+                                                  ? "bg-blue-600 border-blue-500 text-white"
+                                                  : "border-zinc-600 bg-zinc-800/50"
+                                              }`}
+                                            >
+                                              {isSelected && <Check size={12} strokeWidth={3} />}
+                                            </div>
+                                            <div className="truncate">
+                                              <p className="text-xs font-bold text-white truncate">{acc.name}</p>
+                                              <p className="text-[10px] text-zinc-400 font-mono">{acc.id}</p>
+                                            </div>
+                                          </div>
+                                          <div className="text-right shrink-0">
+                                            <span className="text-xs font-bold text-emerald-400 font-mono">
+                                              {acc.amountSpent > 0
+                                                ? `R$ ${acc.amountSpent.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                                                : "R$ 0,00"}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               );
                             })}
-                            </div>
                           </div>
                         ))
                       )}
