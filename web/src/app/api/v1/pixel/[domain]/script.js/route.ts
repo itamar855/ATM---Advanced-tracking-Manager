@@ -181,7 +181,29 @@ function generateATMScript(storeId: string, apiBase: string): string {
       _ctx.customer.state = val;
       try { localStorage.setItem("atm_p_st", val); } catch (err) {}
     }
+
+    // Dispara evento Lead assim que e-mail ou WhatsApp válido for detectado
+    if ((_ctx.customer.email && _ctx.customer.email.includes("@")) || (_ctx.customer.phone && _ctx.customer.phone.length >= 10)) {
+      clearTimeout(_leadTimeout);
+      _leadTimeout = setTimeout(function () {
+        triggerLeadEvent();
+      }, 1500);
+    }
   }, true);
+
+  var _leadTimeout = null;
+  var _leadDispatched = false;
+  function triggerLeadEvent() {
+    if (_leadDispatched) return;
+    if (_ctx.customer.email || _ctx.customer.phone) {
+      _leadDispatched = true;
+      sendEvent("Lead", {
+        content_name: "Captura de Contato / Lead",
+        value: 0,
+        currency: _currency,
+      }, _ctx.customer);
+    }
+  }
 
   // ── Inicialização de Sessão ───────────────────────────────────────────────
 
@@ -191,8 +213,8 @@ function generateATMScript(storeId: string, apiBase: string): string {
   var _utms = getUtms();
   var _captured = false;
 
-  function captureSession() {
-    if (_captured) return;
+  function captureSession(force) {
+    if (_captured && !force) return;
     _captured = true;
     var payload = JSON.stringify({
       store_id: ATM.storeId,
@@ -275,15 +297,15 @@ function generateATMScript(storeId: string, apiBase: string): string {
   var _path = window.location.pathname;
   var _currency = (_ctx.shop && _ctx.shop.currency) || "BRL";
 
-  captureSession();
+  captureSession(false);
   sendEvent("PageView", null);
 
-  // Heartbeat periódico (a cada 45s) para monitoramento em tempo real de visitantes
+  // Heartbeat periódico (a cada 30s) para monitoramento em tempo real de visitantes
   setInterval(function () {
     try {
-      captureSession();
+      captureSession(true);
     } catch (e) {}
-  }, 45000);
+  }, 30000);
 
   // ── ViewContent na Página de Produto ──────────────────────────────────────
 

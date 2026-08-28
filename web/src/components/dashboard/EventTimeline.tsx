@@ -72,6 +72,7 @@ export function EventTimeline({ events }: EventTimelineProps) {
   const purchaseCount = events.filter((e) => e.eventName === "Purchase").length;
   const checkoutCount = events.filter((e) => e.eventName === "InitiateCheckout").length;
   const cartCount = events.filter((e) => e.eventName === "AddToCart").length;
+  const leadCount = events.filter((e) => e.eventName === "Lead").length;
   const pageviewCount = events.filter((e) => e.eventName === "PageView").length;
 
   const filteredEvents = useMemo(() => {
@@ -142,6 +143,7 @@ export function EventTimeline({ events }: EventTimelineProps) {
               { key: "Purchase", label: "💰 Compras", count: purchaseCount, color: "bg-emerald-600 text-white" },
               { key: "InitiateCheckout", label: "🚀 Checkouts", count: checkoutCount, color: "bg-amber-600 text-white" },
               { key: "AddToCart", label: "🛒 Carrinhos", count: cartCount, color: "bg-purple-600 text-white" },
+              { key: "Lead", label: "🎯 Leads", count: leadCount, color: "bg-pink-600 text-white" },
               { key: "PageView", label: "👁️ PageViews", count: pageviewCount, color: "bg-cyan-600 text-white" },
             ].map((f) => {
               const isActive = activeFilter === f.key;
