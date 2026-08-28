@@ -220,6 +220,8 @@ function IntegrationsContent() {
             setProfiles([realProfile]);
             if (savedAccountIds.length === 0) {
               setSelectedAccounts(realAccounts.map((a) => a.id));
+            } else {
+              setSelectedAccounts(savedAccountIds);
             }
           }
         }
