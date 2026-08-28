@@ -150,46 +150,72 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
+    let metaPermissionError: string | null = null;
+
     if (token && accountIdsToQuery.length > 0) {
       const spendPromises = accountIdsToQuery.map(async (accId) => {
         const formattedId = accId.startsWith("act_") ? accId : `act_${accId}`;
         try {
-          const res = await fetch(
-            `https://graph.facebook.com/v23.0/${formattedId}?fields=name,currency,account_status,insights.date_preset(${metaDatePreset}){spend,impressions,clicks}&access_token=${token}`,
-            { cache: "no-store" }
-          );
-          if (res.ok) {
-            const accData = await res.json();
-            if (accData.error) {
-              console.warn(`[Dashboard Metrics] Erro conta ${formattedId}:`, accData.error.message);
-              return;
+          const [accInfoRes, insRes] = await Promise.all([
+            fetch(
+              `https://graph.facebook.com/v23.0/${formattedId}?fields=name,currency,account_status&access_token=${token}`,
+              { cache: "no-store" }
+            ),
+            fetch(
+              `https://graph.facebook.com/v23.0/${formattedId}/insights?date_preset=${metaDatePreset}&fields=spend,impressions,clicks,cpc,cpm&access_token=${token}`,
+              { cache: "no-store" }
+            ),
+          ]);
+
+          let accName = formattedId;
+          let currency = "BRL";
+          let isActive = true;
+
+          if (accInfoRes.ok) {
+            const accInfo = await accInfoRes.json();
+            if (accInfo.name) accName = accInfo.name;
+            if (accInfo.currency) currency = accInfo.currency.toUpperCase();
+            if (accInfo.account_status !== undefined) isActive = accInfo.account_status === 1;
+          }
+
+          let origSpend = 0;
+          let imp = 0;
+          let clk = 0;
+
+          if (insRes.ok) {
+            const insData = await insRes.json();
+            if (insData.error) {
+              console.warn(`[Dashboard Metrics] Erro de permissão conta ${formattedId}:`, insData.error.message);
+              if (insData.error.code === 200 || insData.error.code === 100) {
+                metaPermissionError = "Token da Meta precisa da permissão ads_read para consultar gastos de anúncios.";
+              }
+            } else if (Array.isArray(insData.data) && insData.data.length > 0) {
+              const ins = insData.data[0];
+              origSpend = Number(ins.spend || 0);
+              imp = Number(ins.impressions || 0);
+              clk = Number(ins.clicks || 0);
             }
-            const currency = (accData.currency || "BRL").toUpperCase();
-            const isActive = accData.account_status === 1;
-            const ins = accData.insights?.data?.[0];
-            const origSpend = Number(ins?.spend || 0);
-            const imp = Number(ins?.impressions || 0);
-            const clk = Number(ins?.clicks || 0);
-            const convertedSpendBrl = convertToBrl(origSpend, currency, usdBrlRate);
+          }
 
-            availableAccounts.push({
-              id: formattedId,
-              name: accData.name || formattedId,
-              currency,
-              status: isActive ? "active" : "disabled",
-              spend: origSpend,
-              spendBrl: convertedSpendBrl,
-            });
+          const convertedSpendBrl = convertToBrl(origSpend, currency, usdBrlRate);
 
-            // Só soma aos totais se a conta for ATIVA e bater com o filtro de conta selecionada
-            const matchesFilter = selectedAccountId === "all" ? isActive : selectedAccountId === formattedId;
+          availableAccounts.push({
+            id: formattedId,
+            name: accName,
+            currency,
+            status: isActive ? "active" : "disabled",
+            spend: origSpend,
+            spendBrl: convertedSpendBrl,
+          });
 
-            if (matchesFilter) {
-              totalSpendOriginal += origSpend;
-              totalSpendBrl += convertedSpendBrl;
-              totalImpressions += imp;
-              totalClicks += clk;
-            }
+          // Só soma aos totais se a conta for ATIVA e bater com o filtro de conta selecionada
+          const matchesFilter = selectedAccountId === "all" ? isActive : selectedAccountId === formattedId;
+
+          if (matchesFilter) {
+            totalSpendOriginal += origSpend;
+            totalSpendBrl += convertedSpendBrl;
+            totalImpressions += imp;
+            totalClicks += clk;
           }
         } catch (e) {
           console.warn(`[Dashboard Metrics] Erro na conta ${formattedId}:`, e);
@@ -360,6 +386,7 @@ export async function GET(request: NextRequest) {
         { name: "N/A", count: naSalesCount, percent: Number(naPercent) },
       ],
       available_accounts: availableAccounts,
+      meta_permission_error: metaPermissionError,
     });
   } catch (error: any) {
     console.error("[Dashboard Metrics API Error]:", error);

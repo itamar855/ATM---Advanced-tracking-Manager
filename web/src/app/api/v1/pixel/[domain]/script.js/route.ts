@@ -300,12 +300,12 @@ function generateATMScript(storeId: string, apiBase: string): string {
   captureSession(false);
   sendEvent("PageView", null);
 
-  // Heartbeat periódico (a cada 30s) para monitoramento em tempo real de visitantes
+  // Heartbeat periódico (a cada 15s) para monitoramento em tempo real de visitantes
   setInterval(function () {
     try {
       captureSession(true);
     } catch (e) {}
-  }, 30000);
+  }, 15000);
 
   // ── ViewContent na Página de Produto ──────────────────────────────────────
 

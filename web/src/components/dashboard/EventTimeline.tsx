@@ -190,19 +190,27 @@ export function EventTimeline({ events }: EventTimelineProps) {
                   }`}
                 >
                   <div className="flex items-center gap-3.5 min-w-0">
-                    {/* Ícone de Status do Evento */}
+                    {/* Ícone de Status CAPI do Evento */}
                     <div
                       className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                        isPurchase
+                        event.status === "accepted"
                           ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
-                          : isCheckout
+                          : event.status === "pending" || event.status === "processing"
                           ? "bg-amber-500/15 border-amber-500/30 text-amber-400"
-                          : isCart
-                          ? "bg-purple-500/15 border-purple-500/30 text-purple-400"
-                          : "bg-cyan-500/15 border-cyan-500/30 text-cyan-400"
+                          : event.status === "deduped"
+                          ? "bg-blue-500/15 border-blue-500/30 text-blue-400"
+                          : "bg-red-500/15 border-red-500/30 text-red-400"
                       }`}
                     >
-                      <CheckCircle2 size={16} />
+                      {event.status === "accepted" ? (
+                        <CheckCircle2 size={16} />
+                      ) : event.status === "pending" || event.status === "processing" ? (
+                        <Clock size={16} className="animate-pulse" />
+                      ) : event.status === "deduped" ? (
+                        <CheckCircle2 size={16} />
+                      ) : (
+                        <XCircle size={16} />
+                      )}
                     </div>
 
                     {/* Informações Principais */}
@@ -225,6 +233,8 @@ export function EventTimeline({ events }: EventTimelineProps) {
                             ? "InitiateCheckout"
                             : isCart
                             ? "AddToCart"
+                            : event.eventName === "Lead"
+                            ? "Lead (Contato Capturado)"
                             : "PageView"}
                         </span>
 
@@ -242,9 +252,22 @@ export function EventTimeline({ events }: EventTimelineProps) {
                           {event.orderId}
                         </span>
 
-                        {event.fbtraceId && (
+                        {event.status === "accepted" && event.fbtraceId ? (
                           <span className="text-[9px] px-2 py-0.5 rounded-full font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                             ✓ Meta CAPI: {event.fbtraceId.slice(0, 10)}...
+                          </span>
+                        ) : event.status === "pending" || event.status === "processing" ? (
+                          <span className="text-[9px] px-2 py-0.5 rounded-full font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                            ⏳ Na Fila de Envio
+                          </span>
+                        ) : event.status === "deduped" ? (
+                          <span className="text-[9px] px-2 py-0.5 rounded-full font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                            🔄 Deduplicado CAPI
+                          </span>
+                        ) : (
+                          <span className="text-[9px] px-2 py-0.5 rounded-full font-mono bg-red-500/10 text-red-400 border border-red-500/20">
+                            ✕ Falha no Envio Meta
                           </span>
                         )}
 

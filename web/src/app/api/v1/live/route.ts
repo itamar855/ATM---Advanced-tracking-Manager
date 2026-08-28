@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    const onlineCount = Math.max(uniqueOnlineVisitors.size, 1);
+    const onlineCount = uniqueOnlineVisitors.size;
     const cartCount = uniqueInCart.size;
 
     const res = NextResponse.json({
@@ -76,6 +76,6 @@ export async function GET(request: NextRequest) {
     res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     return res;
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error.message, onlineNow: 1, inCartNow: 0 }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error.message, onlineNow: 0, inCartNow: 0 }, { status: 500 });
   }
 }
