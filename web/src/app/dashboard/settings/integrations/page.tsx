@@ -81,36 +81,9 @@ function IntegrationsContent() {
   const [showToken, setShowToken] = useState(false);
   const [testEventCode, setTestEventCode] = useState("");
 
-  // Perfis Conectados
-  const [profiles, setProfiles] = useState<ProfileItem[]>([
-    {
-      id: "prof-1",
-      name: "Naome Tavares",
-      accountsCount: 16,
-      accounts: [
-        { id: "act_101", accountId: "act_101", name: "USD 1 - ESCALA BR", status: "ACTIVE", currency: "USD", amountSpent: 1556.92 },
-        { id: "act_102", accountId: "act_102", name: "USD 2 - ABO ESCALA", status: "ACTIVE", currency: "USD", amountSpent: 1702.14 },
-        { id: "act_103", accountId: "act_103", name: "USD 3 - CBO RETARGETING", status: "ACTIVE", currency: "USD", amountSpent: 1707.15 },
-        { id: "act_104", accountId: "act_104", name: "BRL 04 - TESTES PRODUTO", status: "ACTIVE", currency: "BRL", amountSpent: 707.47 },
-      ],
-    },
-    {
-      id: "prof-2",
-      name: "Vania Nilmes",
-      accountsCount: 17,
-      accounts: [
-        { id: "act_201", accountId: "act_201", name: "USD 05 - CONVERSÃO DIRETA", status: "ACTIVE", currency: "USD", amountSpent: 0 },
-        { id: "act_202", accountId: "act_202", name: "BRL 06 - CONTINGÊNCIA", status: "ACTIVE", currency: "BRL", amountSpent: 0 },
-      ],
-    },
-  ]);
-
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([
-    "act_101",
-    "act_102",
-    "act_103",
-    "act_104",
-  ]);
+  // Perfis Conectados Reais (Inicializa vazio)
+  const [profiles, setProfiles] = useState<ProfileItem[]>([]);
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
 
   // Modal de Adicionar Perfil
   const [isAddProfileModalOpen, setIsAddProfileModalOpen] = useState(false);
@@ -205,9 +178,10 @@ function IntegrationsContent() {
 <script src="${host}/api/v1/pixel/{{ shop.permanent_domain }}/script.js" defer></script>`;
 
   useEffect(() => {
-    // Carrega credenciais do servidor
+    // Carrega credenciais do servidor e contas reais da Meta
     async function loadMetaCredentials() {
       try {
+        let savedAccountIds: string[] = [];
         const res = await fetch("/api/v1/settings/credentials");
         if (res.ok) {
           const data = await res.json();
@@ -216,11 +190,42 @@ function IntegrationsContent() {
             setHasSavedTokenInDb(true);
             if (data.integration.pixel_id) setPixelId(data.integration.pixel_id);
             if (data.integration.config?.ad_account_ids) {
-              setSelectedAccounts(data.integration.config.ad_account_ids);
+              savedAccountIds = data.integration.config.ad_account_ids;
+              setSelectedAccounts(savedAccountIds);
             }
           }
         }
-      } catch {}
+
+        // Busca contas reais da Meta Graph API
+        const accRes = await fetch("/api/v1/meta/accounts");
+        if (accRes.ok) {
+          const accData = await accRes.json();
+          if (accData.ok && Array.isArray(accData.accounts) && accData.accounts.length > 0) {
+            const realAccounts: AdAccount[] = accData.accounts.map((a: any) => ({
+              id: a.id,
+              accountId: a.id,
+              name: a.name || a.id,
+              status: a.status || "ACTIVE",
+              currency: a.currency || "USD",
+              amountSpent: Number(a.spend || a.amountSpent || 0),
+            }));
+
+            const realProfile: ProfileItem = {
+              id: "prof-main",
+              name: "Perfil Principal (Meta Ads)",
+              accountsCount: realAccounts.length,
+              accounts: realAccounts,
+            };
+
+            setProfiles([realProfile]);
+            if (savedAccountIds.length === 0) {
+              setSelectedAccounts(realAccounts.map((a) => a.id));
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[Integrations] Erro ao carregar contas reais:", err);
+      }
     }
     loadMetaCredentials();
   }, []);
@@ -407,31 +412,39 @@ function IntegrationsContent() {
                   </div>
 
                   {/* Lista de Perfis Conectados */}
-                  <div className="space-y-2">
-                    {profiles.map((prof) => (
-                      <div
-                        key={prof.id}
-                        className="p-3 rounded-xl bg-[#141824] border border-zinc-800/80 flex items-center justify-between hover:border-zinc-700 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white text-xs">
-                            {prof.name.slice(0, 2).toUpperCase()}
+                  {profiles.length === 0 ? (
+                    <div className="p-4 rounded-xl bg-[#141824] border border-dashed border-zinc-800 text-center py-6">
+                      <Layers size={24} className="mx-auto text-zinc-600 mb-2" />
+                      <p className="text-xs text-zinc-400 font-medium">Nenhum perfil conectado ainda.</p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">Clique em "+ Adicionar perfil" para sincronizar suas contas de anúncio.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {profiles.map((prof) => (
+                        <div
+                          key={prof.id}
+                          className="p-3 rounded-xl bg-[#141824] border border-zinc-800/80 flex items-center justify-between hover:border-zinc-700 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white text-xs">
+                              {prof.name.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <span className="text-xs font-bold text-white">{prof.name}</span>
+                              <span className="text-[10px] text-zinc-500 ml-2 font-mono">
+                                ({prof.accountsCount} contas sincronizadas)
+                              </span>
+                            </div>
                           </div>
-                          <div>
-                            <span className="text-xs font-bold text-white">{prof.name}</span>
-                            <span className="text-[10px] text-zinc-500 ml-2 font-mono">
-                              ({prof.accountsCount} contas sincronizadas)
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/20">
+                              Ativo
                             </span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/20">
-                            Ativo
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* 2. Seletor de Contas de Anúncio com Accordion */}
@@ -455,13 +468,18 @@ function IntegrationsContent() {
 
                   {accountsExpanded && (
                     <div className="space-y-3 pl-2 border-l-2 border-blue-500/20">
-                      {profiles.map((prof) => (
-                        <div key={prof.id} className="space-y-2">
-                          <div className="flex items-center justify-between text-xs font-bold text-zinc-300 px-2">
-                            <span>{prof.name} ({prof.accounts.length})</span>
-                          </div>
+                      {profiles.length === 0 ? (
+                        <div className="p-3 text-xs text-zinc-500 text-center">
+                          Conecte um perfil acima para visualizar e selecionar suas contas de anúncio.
+                        </div>
+                      ) : (
+                        profiles.map((prof) => (
+                          <div key={prof.id} className="space-y-2">
+                            <div className="flex items-center justify-between text-xs font-bold text-zinc-300 px-2">
+                              <span>{prof.name} ({prof.accounts.length})</span>
+                            </div>
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                             {prof.accounts.map((acc) => {
                               const isSelected = selectedAccounts.includes(acc.id);
                               return (
@@ -499,9 +517,10 @@ function IntegrationsContent() {
                                 </div>
                               );
                             })}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))
+                      )}
                     </div>
                   )}
                 </div>
