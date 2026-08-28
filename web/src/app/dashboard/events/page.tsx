@@ -71,7 +71,15 @@ export default function EventsPage() {
       const data = await res.json();
       if (data.ok) {
         setQueueMsg(data.message || "Fila reprocessada com sucesso!");
-        setTimeout(() => setQueueMsg(""), 4000);
+        setTimeout(() => setQueueMsg(""), 5000);
+        // Recarrega os eventos imediatamente
+        try {
+          const evRes = await fetch("/api/v1/events/list", { cache: "no-store" });
+          const evData = await evRes.json();
+          if (evData.ok && Array.isArray(evData.events)) {
+            setEvents(evData.events);
+          }
+        } catch {}
       } else {
         setQueueMsg(data.error || "Erro ao processar fila");
       }
