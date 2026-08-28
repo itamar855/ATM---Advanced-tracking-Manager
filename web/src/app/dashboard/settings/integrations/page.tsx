@@ -189,56 +189,58 @@ function IntegrationsContent() {
     // Carrega credenciais do servidor e contas reais da Meta
     async function loadMetaCredentials() {
       try {
-        let savedAccountIds: string[] = [];
-        const res = await fetch("/api/v1/settings/credentials");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.ok && data.integration) {
-            setMetaConnected(true);
-            setHasSavedTokenInDb(true);
-            if (data.integration.pixel_id) setPixelId(data.integration.pixel_id);
-            if (data.integration.config?.ad_account_ids) {
-              savedAccountIds = data.integration.config.ad_account_ids;
-              setSelectedAccounts(savedAccountIds);
-            }
-          }
-        }
-
-        // Busca contas reais da Meta Graph API
         const accRes = await fetch("/api/v1/meta/accounts");
         if (accRes.ok) {
           const accData = await accRes.json();
-          if (accData.ok && Array.isArray(accData.accounts) && accData.accounts.length > 0) {
-            const realAccounts: AdAccount[] = accData.accounts.map((a: any) => ({
+          if (accData.ok) {
+            setMetaConnected(accData.connected);
+            setHasSavedTokenInDb(accData.isFromDatabase);
+            if (accData.pixelId) setPixelId(accData.pixelId);
+
+            const savedAccountIds: string[] = Array.isArray(accData.selectedAccountIds)
+              ? accData.selectedAccountIds
+              : [];
+
+            const rawAccounts = Array.isArray(accData.accounts) ? accData.accounts : [];
+            const realAccounts: AdAccount[] = rawAccounts.map((a: any) => ({
               id: a.id,
-              accountId: a.id,
+              accountId: a.accountId || a.id.replace("act_", ""),
               name: a.name || a.id,
               status: a.status || "ACTIVE",
               currency: a.currency || "USD",
               amountSpent: Number(a.spend || a.amountSpent || 0),
             }));
 
-            const bmList: BusinessManagerItem[] = [
-              {
-                id: "1279546367377201",
-                name: "Business Manager Principal",
-                accounts: realAccounts,
-              },
-            ];
+            const bmList: BusinessManagerItem[] =
+              Array.isArray(accData.businesses) && accData.businesses.length > 0
+                ? accData.businesses.map((b: any) => ({
+                    id: b.id,
+                    name: b.name || "Business Manager Principal",
+                    accounts: realAccounts,
+                  }))
+                : [
+                    {
+                      id: "1279546367377201",
+                      name: "Business Manager Principal",
+                      accounts: realAccounts,
+                    },
+                  ];
 
+            const profileName = accData.diagnostics?.userName || accData.user?.name || "Itamar Almeida (Meta Ads)";
             const realProfile: ProfileItem = {
               id: "prof-main",
-              name: "Itamar Almeida (Meta Ads)",
+              name: profileName,
               accountsCount: realAccounts.length,
               businesses: bmList,
               accounts: realAccounts,
             };
 
             setProfiles([realProfile]);
-            if (savedAccountIds.length === 0) {
-              setSelectedAccounts(realAccounts.map((a) => a.id));
-            } else {
+            // Preserva exatamente as contas salvas no banco
+            if (savedAccountIds.length > 0) {
               setSelectedAccounts(savedAccountIds);
+            } else if (realAccounts.length > 0) {
+              setSelectedAccounts(realAccounts.map((a) => a.id));
             }
           }
         }
@@ -259,29 +261,32 @@ function IntegrationsContent() {
     setLoading(true);
     setSaveSuccessMsg("");
     try {
-      const res = await fetch("/api/v1/settings/credentials", {
+      const res = await fetch("/api/v1/meta/accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          store_id: storeId,
           platform: "meta",
           pixel_id: pixelId,
-          access_token: accessToken || undefined,
-          config: {
-            ad_account_ids: selectedAccounts,
-            test_event_code: testEventCode || undefined,
-          },
+          access_token: accessToken ? accessToken.trim() : undefined,
+          ad_account_ids: selectedAccounts,
+          test_event_code: testEventCode ? testEventCode.trim() : undefined,
+          profile_name: profiles[0]?.name || "Itamar Almeida (Meta Ads)",
         }),
       });
 
       if (res.ok) {
-        setSaveSuccessMsg("Configurações da Meta Ads salvas com sucesso!");
+        setSaveSuccessMsg("Configurações e contas selecionadas salvas com sucesso!");
         setMetaConnected(true);
+        setTimeout(() => setSaveSuccessMsg(""), 4000);
+      } else {
+        const errJson = await res.json();
+        alert(errJson.error || "Erro ao salvar integração Meta.");
       }
-    } catch {
-      setSaveSuccessMsg("Configurações atualizadas!");
+    } catch (e: any) {
+      alert("Erro ao conectar com a API: " + e.message);
     } finally {
       setLoading(false);
-      setTimeout(() => setSaveSuccessMsg(""), 4000);
     }
   };
 
