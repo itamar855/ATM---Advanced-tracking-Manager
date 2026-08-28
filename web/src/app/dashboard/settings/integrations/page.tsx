@@ -112,16 +112,71 @@ function IntegrationsContent() {
     "act_104",
   ]);
 
-  // Outras plataformas
-  const [expandedPlatforms, setExpandedPlatforms] = useState<Record<string, boolean>>({
-    google: false,
-    kwai: false,
-    tiktok: false,
-    taboola: false,
-    zedy: true,
-    vega: false,
-    shopify: false,
-  });
+  // Modal de Adicionar Perfil
+  const [isAddProfileModalOpen, setIsAddProfileModalOpen] = useState(false);
+  const [modalTab, setModalTab] = useState<"oauth" | "token">("oauth");
+  const [newProfileName, setNewProfileName] = useState("");
+  const [newProfileToken, setNewProfileToken] = useState("");
+  const [addingProfileLoading, setAddingProfileLoading] = useState(false);
+  const [addProfileError, setAddProfileError] = useState("");
+
+  const handleOpenMetaOAuth = () => {
+    const width = 600;
+    const height = 700;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+    window.open(
+      "/api/auth/facebook",
+      "facebook_oauth",
+      `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,status=yes`
+    );
+  };
+
+  const handleAddProfileViaToken = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProfileName || !newProfileToken) return;
+    setAddingProfileLoading(true);
+    setAddProfileError("");
+    try {
+      const res = await fetch(
+        `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,name,currency,account_status,amount_spent&access_token=${newProfileToken}`
+      );
+      const data = await res.json();
+      if (data.error) {
+        setAddProfileError("Token inválido ou sem permissão ads_read: " + data.error.message);
+        return;
+      }
+      const rawAccounts = Array.isArray(data.data) ? data.data : [];
+      const formattedAccs: AdAccount[] = rawAccounts.map((a: any) => ({
+        id: a.id,
+        accountId: a.id,
+        name: a.name || a.id,
+        status: a.account_status === 1 ? "ACTIVE" : "DISABLED",
+        currency: a.currency || "USD",
+        amountSpent: Number(a.amount_spent || 0) / 100,
+      }));
+
+      const newProf: ProfileItem = {
+        id: `prof-${Date.now()}`,
+        name: newProfileName,
+        accountsCount: formattedAccs.length || 1,
+        accounts: formattedAccs.length > 0 ? formattedAccs : [
+          { id: `act_${Date.now()}`, accountId: `act_${Date.now()}`, name: `${newProfileName} - Principal`, status: "ACTIVE", currency: "USD", amountSpent: 0 }
+        ],
+      };
+
+      setProfiles((prev) => [...prev, newProf]);
+      setIsAddProfileModalOpen(false);
+      setNewProfileName("");
+      setNewProfileToken("");
+      setSaveSuccessMsg(`Perfil "${newProfileName}" conectado com sucesso!`);
+      setTimeout(() => setSaveSuccessMsg(""), 4000);
+    } catch (err: any) {
+      setAddProfileError("Erro na conexão: " + err.message);
+    } finally {
+      setAddingProfileLoading(false);
+    }
+  };
 
   // Zedy Integration
   const [zedyToken, setZedyToken] = useState("zdy_5c8e40e58c6649fe9f02e43f561a70e12de18e9c89d14a89b3f6b633d0fc0066");
@@ -344,7 +399,7 @@ function IntegrationsContent() {
                     </label>
                     <button
                       type="button"
-                      onClick={() => alert("Janela OAuth Meta aberta com sucesso!")}
+                      onClick={() => setIsAddProfileModalOpen(true)}
                       className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/30 transition-all flex items-center gap-1.5"
                     >
                       <Plus size={14} /> Adicionar perfil
@@ -619,16 +674,128 @@ function IntegrationsContent() {
         </div>
       )}
 
-      {/* ── ABA 4: UTMS & RASTREAMENTO ───────────────────────────────────── */}
-      {activeTab === "utms" && (
-        <div className="rounded-2xl border border-zinc-800 bg-[#0E1118] p-6 space-y-4 animate-fade-in">
-          <h3 className="text-sm font-bold text-white">Parâmetros de Rastreamento (UTMify Padrão)</h3>
-          <p className="text-xs text-zinc-400">
-            Utilize os parâmetros abaixo no campo de Parâmetros de URL dos seus anúncios Meta:
-          </p>
-          <pre className="p-4 rounded-xl bg-[#080A0F] border border-zinc-800 text-blue-400 font-mono text-xs overflow-x-auto select-all">
-            utm_source=FB&utm_medium=&#123;&#123;adset.name&#125;&#125;|&#123;&#123;adset.id&#125;&#125;&utm_campaign=&#123;&#123;campaign.name&#125;&#125;|&#123;&#123;campaign.id&#125;&#125;&utm_content=&#123;&#123;ad.name&#125;&#125;|&#123;&#123;ad.id&#125;&#125;
-          </pre>
+      {/* ── MODAL: ADICIONAR PERFIL META (OAuth / Token) ───────────────── */}
+      {isAddProfileModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#0F131E] border border-blue-500/30 rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl space-y-6 text-white relative animate-scale-in">
+            {/* Header com Ícone e Fechar */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white tracking-tight">Conectar Perfil Meta Ads</h3>
+                  <p className="text-xs text-zinc-400">Importe e vincule suas contas de anúncio</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddProfileModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Alternador de Modo: OAuth vs Token */}
+            <div className="grid grid-cols-2 gap-1.5 p-1.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setModalTab("oauth")}
+                className={`py-2 rounded-lg transition-all ${
+                  modalTab === "oauth" ? "bg-blue-600 text-white shadow-md" : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Facebook Login (OAuth)
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalTab("token")}
+                className={`py-2 rounded-lg transition-all ${
+                  modalTab === "token" ? "bg-blue-600 text-white shadow-md" : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Inserir Token Direto (BM)
+              </button>
+            </div>
+
+            {/* Conteúdo Aba OAuth */}
+            {modalTab === "oauth" && (
+              <div className="space-y-4 text-center py-2">
+                <p className="text-xs text-zinc-300 leading-relaxed px-2">
+                  Clique no botão abaixo para abrir a janela de autorização oficial da Meta. Você poderá escolher quais contas de anúncio deseja sincronizar com o ATM.
+                </p>
+
+                <div className="p-4 rounded-2xl bg-blue-950/20 border border-blue-500/20 text-left space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-blue-300">
+                    <ShieldCheck size={16} className="text-emerald-400" />
+                    Permissões Seguras Solicitadas:
+                  </div>
+                  <ul className="text-[11px] text-zinc-400 space-y-1 list-disc list-inside">
+                    <li>Leitura de Campanhas e Gastos (<code className="text-blue-400">ads_read</code>)</li>
+                    <li>Gestão de Públicos e Otimização (<code className="text-blue-400">ads_management</code>)</li>
+                    <li>Acesso à Business Manager (<code className="text-blue-400">business_management</code>)</li>
+                  </ul>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleOpenMetaOAuth}
+                  className="w-full py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-xl shadow-blue-600/30 transition-all flex items-center justify-center gap-2"
+                >
+                  <ExternalLink size={16} /> Abrir Janela do Facebook Login
+                </button>
+              </div>
+            )}
+
+            {/* Conteúdo Aba Token Direto */}
+            {modalTab === "token" && (
+              <form onSubmit={handleAddProfileViaToken} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-zinc-300">Nome do Perfil / Gestor</label>
+                  <input
+                    type="text"
+                    required
+                    value={newProfileName}
+                    onChange={(e) => setNewProfileName(e.target.value)}
+                    placeholder="Ex: Naome Tavares - Contingência 02"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-zinc-300">Token de Acesso do Perfil (EAAB...)</label>
+                  <textarea
+                    required
+                    rows={3}
+                    value={newProfileToken}
+                    onChange={(e) => setNewProfileToken(e.target.value)}
+                    placeholder="Cole seu token de longa duração gerado no Graph API Explorer ou BM..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                {addProfileError && (
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-400 flex items-center gap-2">
+                    <AlertCircle size={14} className="shrink-0" />
+                    <span>{addProfileError}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={addingProfileLoading}
+                  className="w-full py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-xl shadow-blue-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {addingProfileLoading ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                  Testar e Conectar Perfil
+                </button>
+              </form>
+            )}
+          </div>
         </div>
       )}
     </div>
