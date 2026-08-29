@@ -22,6 +22,7 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("today");
 
   const loadOrders = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -61,11 +62,14 @@ export default function OrdersPage() {
   const [jsonInput, setJsonInput] = useState("");
   const [syncFeedback, setSyncFeedback] = useState("");
 
-  const handleSyncZedy = async (mode: "auto" | "json") => {
+  const handleSyncZedy = async (mode: "auto" | "json" | "reset_auto") => {
     setSyncingZedy(true);
     setSyncFeedback("");
     try {
-      const body = mode === "json" && jsonInput.trim() ? { raw_json: jsonInput.trim() } : {};
+      const body: any = mode === "json" && jsonInput.trim() ? { raw_json: jsonInput.trim() } : {};
+      if (mode === "reset_auto") {
+        body.reset_today = true;
+      }
       const res = await fetch("/api/v1/sync/zedy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -94,11 +98,33 @@ export default function OrdersPage() {
     const term = searchTerm.toLowerCase();
     const matchTerm =
       o.orderId.toLowerCase().includes(term) ||
-      o.customerName.toLowerCase().includes(term) ||
-      o.customerEmail.toLowerCase().includes(term) ||
-      o.utmCampaign.toLowerCase().includes(term);
+      (o.customerName || "").toLowerCase().includes(term) ||
+      (o.customerEmail || "").toLowerCase().includes(term) ||
+      (o.utmCampaign || "").toLowerCase().includes(term);
     const matchStatus = statusFilter === "all" || o.status.toLowerCase() === statusFilter.toLowerCase();
-    return matchTerm && matchStatus;
+    
+    let matchDate = true;
+    if (dateFilter !== "all" && o.createdAt) {
+      const orderDate = new Date(o.createdAt);
+      const now = new Date();
+      if (dateFilter === "today") {
+        matchDate = orderDate.toDateString() === now.toDateString();
+      } else if (dateFilter === "yesterday") {
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        matchDate = orderDate.toDateString() === yesterday.toDateString();
+      } else if (dateFilter === "7d") {
+        const sevenDaysAgo = new Date(now);
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        matchDate = orderDate >= sevenDaysAgo;
+      } else if (dateFilter === "30d") {
+        const thirtyDaysAgo = new Date(now);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        matchDate = orderDate >= thirtyDaysAgo;
+      }
+    }
+    
+    return matchTerm && matchStatus && matchDate;
   });
 
   const totalRevenue = orders.reduce((acc, o) => acc + (Number(o.value) || 0), 0);
@@ -171,14 +197,28 @@ export default function OrdersPage() {
             <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2">
               <span className="text-xs font-semibold text-zinc-200 block">Opção 1: Sincronização Direta via API</span>
               <p className="text-[11px] text-zinc-500">Puxa automaticamente usando o token configurado no sistema.</p>
-              <button
-                onClick={() => handleSyncZedy("auto")}
-                disabled={syncingZedy}
-                className="w-full py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all"
-              >
-                <RotateCw size={13} className={syncingZedy ? "animate-spin" : ""} />
-                <span>{syncingZedy ? "Sincronizando..." : "Puxar Pedidos do Zedy Agora"}</span>
-              </button>
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={() => handleSyncZedy("auto")}
+                  disabled={syncingZedy}
+                  className="flex-1 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all"
+                >
+                  <RotateCw size={13} className={syncingZedy ? "animate-spin" : ""} />
+                  <span>{syncingZedy ? "Sincronizando..." : "Puxar Pedidos Agora"}</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (window.confirm("Isso apagará todas as vendas Zedy registradas HOJE e fará uma importação limpa direto da plataforma. Tem certeza?")) {
+                      handleSyncZedy("reset_auto");
+                    }
+                  }}
+                  disabled={syncingZedy}
+                  title="Apagar webhooks duplicados de hoje e ressincronizar do zero"
+                  className="py-2 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 font-bold text-xs flex items-center justify-center transition-all"
+                >
+                  Resetar Hoje
+                </button>
+              </div>
             </div>
 
             {/* Opção 2: Colar JSON / Array de Pedidos */}
@@ -256,6 +296,17 @@ export default function OrdersPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <select
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+          >
+            <option value="today">Hoje</option>
+            <option value="yesterday">Ontem</option>
+            <option value="7d">Últimos 7 dias</option>
+            <option value="30d">Últimos 30 dias</option>
+            <option value="all">Todo o período</option>
+          </select>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
