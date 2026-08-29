@@ -244,7 +244,8 @@ export async function GET(request: NextRequest) {
       .gte("created_at", effectiveStartDate)
       .lte("created_at", endDate);
 
-    let netRevenue = 0;
+    let grossRevenue = 0;
+    let totalTaxes = 0;
     let paidSalesCount = 0;
     let pixCount = 0;
     let cardCount = 0;
@@ -281,8 +282,7 @@ export async function GET(request: NextRequest) {
         customData.order_value ||
         0
       );
-      netRevenue += val;
-      paidSalesCount += 1;
+      grossRevenue += val;
 
       // Classifica Método de Pagamento — busca em múltiplos caminhos
       const method = String(
@@ -293,10 +293,29 @@ export async function GET(request: NextRequest) {
         metaResp.payment_method ||
         ""
       ).toLowerCase();
-      if (method.includes("pix")) pixCount++;
-      else if (method.includes("card") || method.includes("cartao") || method.includes("credit") || method.includes("visa") || method.includes("master")) cardCount++;
-      else if (method.includes("boleto")) boletoCount++;
-      else if (method === "") pixCount++; // default para plataformas que não enviam método (Zedy → assume Pix)
+      
+      const isCard = method.includes("card") || method.includes("cartao") || method.includes("credit") || method.includes("visa") || method.includes("master");
+      const isBoleto = method.includes("boleto");
+      const isPix = method.includes("pix") || method === ""; // Default pix
+      
+      // Aplicar Taxas Hardcoded (Conforme config Utmify)
+      let fee = 0;
+      if (val > 0) {
+        if (isCard) {
+          // Cartão: 7.99% + 23.00% = 30.99% + R$ 3.99 fixo
+          fee = (val * 0.3099) + 3.99;
+        } else {
+          // Pix/Boleto: 10.00% + R$ 5.00 fixo
+          fee = (val * 0.10) + 5.00;
+        }
+      }
+      totalTaxes += fee;
+
+      paidSalesCount += 1;
+
+      if (isPix) pixCount++;
+      else if (isCard) cardCount++;
+      else if (isBoleto) boletoCount++;
       else otherCount++;
 
       // Classifica Fonte de Tráfego — prioriza custom_data.utm_source (onde o Zedy salva)
@@ -334,11 +353,13 @@ export async function GET(request: NextRequest) {
     const cardPercent = totalOrders > 0 ? Math.round((cardCount / totalOrders) * 100) : 0;
     const boletoPercent = totalOrders > 0 ? Math.round((boletoCount / totalOrders) * 100) : 0;
 
-    // Métricas Financeiras (somente dados reais, sem fallback faker)
-    const taxes = 0;
+    // Métricas Financeiras (Padrão Utmify)
+    const taxes = totalTaxes;
+    const netRevenue = grossRevenue - taxes;
     const totalSpend = totalSpendBrl;
-    const totalProfit = netRevenue - totalSpend - taxes;
-    const roas = totalSpend > 0 ? netRevenue / totalSpend : 0;
+    const totalProfit = netRevenue - totalSpend;
+    // ROAS da Utmify é baseado no Faturamento BRUTO
+    const roas = totalSpend > 0 ? grossRevenue / totalSpend : 0;
     const roi = totalSpend > 0 ? totalProfit / totalSpend : 0;
     const margin = netRevenue > 0 ? (totalProfit / netRevenue) * 100 : 0;
     const cpa = totalOrders > 0 && totalSpend > 0 ? totalSpend / totalOrders : 0;

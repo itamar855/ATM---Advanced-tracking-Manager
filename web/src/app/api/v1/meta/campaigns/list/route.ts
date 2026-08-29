@@ -162,6 +162,7 @@ export async function GET(request: NextRequest) {
       rawMedium: string;
       rawContent: string;
       rawSource: string;
+      fee: number;
     }
 
     const parsedPurchases: ParsedEvent[] = [];
@@ -174,8 +175,26 @@ export async function GET(request: NextRequest) {
       const orderDetails = metaResp.order_details || {};
       const customData = metaResp.custom_data || {};
       const tracking = orderDetails.tracking_params || {};
+      const method = String(
+        orderDetails.payment_method ||
+        customData.payment_method ||
+        customData.payment_type ||
+        orderDetails.payment_type ||
+        metaResp.payment_method ||
+        ""
+      ).toLowerCase();
+      
+      const isCard = method.includes("card") || method.includes("cartao") || method.includes("credit") || method.includes("visa") || method.includes("master");
 
       const val = Number(customData.value || orderDetails.value || 0);
+      let fee = 0;
+      if (val > 0 && isPurchase) {
+        if (isCard) {
+          fee = (val * 0.3099) + 3.99;
+        } else {
+          fee = (val * 0.10) + 5.00;
+        }
+      }
 
       const rawCampaign = String(customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || "").trim();
       const rawMedium = String(customData.utm_medium || orderDetails.utm_medium || tracking.utm_medium || "").trim();
@@ -208,6 +227,7 @@ export async function GET(request: NextRequest) {
         rawMedium,
         rawContent,
         rawSource,
+        fee,
       };
 
       if (isPurchase) parsedPurchases.push(parsed);
@@ -302,10 +322,10 @@ export async function GET(request: NextRequest) {
     });
 
     // 6. Atribuição UNÍVOCA 1:1 de Compras (Cada compra pertence a exatamente 1 Campanha, 1 Conjunto e 1 Anúncio)
-    const campaignAttribution = new Map<string, { revenue: number; count: number }>();
-    const adsetAttribution = new Map<string, { revenue: number; count: number }>();
-    const adAttribution = new Map<string, { revenue: number; count: number }>();
-    const accountAttribution = new Map<string, { revenue: number; count: number }>();
+    const campaignAttribution = new Map<string, { grossRevenue: number; netRevenue: number; count: number }>();
+    const adsetAttribution = new Map<string, { grossRevenue: number; netRevenue: number; count: number }>();
+    const adAttribution = new Map<string, { grossRevenue: number; netRevenue: number; count: number }>();
+    const accountAttribution = new Map<string, { grossRevenue: number; netRevenue: number; count: number }>();
     const matchedPurchaseIds = new Set<string>();
 
     parsedPurchases.forEach((p) => {
@@ -325,11 +345,19 @@ export async function GET(request: NextRequest) {
       }
 
       if (bestCamp) {
-        const prev = campaignAttribution.get(bestCamp.id) || { revenue: 0, count: 0 };
-        campaignAttribution.set(bestCamp.id, { revenue: prev.revenue + p.val, count: prev.count + 1 });
+        const prev = campaignAttribution.get(bestCamp.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
+        campaignAttribution.set(bestCamp.id, { 
+          grossRevenue: prev.grossRevenue + p.val, 
+          netRevenue: prev.netRevenue + (p.val - p.fee),
+          count: prev.count + 1 
+        });
 
-        const prevAcc = accountAttribution.get(bestCamp.accId) || { revenue: 0, count: 0 };
-        accountAttribution.set(bestCamp.accId, { revenue: prevAcc.revenue + p.val, count: prevAcc.count + 1 });
+        const prevAcc = accountAttribution.get(bestCamp.accId) || { grossRevenue: 0, netRevenue: 0, count: 0 };
+        accountAttribution.set(bestCamp.accId, { 
+          grossRevenue: prevAcc.grossRevenue + p.val, 
+          netRevenue: prevAcc.netRevenue + (p.val - p.fee),
+          count: prevAcc.count + 1 
+        });
         matchedPurchaseIds.add(p.id);
       }
 
@@ -345,8 +373,12 @@ export async function GET(request: NextRequest) {
       }
 
       if (bestAdset) {
-        const prev = adsetAttribution.get(bestAdset.id) || { revenue: 0, count: 0 };
-        adsetAttribution.set(bestAdset.id, { revenue: prev.revenue + p.val, count: prev.count + 1 });
+        const prev = adsetAttribution.get(bestAdset.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
+        adsetAttribution.set(bestAdset.id, { 
+          grossRevenue: prev.grossRevenue + p.val, 
+          netRevenue: prev.netRevenue + (p.val - p.fee),
+          count: prev.count + 1 
+        });
       }
 
       // 6.3 Match de Anúncio/Ad
@@ -361,8 +393,12 @@ export async function GET(request: NextRequest) {
       }
 
       if (bestAd) {
-        const prev = adAttribution.get(bestAd.id) || { revenue: 0, count: 0 };
-        adAttribution.set(bestAd.id, { revenue: prev.revenue + p.val, count: prev.count + 1 });
+        const prev = adAttribution.get(bestAd.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
+        adAttribution.set(bestAd.id, { 
+          grossRevenue: prev.grossRevenue + p.val, 
+          netRevenue: prev.netRevenue + (p.val - p.fee),
+          count: prev.count + 1 
+        });
       }
 
       // 6.4 Se não deu match em campanha, tenta match direto por nome da conta
@@ -374,8 +410,12 @@ export async function GET(request: NextRequest) {
             (accNameClean && p.rawSource.toLowerCase().includes(accNameClean)) ||
             (p.rawSource.includes(acc.accId))
           ) {
-            const prevAcc = accountAttribution.get(acc.accId) || { revenue: 0, count: 0 };
-            accountAttribution.set(acc.accId, { revenue: prevAcc.revenue + p.val, count: prevAcc.count + 1 });
+            const prevAcc = accountAttribution.get(acc.accId) || { grossRevenue: 0, netRevenue: 0, count: 0 };
+            accountAttribution.set(acc.accId, { 
+              grossRevenue: prevAcc.grossRevenue + p.val, 
+              netRevenue: prevAcc.netRevenue + (p.val - p.fee),
+              count: prevAcc.count + 1 
+            });
             matchedPurchaseIds.add(p.id);
           }
         });
@@ -403,13 +443,14 @@ export async function GET(request: NextRequest) {
       const rawPeriodSpend = Number(accInsights.spend || 0);
       const periodSpendBrl = convertToBrl(rawPeriodSpend, currency, usdBrlRate);
 
-      const accAttr = accountAttribution.get(accId) || { revenue: 0, count: 0 };
-      const accRevenue = accAttr.revenue;
+      const accAttr = accountAttribution.get(accId) || { grossRevenue: 0, netRevenue: 0, count: 0 };
+      const accGrossRevenue = accAttr.grossRevenue;
+      const accNetRevenue = accAttr.netRevenue;
       const accSales = accAttr.count;
-      const accProfit = accRevenue - periodSpendBrl;
-      const accRoas = periodSpendBrl > 0 ? accRevenue / periodSpendBrl : (accRevenue > 0 ? 99.9 : 0);
+      const accProfit = accNetRevenue - periodSpendBrl;
+      const accRoas = periodSpendBrl > 0 ? accGrossRevenue / periodSpendBrl : (accGrossRevenue > 0 ? 99.9 : 0);
       const accCpa = accSales > 0 ? periodSpendBrl / accSales : 0;
-      const accMargin = accRevenue > 0 ? (accProfit / accRevenue) * 100 : (periodSpendBrl > 0 ? -100 : 0);
+      const accMargin = accNetRevenue > 0 ? (accProfit / accNetRevenue) * 100 : (periodSpendBrl > 0 ? -100 : 0);
       const accRoi = periodSpendBrl > 0 ? accProfit / periodSpendBrl : 0;
 
       formattedAccounts.push({
@@ -420,7 +461,7 @@ export async function GET(request: NextRequest) {
         card: cardDisplay,
         cycle: cycleBrl,
         spend: periodSpendBrl,
-        revenue: accRevenue,
+        revenue: accNetRevenue,
         profit: accProfit,
         roas: accRoas,
         sales: accSales,
@@ -438,13 +479,14 @@ export async function GET(request: NextRequest) {
         const cRawSpend = Number(cIns.spend || 0);
         const cSpend = convertToBrl(cRawSpend, currency, usdBrlRate);
 
-        const cAttr = campaignAttribution.get(camp.id) || { revenue: 0, count: 0 };
-        const cRevenue = cAttr.revenue;
+        const cAttr = campaignAttribution.get(camp.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
+        const cGrossRevenue = cAttr.grossRevenue;
+        const cNetRevenue = cAttr.netRevenue;
         const cSales = cAttr.count;
-        const cProfit = cRevenue - cSpend;
-        const cRoas = cSpend > 0 ? cRevenue / cSpend : (cRevenue > 0 ? 99.9 : 0);
+        const cProfit = cNetRevenue - cSpend;
+        const cRoas = cSpend > 0 ? cGrossRevenue / cSpend : (cGrossRevenue > 0 ? 99.9 : 0);
         const cCpa = cSales > 0 ? cSpend / cSales : 0;
-        const cMargin = cRevenue > 0 ? (cProfit / cRevenue) * 100 : (cSpend > 0 ? -100 : 0);
+        const cMargin = cNetRevenue > 0 ? (cProfit / cNetRevenue) * 100 : (cSpend > 0 ? -100 : 0);
         const cRoi = cSpend > 0 ? cProfit / cSpend : 0;
 
         const rawBudget = camp.daily_budget ? Number(camp.daily_budget) / 100 : Number(camp.lifetime_budget || 0) / 100;
@@ -461,7 +503,7 @@ export async function GET(request: NextRequest) {
           budget: convertedBudget,
           budget_type: camp.daily_budget ? "Diário" : (camp.lifetime_budget ? "Vitalício" : "ABO"),
           spend: cSpend,
-          revenue: cRevenue,
+          revenue: cNetRevenue,
           profit: cProfit,
           roas: cRoas,
           sales: cSales,
@@ -480,13 +522,14 @@ export async function GET(request: NextRequest) {
         const asRawSpend = Number(asIns.spend || 0);
         const asSpend = convertToBrl(asRawSpend, currency, usdBrlRate);
 
-        const asAttr = adsetAttribution.get(as.id) || { revenue: 0, count: 0 };
-        const asRevenue = asAttr.revenue;
+        const asAttr = adsetAttribution.get(as.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
+        const asGrossRevenue = asAttr.grossRevenue;
+        const asNetRevenue = asAttr.netRevenue;
         const asSales = asAttr.count;
-        const asProfit = asRevenue - asSpend;
-        const asRoas = asSpend > 0 ? asRevenue / asSpend : (asRevenue > 0 ? 99.9 : 0);
+        const asProfit = asNetRevenue - asSpend;
+        const asRoas = asSpend > 0 ? asGrossRevenue / asSpend : (asGrossRevenue > 0 ? 99.9 : 0);
         const asCpa = asSales > 0 ? asSpend / asSales : 0;
-        const asMargin = asRevenue > 0 ? (asProfit / asRevenue) * 100 : (asSpend > 0 ? -100 : 0);
+        const asMargin = asNetRevenue > 0 ? (asProfit / asNetRevenue) * 100 : (asSpend > 0 ? -100 : 0);
         const asRoi = asSpend > 0 ? asProfit / asSpend : 0;
 
         const asRawBudget = as.daily_budget ? Number(as.daily_budget) / 100 : Number(as.lifetime_budget || 0) / 100;
@@ -506,7 +549,7 @@ export async function GET(request: NextRequest) {
           budget: asConvertedBudget,
           budget_type: as.daily_budget ? "Diário" : (as.lifetime_budget ? "Vitalício" : "CBO"),
           spend: asSpend,
-          revenue: asRevenue,
+          revenue: asNetRevenue,
           profit: asProfit,
           roas: asRoas,
           sales: asSales,
@@ -525,13 +568,14 @@ export async function GET(request: NextRequest) {
         const adRawSpend = Number(adIns.spend || 0);
         const adSpend = convertToBrl(adRawSpend, currency, usdBrlRate);
 
-        const adAttr = adAttribution.get(ad.id) || { revenue: 0, count: 0 };
-        const adRevenue = adAttr.revenue;
+        const adAttr = adAttribution.get(ad.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
+        const adGrossRevenue = adAttr.grossRevenue;
+        const adNetRevenue = adAttr.netRevenue;
         const adSales = adAttr.count;
-        const adProfit = adRevenue - adSpend;
-        const adRoas = adSpend > 0 ? adRevenue / adSpend : (adRevenue > 0 ? 99.9 : 0);
+        const adProfit = adNetRevenue - adSpend;
+        const adRoas = adSpend > 0 ? adGrossRevenue / adSpend : (adGrossRevenue > 0 ? 99.9 : 0);
         const adCpa = adSales > 0 ? adSpend / adSales : 0;
-        const adMargin = adRevenue > 0 ? (adProfit / adRevenue) * 100 : (adSpend > 0 ? -100 : 0);
+        const adMargin = adNetRevenue > 0 ? (adProfit / adNetRevenue) * 100 : (adSpend > 0 ? -100 : 0);
         const adRoi = adSpend > 0 ? adProfit / adSpend : 0;
 
         const adIsActive = ad.effective_status === "ACTIVE" || (ad.effective_status === undefined && ad.status === "ACTIVE");
@@ -550,7 +594,7 @@ export async function GET(request: NextRequest) {
           status: adIsActive ? "active" : "paused",
           effective_status: ad.effective_status || ad.status,
           spend: adSpend,
-          revenue: adRevenue,
+          revenue: adNetRevenue,
           profit: adProfit,
           roas: adRoas,
           sales: adSales,
@@ -571,6 +615,15 @@ export async function GET(request: NextRequest) {
     allCampaigns.sort((a, b) => b.spend - a.spend);
     allAdsets.sort((a, b) => b.spend - a.spend);
     allAds.sort((a, b) => b.spend - a.spend);
+
+    // Se nenhuma conta retornou dados e houve erros, expõe o erro para a UI alertar o usuário
+    if (formattedAccounts.length === 0 && accountErrors.length > 0) {
+      return NextResponse.json({
+        ok: false,
+        error: `Falha ao acessar as contas selecionadas: ${accountErrors[0].error}`,
+        accounts: [], campaigns: [], adsets: [], ads: [],
+      });
+    }
 
     return NextResponse.json({
       ok: true,
