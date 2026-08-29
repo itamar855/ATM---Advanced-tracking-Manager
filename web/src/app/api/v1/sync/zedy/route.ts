@@ -15,8 +15,12 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient();
 
     let providedOrders: any[] = [];
+    let resetToday = false;
     try {
       const body = await request.json();
+      if (body?.reset_today) {
+        resetToday = true;
+      }
       if (Array.isArray(body)) {
         providedOrders = body;
       } else if (Array.isArray(body?.orders)) {
@@ -99,6 +103,24 @@ export async function POST(request: NextRequest) {
         error: "Nenhum pedido encontrado para sincronização. Forneça o array de pedidos ou verifique a conexão com a API Zedy.",
         synced_count: 0,
       });
+    }
+
+    if (resetToday) {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      const { error: delErr } = await supabase
+        .from("events")
+        .delete()
+        .eq("store_id", storeId)
+        .eq("event_name", "Purchase")
+        .gte("created_at", todayStart.toISOString());
+        
+      if (delErr) {
+        console.warn("[Zedy Sync] Erro ao deletar eventos de hoje (Reset):", delErr);
+      } else {
+        console.log(`[Zedy Sync] Eventos de hoje deletados para o storeId: ${storeId}`);
+      }
     }
 
     let syncedCount = 0;

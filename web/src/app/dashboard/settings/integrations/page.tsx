@@ -212,6 +212,36 @@ function IntegrationsContent() {
     }
   };
 
+  const handleResetAndSyncZedy = async () => {
+    if (!zedyToken) {
+      alert("Token da Zedy não configurado.");
+      return;
+    }
+    if (!window.confirm("Isso apagará todas as vendas Zedy registradas HOJE e fará uma importação limpa direto da plataforma. Tem certeza?")) {
+      return;
+    }
+    setSyncingZedy(true);
+    setSaveSuccessMsg("");
+    try {
+      const res = await fetch("/api/v1/sync/zedy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: zedyToken, reset_today: true })
+      });
+      const data = await res.json();
+      if (res.ok && data.ok !== false) {
+        setSaveSuccessMsg(`Reset concluído! ${data.synced_count || 0} vendas sincronizadas limpas hoje.`);
+      } else {
+        alert("Erro no reset: " + (data.error || "Desconhecido"));
+      }
+    } catch (e: any) {
+      alert("Erro na requisição: " + e.message);
+    } finally {
+      setSyncingZedy(false);
+      setTimeout(() => setSaveSuccessMsg(""), 6000);
+    }
+  };
+
   useEffect(() => {
     // Carrega credenciais do servidor e contas reais da Meta
     async function loadMetaCredentials() {
@@ -759,10 +789,18 @@ function IntegrationsContent() {
                     {syncingZedy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                     Sincronizar Pedidos
                   </button>
+                  <button
+                    onClick={handleResetAndSyncZedy}
+                    disabled={syncingZedy}
+                    title="Apaga os webhooks duplicados de hoje e ressincroniza"
+                    className="px-3 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 transition-all flex items-center gap-1.5 shrink-0"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               </div>
 
-              {saveSuccessMsg && saveSuccessMsg.includes("Sincronização") && (
+              {saveSuccessMsg && (saveSuccessMsg.includes("Sincronização") || saveSuccessMsg.includes("Reset")) && (
                 <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2 text-emerald-400 text-xs font-bold">
                   <CheckCircle2 size={16} />
                   {saveSuccessMsg}
