@@ -122,12 +122,10 @@ export async function GET(request: NextRequest) {
 
     const configuredAccountIds: string[] = integration?.config?.ad_account_ids || [];
 
-    const accountIdsToProcess = Array.from(
-      new Set([
-        ...metaAccountsRaw.map((a: any) => a.id),
-        ...configuredAccountIds.map((id: string) => (id.startsWith("act_") ? id : `act_${id}`)),
-      ])
-    );
+    // Se o usuário selecionou contas nas integrações, usa SOMENTE elas. Caso contrário, usa as da Meta.
+    const accountIdsToProcess = configuredAccountIds.length > 0 
+      ? configuredAccountIds.map((id: string) => (id.startsWith("act_") ? id : `act_${id}`))
+      : metaAccountsRaw.map((a: any) => a.id);
 
     if (accountIdsToProcess.length === 0) {
       return NextResponse.json({

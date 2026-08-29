@@ -390,7 +390,7 @@ export function UtmifyCampaignManager({
   return (
     <div className="space-y-4 text-zinc-200 fade-in select-none">
       {/* ── 1. Top Tabs Bar (Estilo UTMify PRO) ────────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-zinc-800/80 pb-2">
+      <div className="flex items-center gap-2 border-b border-[var(--color-border-subtle)] pb-2">
         {/* Tab 1: Contas */}
         <button
           onClick={() => {
@@ -402,7 +402,7 @@ export function UtmifyCampaignManager({
           className={cn(
             "flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-xs font-bold transition-all border-b-2",
             activeTab === "accounts"
-              ? "bg-[#161B26] text-blue-400 border-blue-500 shadow-[0_4px_12px_rgba(59,130,246,0.15)]"
+              ? "bg-blue-500/10 text-blue-400 border-blue-500"
               : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 border-transparent"
           )}
         >
@@ -416,7 +416,7 @@ export function UtmifyCampaignManager({
           className={cn(
             "flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-xs font-bold transition-all border-b-2",
             activeTab === "campaigns"
-              ? "bg-[#161B26] text-blue-400 border-blue-500 shadow-[0_4px_12px_rgba(59,130,246,0.15)]"
+              ? "bg-blue-500/10 text-blue-400 border-blue-500"
               : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 border-transparent"
           )}
         >
@@ -442,7 +442,7 @@ export function UtmifyCampaignManager({
           className={cn(
             "flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-xs font-bold transition-all border-b-2",
             activeTab === "adsets"
-              ? "bg-[#161B26] text-blue-400 border-blue-500 shadow-[0_4px_12px_rgba(59,130,246,0.15)]"
+              ? "bg-blue-500/10 text-blue-400 border-blue-500"
               : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 border-transparent"
           )}
         >
@@ -468,7 +468,7 @@ export function UtmifyCampaignManager({
           className={cn(
             "flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-xs font-bold transition-all border-b-2",
             activeTab === "ads"
-              ? "bg-[#161B26] text-blue-400 border-blue-500 shadow-[0_4px_12px_rgba(59,130,246,0.15)]"
+              ? "bg-blue-500/10 text-blue-400 border-blue-500"
               : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 border-transparent"
           )}
         >
@@ -491,8 +491,8 @@ export function UtmifyCampaignManager({
 
       {/* ── Banner de Alerta de Token / Erro da Meta ── */}
       {apiError && (
-        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between flex-wrap gap-3 shadow-lg">
-          <div className="flex items-center gap-3">
+        <div className="bg-[var(--color-bg-surface)] border-t border-[var(--color-border-subtle)] p-3 px-5 flex items-center justify-between text-xs shadow-lg">
+        <div className="flex items-center gap-4 text-zinc-400">
             <AlertTriangle size={18} className="text-amber-400 shrink-0" />
             <div>
               <p className="font-bold text-amber-200">Aviso sobre Conexão Meta Ads:</p>
@@ -510,7 +510,7 @@ export function UtmifyCampaignManager({
       )}
 
       {/* ── 2. Toolbar Superior de Filtros e Status ───────────────────────── */}
-      <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-3.5 space-y-3 shadow-lg">
+      <div className="bg-[var(--color-bg-surface)] border border-[var(--color-border-subtle)] rounded-xl p-3.5 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-3">
           {/* Ações Rápidas da Esquerda */}
           <div className="flex items-center gap-2 flex-wrap">
@@ -541,7 +541,7 @@ export function UtmifyCampaignManager({
         </div>
 
         {/* Barra de Filtros em Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-2 border-t border-zinc-800/60 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-2 border-t border-[var(--color-border-subtle)] text-xs">
           {/* 1. Nome */}
           <div className="space-y-1">
             <label className="text-[11px] font-semibold text-zinc-400">
@@ -553,7 +553,7 @@ export function UtmifyCampaignManager({
                 placeholder="Filtrar por nome"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+                className="w-full bg-zinc-800/30 border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-zinc-300 placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
               />
               {searchTerm && (
                 <button onClick={() => setSearchTerm("")} className="absolute right-2.5 top-2 text-zinc-500 hover:text-white">
@@ -569,7 +569,7 @@ export function UtmifyCampaignManager({
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+              className="w-full bg-zinc-800/30 border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-blue-500 transition-colors"
             >
               <option value="all">Qualquer</option>
               <option value="active">Ativo</option>
@@ -583,7 +583,7 @@ export function UtmifyCampaignManager({
             <select
               value={datePreset}
               onChange={(e) => setDatePreset(e.target.value)}
-              className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+              className="w-full bg-zinc-800/30 border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-blue-500 transition-colors"
             >
               <option value="today">Hoje</option>
               <option value="yesterday">Ontem</option>
@@ -599,7 +599,7 @@ export function UtmifyCampaignManager({
             <select
               value={filterAccountSelect}
               onChange={(e) => setFilterAccountSelect(e.target.value)}
-              className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+              className="w-full bg-zinc-800/30 border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-blue-500 transition-colors"
             >
               <option value="all">Qualquer</option>
               {accounts.map((acc) => (
@@ -613,18 +613,18 @@ export function UtmifyCampaignManager({
           {/* 5. Produto */}
           <div className="space-y-1">
             <label className="text-[11px] font-semibold text-zinc-400">Produto</label>
-            <select className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
+            <select className="w-full bg-zinc-800/30 border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-blue-500 transition-colors">
               <option value="all">Qualquer</option>
             </select>
           </div>
         </div>
       </div>
 
-      {/* ── 3. Tabela Master de Alta Densidade (Estilo UTMify PRO) ────────── */}
-      <div className="bg-[#0F121A] border border-zinc-800/80 rounded-xl overflow-hidden shadow-2xl">
-        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-          <table className="w-full text-left border-collapse text-[11px]">
-            <thead className="bg-[#141824] text-zinc-400 font-bold sticky top-0 z-20 border-b border-zinc-800/80 uppercase text-[10px] tracking-wider">
+      {/* ── 3. Tabela Master de Alta Densidade ────────── */}
+      <div className="bg-[var(--color-bg-surface)] border border-[var(--color-border-subtle)] rounded-xl overflow-hidden">
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
+          <table className="w-full text-left border-collapse text-[11.5px]">
+            <thead className="bg-zinc-800/20 text-zinc-400 font-semibold sticky top-0 z-20 border-b border-[var(--color-border-subtle)] uppercase text-[10px] tracking-wider">
               <tr>
                 <th className="w-8 py-3 px-3 text-center">
                   <input
@@ -671,7 +671,7 @@ export function UtmifyCampaignManager({
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-zinc-800/50">
+            <tbody className="divide-y divide-zinc-800/30">
               {filteredData.length > 0 ? (
                 filteredData.map((row: any) => {
                   const isChecked = selectedRowIds.includes(row.id);
@@ -683,8 +683,8 @@ export function UtmifyCampaignManager({
                     <tr
                       key={row.id}
                       className={cn(
-                        "hover:bg-[#151924] transition-colors group",
-                        isChecked && "bg-blue-500/10"
+                        "hover:bg-zinc-800/20 transition-colors group",
+                        isChecked && "bg-blue-500/5"
                       )}
                     >
                       {/* Checkbox */}
@@ -706,10 +706,10 @@ export function UtmifyCampaignManager({
                         {activeTab === "accounts" ? (
                           <span
                             className={cn(
-                              "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
+                              "px-2 py-0.5 rounded text-[10px] font-semibold uppercase",
                               row.status === "Ativo"
-                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                : "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"
+                                ? "bg-emerald-500/10 text-emerald-400"
+                                : "bg-zinc-500/10 text-zinc-400"
                             )}
                           >
                             {row.status}
@@ -726,7 +726,7 @@ export function UtmifyCampaignManager({
                             disabled={actionLoadingId === row.id}
                             className={cn(
                               "relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none cursor-pointer",
-                              row.status === "active" ? "bg-blue-600" : "bg-zinc-700",
+                              row.status === "active" ? "bg-emerald-500" : "bg-zinc-600",
                               actionLoadingId === row.id && "opacity-50 animate-pulse"
                             )}
                             title={row.status === "active" ? "Desativar" : "Ativar"}
@@ -751,7 +751,7 @@ export function UtmifyCampaignManager({
                           }}
                           className="flex items-center gap-1.5 font-bold text-white hover:text-blue-400 cursor-pointer transition-colors group/name"
                         >
-                          <span className="truncate max-w-[240px]" title={row.name}>
+                          <span className="truncate max-w-[240px] font-medium" title={row.name}>
                             {row.name}
                           </span>
                           {activeTab !== "ads" && activeTab !== "accounts" && (
@@ -816,7 +816,7 @@ export function UtmifyCampaignManager({
                                   type="number"
                                   value={editBudgetValue}
                                   onChange={(e) => setEditBudgetValue(e.target.value)}
-                                  className="w-16 bg-[#161B26] border border-blue-500 rounded px-1.5 py-0.5 text-xs text-white font-mono text-right focus:outline-none"
+                                  className="w-16 bg-zinc-800/40 border border-blue-500 rounded px-1.5 py-0.5 text-xs text-white font-mono text-right focus:outline-none"
                                   autoFocus
                                 />
                                 <button
@@ -862,7 +862,7 @@ export function UtmifyCampaignManager({
                       )}
 
                       {/* VENDAS */}
-                      <td className="py-2.5 px-2 text-center font-bold text-white font-mono">
+                      <td className="py-2.5 px-2 text-center font-medium text-zinc-200 font-mono">
                         {row.sales}
                       </td>
 
@@ -877,7 +877,7 @@ export function UtmifyCampaignManager({
                       </td>
 
                       {/* FATURAMENTO */}
-                      <td className="py-2.5 px-2 text-right font-mono font-bold text-purple-400">
+                      <td className="py-2.5 px-2 text-right font-mono font-medium text-zinc-200">
                         {fmtBrl(row.revenue)}
                       </td>
 
@@ -887,8 +887,8 @@ export function UtmifyCampaignManager({
                           className={cn(
                             "px-1.5 py-0.5 rounded",
                             isPositiveProfit
-                              ? "text-emerald-400 bg-emerald-500/10 font-black shadow-[0_0_8px_rgba(16,185,129,0.1)]"
-                              : "text-rose-400 bg-rose-500/10 font-bold"
+                              ? "text-emerald-400 font-semibold"
+                              : "text-rose-400 font-semibold"
                           )}
                         >
                           {row.profit >= 0 ? `+${fmtBrl(row.profit)}` : fmtBrl(row.profit)}
