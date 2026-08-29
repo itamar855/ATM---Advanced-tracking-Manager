@@ -56,6 +56,58 @@ export default function DiagnosticsPage() {
         </p>
       </div>
 
+      {/* Seção de Recuperação de Conversões (Contingência) */}
+      <div className="glass-card p-5 border border-[var(--color-border-subtle)] space-y-4">
+        <div>
+          <h2 className="text-sm font-bold text-[var(--color-text-primary)] flex items-center gap-2">
+            <CheckCircle2 size={16} className="text-blue-400" />
+            Recuperação de Conversões (Contingência)
+          </h2>
+          <p className="text-xs text-[var(--color-text-muted)] mt-1">
+            Se a Meta perdeu eventos por conta de um pixel quebrado, você pode forçar o reenvio (somente eventos com menos de 7 dias serão deduplicados com segurança).
+          </p>
+        </div>
+        
+        <div className="flex items-end gap-3 flex-wrap">
+          <div className="space-y-1">
+            <label className="text-[11px] font-semibold text-zinc-400">Data Base do Resgate</label>
+            <input 
+              type="date" 
+              id="recoveryDate"
+              defaultValue={new Date(Date.now() - 86400000).toISOString().split('T')[0]} 
+              className="bg-[var(--color-bg-surface)] border border-[var(--color-border-subtle)] rounded-lg px-3 py-1.5 text-xs text-white" 
+            />
+          </div>
+          <button
+            onClick={async () => {
+              const d = (document.getElementById('recoveryDate') as HTMLInputElement).value;
+              if (!d) return alert('Selecione uma data');
+              if (!confirm('Deseja reenviar as conversões (Purchases) desta data para a Meta?')) return;
+              
+              const start = new Date(d);
+              start.setHours(0, 0, 0, 0);
+              const end = new Date(d);
+              end.setHours(23, 59, 59, 999);
+              
+              try {
+                const res = await fetch('/api/v1/sync/recovery', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ startDate: start.toISOString(), endDate: end.toISOString() })
+                });
+                const json = await res.json();
+                alert(json.message || json.error);
+              } catch (e: any) {
+                alert('Erro de conexão: ' + e.message);
+              }
+            }}
+            className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors mb-[1px]"
+          >
+            Iniciar Resgate
+          </button>
+        </div>
+      </div>
+
       <div className="space-y-4">
         {list.map((d) => (
           <div
