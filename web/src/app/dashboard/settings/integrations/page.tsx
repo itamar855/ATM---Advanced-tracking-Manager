@@ -70,6 +70,7 @@ function IntegrationsContent() {
   const [fetchingAccounts, setFetchingAccounts] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [copiedZedy, setCopiedZedy] = useState(false);
+  const [copiedShopify, setCopiedShopify] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
   const [metaConnected, setMetaConnected] = useState(false);
   const [hasSavedTokenInDb, setHasSavedTokenInDb] = useState(false);
@@ -256,7 +257,7 @@ function IntegrationsContent() {
       const res = await fetch("/api/v1/settings/credentials", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ store_id: activeStore.id, shopify_api_key: shopifyToken })
+        body: JSON.stringify({ store_id: storeId, shopify_api_key: shopifyToken })
       });
       const data = await res.json();
       if (res.ok && data.ok !== false) {
