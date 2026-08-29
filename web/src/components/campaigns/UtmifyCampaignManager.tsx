@@ -160,6 +160,13 @@ export function UtmifyCampaignManager({
   const [editBudgetValue, setEditBudgetValue] = useState<string>("");
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
+  // Duplicação Modal
+  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
+  const [duplicateItemId, setDuplicateItemId] = useState<string | null>(null);
+  const [duplicateItemLevel, setDuplicateItemLevel] = useState<"campaign" | "adset" | "ad" | null>(null);
+  const [duplicateCopies, setDuplicateCopies] = useState<string>("1");
+  const [duplicateNewBudget, setDuplicateNewBudget] = useState<string>("");
+
   // ── Navegação & Drill-Down ───────────────────────────────────────────────
 
   const handleSelectAccount = (accId: string) => {
@@ -213,20 +220,35 @@ export function UtmifyCampaignManager({
 
   // ── Ação de Alterar Orçamento ───────────────────────────────────────────
 
-  const handleDuplicate = async (id: string, level: "campaign" | "adset" | "ad") => {
-    if (!confirm(`Tem certeza que deseja duplicar este(a) ${level === "campaign" ? "campanha" : level === "adset" ? "conjunto" : "anúncio"}?`)) {
+  const handleOpenDuplicate = (id: string, level: "campaign" | "adset" | "ad", currentBudget?: number) => {
+    setDuplicateItemId(id);
+    setDuplicateItemLevel(level);
+    setDuplicateCopies("1");
+    setDuplicateNewBudget(currentBudget && currentBudget > 0 ? String(currentBudget) : "");
+    setDuplicateModalOpen(true);
+  };
+
+  const handleConfirmDuplicate = async () => {
+    if (!duplicateItemId || !duplicateItemLevel) return;
+    const copies = Number(duplicateCopies);
+    if (isNaN(copies) || copies < 1) {
+      alert("A quantidade de cópias deve ser no mínimo 1.");
       return;
     }
 
-    setActionLoadingId(id);
+    setActionLoadingId(duplicateItemId);
+    setDuplicateModalOpen(false);
+
     try {
       const res = await fetch("/api/v1/meta/campaigns/manage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id,
-          level,
+          id: duplicateItemId,
+          level: duplicateItemLevel,
           action: "duplicate",
+          copies: copies,
+          newBudget: duplicateNewBudget ? Number(duplicateNewBudget) : null
         }),
       });
 
@@ -234,7 +256,7 @@ export function UtmifyCampaignManager({
         onRefresh();
       } else {
         const d = await res.json();
-        alert("Erro na Meta: " + (d.error || "Não foi possível duplicar o objeto."));
+        alert("Erro na Meta: " + (d.error || "Não foi possível duplicar."));
       }
     } catch (e: any) {
       alert("Erro ao conectar: " + e.message);
@@ -761,7 +783,7 @@ export function UtmifyCampaignManager({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleDuplicate(row.id, activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad");
+                                handleOpenDuplicate(row.id, activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad", (row as any).budget);
                               }}
                               className="opacity-0 group-hover/name:opacity-100 p-0.5 text-zinc-500 hover:text-blue-400 transition-opacity ml-1"
                               title="Duplicar"
@@ -987,6 +1009,77 @@ export function UtmifyCampaignManager({
           </table>
         </div>
       </div>
+      {/* Modal de Duplicação */}
+      {duplicateModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#0B0E14] border border-blue-500/20 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
+            <button
+              onClick={() => setDuplicateModalOpen(false)}
+              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+              <Layers size={18} className="text-blue-500" />
+              Duplicação Inteligente
+            </h3>
+            <p className="text-xs text-zinc-400 mb-5">
+              Duplique {duplicateItemLevel === "campaign" ? "sua campanha" : duplicateItemLevel === "adset" ? "seu conjunto" : "seu anúncio"} em massa e aplique um novo orçamento automaticamente.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-zinc-300 mb-1.5">
+                  Quantidade de Cópias
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={duplicateCopies}
+                  onChange={(e) => setDuplicateCopies(e.target.value)}
+                  className="w-full bg-[#121622] border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+
+              {(duplicateItemLevel === "campaign" || duplicateItemLevel === "adset") && (
+                <div>
+                  <label className="block text-xs font-bold text-zinc-300 mb-1.5">
+                    Novo Orçamento Diário (Opcional)
+                  </label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm font-bold">R$</div>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="Manter original"
+                      value={duplicateNewBudget}
+                      onChange={(e) => setDuplicateNewBudget(e.target.value)}
+                      className="w-full bg-[#121622] border border-zinc-800 rounded-lg pl-9 pr-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                    />
+                  </div>
+                  <p className="text-[10px] text-zinc-500 mt-1">Deixe em branco para manter o orçamento original.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => setDuplicateModalOpen(false)}
+                className="flex-1 py-2.5 rounded-lg border border-zinc-800 text-zinc-300 font-bold text-sm hover:bg-zinc-800/50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmDuplicate}
+                className="flex-1 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-500/20 transition-all active:scale-95"
+              >
+                Duplicar Agora
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

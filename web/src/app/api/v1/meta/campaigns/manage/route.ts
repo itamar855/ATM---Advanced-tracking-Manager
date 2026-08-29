@@ -68,8 +68,54 @@ export async function POST(request: NextRequest) {
       const budgetCents = Math.round(budgetAmount * 100);
       payload = { daily_budget: budgetCents };
     } else if (action === "duplicate") {
+      const copies = Number(body.copies) || 1;
+      const newBudget = body.newBudget ? Number(body.newBudget) : null;
+      let targetBudget = newBudget;
+
+      if (targetBudget !== null && targetBudget > 0) {
+        if (curr === "USD") {
+          targetBudget = targetBudget / usdBrlRate;
+        }
+        targetBudget = Math.round(targetBudget * 100);
+      }
+
       graphUrl = `https://graph.facebook.com/v23.0/${id}/copies`;
-      payload = { status_option: "PAUSED" };
+      
+      const copyPromises = Array.from({ length: copies }).map(async () => {
+        const res = await fetch(`${graphUrl}?access_token=${token}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status_option: "ACTIVE" })
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok) {
+           return { success: false, error: data };
+        }
+        
+        const newCopiedId = data.copied_campaign_id || data.copied_adset_id || data.copied_ad_id || data.id || data.new_campaign_id;
+
+        if (targetBudget !== null && targetBudget > 0 && newCopiedId && (level === "campaign" || level === "adset")) {
+          const budUrl = `https://graph.facebook.com/v23.0/${newCopiedId}?access_token=${token}`;
+          await fetch(budUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ daily_budget: targetBudget })
+          });
+        }
+        
+        return { success: true, newId: newCopiedId };
+      });
+      
+      const results = await Promise.all(copyPromises);
+      
+      const failed = results.find(r => !r.success);
+      if (failed) {
+        return NextResponse.json({ ok: false, error: "Falha na duplicação na API da Meta", details: failed.error }, { status: 400 });
+      }
+
+      return NextResponse.json({ ok: true, action, id, meta_response: { results } });
     } else if (action === "delete") {
       method = "DELETE";
     }
