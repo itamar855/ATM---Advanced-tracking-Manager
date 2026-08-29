@@ -213,6 +213,36 @@ export function UtmifyCampaignManager({
 
   // ── Ação de Alterar Orçamento ───────────────────────────────────────────
 
+  const handleDuplicate = async (id: string, level: "campaign" | "adset" | "ad") => {
+    if (!confirm(`Tem certeza que deseja duplicar este(a) ${level === "campaign" ? "campanha" : level === "adset" ? "conjunto" : "anúncio"}?`)) {
+      return;
+    }
+
+    setActionLoadingId(id);
+    try {
+      const res = await fetch("/api/v1/meta/campaigns/manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          level,
+          action: "duplicate",
+        }),
+      });
+
+      if (res.ok) {
+        onRefresh();
+      } else {
+        const d = await res.json();
+        alert("Erro na Meta: " + (d.error || "Não foi possível duplicar o objeto."));
+      }
+    } catch (e: any) {
+      alert("Erro ao conectar: " + e.message);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   const handleSaveBudget = async (id: string, level: "campaign" | "adset") => {
     const num = Number(editBudgetValue);
     if (isNaN(num) || num <= 0) {
@@ -719,13 +749,25 @@ export function UtmifyCampaignManager({
                             else if (activeTab === "campaigns") handleSelectCampaign(row.id);
                             else if (activeTab === "adsets") handleSelectAdset(row.id);
                           }}
-                          className="flex items-center gap-1.5 font-bold text-white hover:text-blue-400 cursor-pointer transition-colors"
+                          className="flex items-center gap-1.5 font-bold text-white hover:text-blue-400 cursor-pointer transition-colors group/name"
                         >
                           <span className="truncate max-w-[240px]" title={row.name}>
                             {row.name}
                           </span>
-                          {activeTab !== "ads" && (
-                            <ChevronRight size={12} className="text-zinc-600 group-hover:text-blue-400 transition-colors shrink-0" />
+                          {activeTab !== "ads" && activeTab !== "accounts" && (
+                            <ChevronRight size={12} className="text-zinc-600 group-hover/name:text-blue-400 transition-colors shrink-0" />
+                          )}
+                          {activeTab !== "accounts" && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDuplicate(row.id, activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad");
+                              }}
+                              className="opacity-0 group-hover/name:opacity-100 p-0.5 text-zinc-500 hover:text-blue-400 transition-opacity ml-1"
+                              title="Duplicar"
+                            >
+                              <Layers size={12} />
+                            </button>
                           )}
                         </div>
                         {row.account_name && activeTab !== "accounts" && (

@@ -87,7 +87,15 @@ export async function POST(request: NextRequest) {
 
     if (!metaRes.ok) {
       console.error("[Meta Manage API Error]:", resData);
-      return NextResponse.json({ ok: false, error: resData.error?.message || "Erro na Meta API" }, { status: 400 });
+      
+      let errMsg = resData.error?.message || "Erro na Meta API";
+      if (errMsg.includes("(#200) Requires") && errMsg.includes("ads_management")) {
+        errMsg = "Sem permissão. Você precisa adicionar 'ads_management' no Token da Meta e atualizar as Integrações.";
+      } else if (resData.error?.code === 190) {
+        errMsg = "O Token da Meta expirou ou é inválido. Gere um novo nas configurações.";
+      }
+      
+      return NextResponse.json({ ok: false, error: errMsg }, { status: 400 });
     }
 
     return NextResponse.json({
