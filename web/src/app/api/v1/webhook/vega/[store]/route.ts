@@ -246,9 +246,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // Recuperação Mágica de fbc via utm_content (ex: formato Utmify Ad|id::fbclid)
-    const utmContent = normalizedOrder.trackingParams.utm_content;
-    if (!sessionData.fbc && utmContent && utmContent.includes("::")) {
-      const parts = utmContent.split("::");
+    const magicUtmContent = normalizedOrder.trackingParams.utm_content;
+    if (!sessionData.fbc && magicUtmContent && magicUtmContent.includes("::")) {
+      const parts = magicUtmContent.split("::");
       for (const p of parts) {
         if (p.length > 40 && /^[a-zA-Z0-9_\-]+$/.test(p)) {
           sessionData.fbc = `fb.1.${Date.now()}.${p}`;
