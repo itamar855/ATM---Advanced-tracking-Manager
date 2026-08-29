@@ -35,6 +35,8 @@ import {
   Building2
 } from "lucide-react";
 
+import UtmBuilderPage from "../../utms/page";
+
 interface AdAccount {
   id: string;
   accountId: string;
@@ -938,6 +940,13 @@ function IntegrationsContent() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── ABA 2.5: UTMs ───────────────────────────────────────── */}
+      {activeTab === "utms" && (
+        <div className="animate-fade-in pt-4">
+          <UtmBuilderPage />
         </div>
       )}
 

@@ -40,7 +40,6 @@ const dashboardItems: NavItem[] = [
   { label: "Meta Ads", href: "/dashboard/campaigns", icon: BarChart3, color: "text-blue-400" },
   { label: "Eventos CAPI", href: "/dashboard/events", icon: Activity, color: "text-emerald-400" },
   { label: "Pedidos & Vendas", href: "/dashboard/orders", icon: ShoppingCart },
-  { label: "Construtor UTMs", href: "/dashboard/utms", icon: Tag },
   { label: "Integrações", href: "/dashboard/settings/integrations", icon: Plug },
   { label: "Custos & Taxas", href: "/dashboard/settings/costs", icon: DollarSign },
   { label: "Health Score", href: "/dashboard/health", icon: HeartPulse },
