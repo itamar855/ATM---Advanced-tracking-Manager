@@ -76,7 +76,7 @@ function IntegrationsContent() {
 
   // Meta Accordion states
   const [metaExpanded, setMetaExpanded] = useState(true);
-  const [accountsExpanded, setAccountsExpanded] = useState(true);
+  const [accountsExpanded, setAccountsExpanded] = useState(false);
   const [expandedProfiles, setExpandedProfiles] = useState<Record<string, boolean>>({
     "prof-1": true,
     "prof-2": false,
