@@ -180,13 +180,14 @@ function IntegrationsContent() {
   const vegaWebhookUrl = `${host}/api/v1/webhook/vega/${storeId}`;
   const zedyWebhookUrl = `${host}/api/v1/webhook/zedy/${storeId}`;
 
-  const installSnippet = `<!-- ATM Pixel v4.3 — Cole antes de </head> no theme.liquid -->
+  const installSnippet = `<!-- ATM Pixel v4.4 — Cole antes de </head> no theme.liquid -->
 <script>
   window.__ATM_CTX__ = {
     shop: { domain: {{ shop.permanent_domain | json }}, currency: {{ shop.currency | json }} },
     template: {{ template.name | default: template | json }},
     customer: {% if customer %}{ email: {{ customer.email | json }}, phone: {{ customer.phone | default: '' | json }}, firstName: {{ customer.first_name | json }}, lastName: {{ customer.last_name | json }}, externalId: {{ customer.id | json }} }{% else %}null{% endif %},
-    product: {% if product %}{ id: {{ product.id | json }}, variantId: {{ product.selected_or_first_available_variant.id | default: product.variants.first.id | json }}, title: {{ product.title | json }}, price: {{ product.selected_or_first_available_variant.price | default: product.price | divided_by: 100.0 }} }{% else %}null{% endif %}
+    product: {% if product %}{ id: {{ product.id | json }}, variantId: {{ product.selected_or_first_available_variant.id | default: product.variants.first.id | json }}, title: {{ product.title | json }}, price: {{ product.selected_or_first_available_variant.price | default: product.price | divided_by: 100.0 }} }{% else %}null{% endif %},
+    cart: {% if cart %}{ total_price: {{ cart.total_price | default: 0 }}, item_count: {{ cart.item_count | default: 0 }}, items: [ {% for item in cart.items %}{ id: {{ item.product_id | json }}, variant_id: {{ item.variant_id | json }}, price: {{ item.price | default: 0 }}, quantity: {{ item.quantity | default: 0 }} }{% unless forloop.last %},{% endunless %}{% endfor %} ] }{% else %}null{% endif %}
   };
 </script>
 <script src="${host}/api/v1/pixel/{{ shop.permanent_domain }}/script.js" defer></script>`;
