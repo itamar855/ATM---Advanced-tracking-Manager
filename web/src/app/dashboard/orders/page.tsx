@@ -59,6 +59,7 @@ export default function OrdersPage() {
 
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [syncingZedy, setSyncingZedy] = useState(false);
+  const [syncingShopify, setSyncingShopify] = useState(false);
   const [jsonInput, setJsonInput] = useState("");
   const [syncFeedback, setSyncFeedback] = useState("");
 
@@ -92,6 +93,33 @@ export default function OrdersPage() {
       setSyncFeedback(`✗ ${e.message || "Erro de conexão"}`);
     } finally {
       setSyncingZedy(false);
+    }
+  };
+
+  const handleSyncShopify = async (resetToday = false) => {
+    setSyncingShopify(true);
+    setSyncFeedback("");
+    try {
+      const res = await fetch("/api/v1/sync/shopify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reset_today: resetToday }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSyncFeedback(`✓ ${data.message}`);
+        loadOrders(true);
+        setTimeout(() => {
+          setSyncFeedback("");
+          setSyncModalOpen(false);
+        }, 3500);
+      } else {
+        setSyncFeedback(`✗ ${data.error || "Erro ao sincronizar"}`);
+      }
+    } catch (e: any) {
+      setSyncFeedback(`✗ ${e.message || "Erro de conexão"}`);
+    } finally {
+      setSyncingShopify(false);
     }
   };
 
@@ -174,7 +202,7 @@ export default function OrdersPage() {
           <div className="bg-[#11141E] border border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                ⚡ Sincronizar Pedidos do Zedy Checkout
+                ⚡ Sincronizar Pedidos
               </h3>
               <button
                 onClick={() => setSyncModalOpen(false)}
@@ -195,26 +223,51 @@ export default function OrdersPage() {
             )}
 
             {/* Opção 1: Sync Automático via Token */}
-            <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2 opacity-60">
+            <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2 opacity-60 hidden">
               <span className="text-xs font-semibold text-zinc-200 block">Opção 1: Sincronização Direta via API (Desativada)</span>
               <p className="text-[11px] text-zinc-500">
                 A Zedy bloqueia conexões diretas por requerer autenticação de usuário (Clerk). Por favor, utilize a Opção 2 exportando os pedidos do seu painel.
               </p>
+            </div>
+
+            {/* Opção 3 (Agora Opção 1 Principal): Sincronizar via Shopify */}
+            <div className="p-3.5 rounded-xl bg-blue-900/10 border border-blue-500/30 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-blue-400 block">Opção 1: Sincronização Automática (Shopify API)</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-bold">Recomendado</span>
+              </div>
+              <p className="text-[11px] text-zinc-500">
+                Como a Shopify é sua fonte da verdade, nós podemos buscar todos os pedidos pagos diretamente nela sem bloqueios!
+                <br/><b>Requisito:</b> O Token Admin (shpat_...) deve estar configurado na aba Integrações.
+              </p>
               <div className="flex gap-2 mt-3">
                 <button
-                  disabled={true}
-                  className="flex-1 py-2 px-3 rounded-lg bg-zinc-800 text-zinc-500 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-not-allowed"
+                  onClick={() => handleSyncShopify(false)}
+                  disabled={syncingShopify}
+                  className="flex-1 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                 >
-                  <RotateCw size={13} />
-                  <span>Indisponível Temporariamente</span>
+                  <RotateCw size={13} className={syncingShopify ? "animate-spin" : ""} />
+                  <span>{syncingShopify ? "Buscando..." : "Sincronizar Pedidos Recentes"}</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (window.confirm("Isso apagará todas as vendas registradas HOJE e fará uma importação limpa direto da Shopify. Tem certeza?")) {
+                      handleSyncShopify(true);
+                    }
+                  }}
+                  disabled={syncingShopify}
+                  title="Apagar vendas de hoje e ressincronizar do zero"
+                  className="py-2 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 font-bold text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                >
+                  Resetar Hoje
                 </button>
               </div>
             </div>
 
             {/* Opção 2: Colar JSON / Array de Pedidos */}
             <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2">
-              <span className="text-xs font-semibold text-zinc-200 block">Opção 2: Importar JSON Exportado da Zedy</span>
-              <p className="text-[11px] text-zinc-500">No painel da Zedy, exporte seus pedidos recentes, cole o conteúdo do arquivo JSON abaixo e clique em importar:</p>
+              <span className="text-xs font-semibold text-zinc-200 block">Opção 2: Importar JSON Exportado (Zedy)</span>
+              <p className="text-[11px] text-zinc-500">Exporte os pedidos recentes, cole o conteúdo JSON abaixo e clique em importar:</p>
               <textarea
                 value={jsonInput}
                 onChange={(e) => setJsonInput(e.target.value)}
@@ -233,12 +286,12 @@ export default function OrdersPage() {
                 </button>
                 <button
                   onClick={() => {
-                    if (window.confirm("Isso apagará todas as vendas Zedy registradas HOJE e substituirá APENAS pelas vendas no JSON colado acima. Tem certeza?")) {
-                      handleSyncZedy("reset_auto"); // We'll modify handleSyncZedy to handle json with reset
+                    if (window.confirm("Isso apagará todas as vendas registradas HOJE e substituirá APENAS pelas vendas no JSON colado acima. Tem certeza?")) {
+                      handleSyncZedy("reset_auto");
                     }
                   }}
                   disabled={syncingZedy || !jsonInput.trim()}
-                  title="Apagar webhooks duplicados de hoje e substituir por este JSON"
+                  title="Apagar vendas de hoje e substituir por este JSON"
                   className="py-2 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 font-bold text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-40"
                 >
                   Resetar Hoje e Importar

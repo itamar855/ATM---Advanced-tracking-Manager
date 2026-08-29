@@ -16,10 +16,14 @@ export async function POST(request: NextRequest) {
 
     let providedOrders: any[] = [];
     let resetToday = false;
+    let bodyToken = "";
     try {
       const body = await request.json();
       if (body?.reset_today) {
         resetToday = true;
+      }
+      if (body?.token) {
+        bodyToken = body.token;
       }
       if (Array.isArray(body)) {
         providedOrders = body;
@@ -45,6 +49,7 @@ export async function POST(request: NextRequest) {
     const metaIntegration = integrations?.find((i) => i.platform === "meta");
 
     let token =
+      bodyToken ||
       zedyIntegration?.access_token_enc ||
       zedyIntegration?.config?.zedy_api_token ||
       metaIntegration?.config?.zedy_api_token ||

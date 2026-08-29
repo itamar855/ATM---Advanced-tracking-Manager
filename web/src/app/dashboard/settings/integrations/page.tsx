@@ -161,9 +161,12 @@ function IntegrationsContent() {
 
   // Zedy Integration
   const [zedyToken, setZedyToken] = useState("zdy_5c8e40e58c6649fe9f02e43f561a70e12de18e9c89d14a89b3f6b633d0fc0066");
+  const [shopifyToken, setShopifyToken] = useState("");
   const [zedyConnected, setZedyConnected] = useState(true);
   const [syncingZedy, setSyncingZedy] = useState(false);
+  const [syncingShopify, setSyncingShopify] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
+  const [showShopifyHelp, setShowShopifyHelp] = useState(false);
 
   const storeId = "dckb5g-7d";
   const host =
@@ -238,6 +241,33 @@ function IntegrationsContent() {
       alert("Erro na requisição: " + e.message);
     } finally {
       setSyncingZedy(false);
+      setTimeout(() => setSaveSuccessMsg(""), 6000);
+    }
+  };
+
+  const handleSaveShopifyToken = async () => {
+    if (!shopifyToken) {
+      alert("Token da Shopify não configurado.");
+      return;
+    }
+    setSyncingShopify(true);
+    setSaveSuccessMsg("");
+    try {
+      const res = await fetch("/api/v1/settings/credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ store_id: activeStore.id, shopify_api_key: shopifyToken })
+      });
+      const data = await res.json();
+      if (res.ok && data.ok !== false) {
+        setSaveSuccessMsg("Token do Shopify salvo com sucesso!");
+      } else {
+        alert("Erro ao salvar: " + (data.error || "Desconhecido"));
+      }
+    } catch (e: any) {
+      alert("Erro na requisição: " + e.message);
+    } finally {
+      setSyncingShopify(false);
       setTimeout(() => setSaveSuccessMsg(""), 6000);
     }
   };
@@ -347,7 +377,7 @@ function IntegrationsContent() {
     }
   };
 
-  const handleCopy = (text: string, type: "webhook" | "zedy" | "snippet") => {
+  const handleCopy = (text: string, type: "webhook" | "zedy" | "snippet" | "shopify") => {
     navigator.clipboard.writeText(text);
     if (type === "webhook") {
       setCopiedWebhook(true);
@@ -355,6 +385,9 @@ function IntegrationsContent() {
     } else if (type === "zedy") {
       setCopiedZedy(true);
       setTimeout(() => setCopiedZedy(false), 2000);
+    } else if (type === "shopify") {
+      setCopiedShopify(true);
+      setTimeout(() => setCopiedShopify(false), 2000);
     } else {
       setCopiedSnippet(true);
       setTimeout(() => setCopiedSnippet(false), 2000);
@@ -809,7 +842,73 @@ function IntegrationsContent() {
             </div>
           </div>
 
-          {/* Vega Checkout Card */}
+          {/* Shopify Custom App Card */}
+          <div className="rounded-2xl border border-zinc-800/80 bg-[#0E1118] p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white">
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M21.2 16.5c-1.3 4.1-5.1 5.4-8.8 5.4-3.6 0-7.3-1.4-8.7-5.4C3 14 3.7 9.8 4 8c.2-.9.8-1.5 1.7-1.7l5.9-1c.6-.1 1.2.2 1.5.8.4.8.4 1.7 0 2.5l-2.4 4c-.1.2-.2.5-.2.8.2.8 1.4 1.2 2.2 1.3 1.7.2 3.6.4 5.3.6 1.4.2 2.7 1.3 2.9 2.7.2 1.2.1 2.3-.3 3.5zm-5.7-12c-1.5 0-2.8 1.1-3.2 2.5l-1.3 4c-.1.3 0 .6.2.8l2.2 2c.6.6 1.6.6 2.3.1l2.4-2.1c.4-.3.6-.8.6-1.3l-.2-4c-.1-1.1-1.1-2-2.2-2h-.8zM8.8 5.5l5.2-.9c.7-.1 1.3.4 1.4 1.1l.2 3.8-2.1 1.8-1.5-3.3c-.6-1.3-1.8-2.2-3.2-2.5zm11.7 7.7l-3.3-.4c-1.7-.2-3.4-.4-5.1-.6-.5-.1-1-.2-1.3-.6l-2-1.8c-.3-.3-.4-.7-.3-1.1L9 6.2C8.7 4.9 9.6 3.7 11 3.5l5.9-1c1.5-.3 2.9.7 3.2 2.2l.6 6.8c0 .6-.2 1.1-.6 1.5z"/></svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    Shopify Admin API <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">Recomendado</span>
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">Permite puxar pedidos automaticamente da Shopify como Fonte da Verdade.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-zinc-300">Token de Acesso da API Admin (shpat_...)</label>
+                  <button onClick={() => setShowShopifyHelp(!showShopifyHelp)} className="text-xs text-blue-400 hover:text-blue-300 font-semibold underline">
+                    Como gerar este Token?
+                  </button>
+                </div>
+                
+                {showShopifyHelp && (
+                  <div className="mt-3 p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-zinc-300 space-y-2 leading-relaxed">
+                    <p className="font-bold text-blue-400">Passo a passo para gerar o Token na Shopify:</p>
+                    <ol className="list-decimal pl-4 space-y-1">
+                      <li>Acesse o painel da sua Shopify e vá em <b>Configurações &gt; Apps e canais de vendas</b>.</li>
+                      <li>Clique em <b>Desenvolver apps</b> (ou Custom Apps) e depois em <b>Criar um app</b>.</li>
+                      <li>Dê o nome de "ATM Tracking" e clique em Criar.</li>
+                      <li>Vá na aba <b>Configuração</b>, encontre <b>Integração da API do Admin</b> e clique em Configurar.</li>
+                      <li>Na lista de permissões, busque por "Orders" (Pedidos) e marque a caixinha <b>read_orders</b> (Ler pedidos).</li>
+                      <li>Clique em Salvar. Depois vá na aba <b>Credenciais da API</b> e clique em <b>Instalar app</b>.</li>
+                      <li>A Shopify vai revelar o <b>Token de acesso da API do Admin</b> apenas UMA VEZ. Ele começa com <code>shpat_</code>. Copie e cole abaixo!</li>
+                    </ol>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={shopifyToken}
+                    onChange={(e) => setShopifyToken(e.target.value)}
+                    placeholder="shpat_xxxxxxxxxxxxxxxxxxxxxxxx"
+                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono focus:outline-none focus:border-blue-500/50"
+                  />
+                  <button
+                    onClick={handleSaveShopifyToken}
+                    disabled={syncingShopify || !shopifyToken.trim()}
+                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                  >
+                    {syncingShopify ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                    Salvar Token
+                  </button>
+                </div>
+              </div>
+              
+              {saveSuccessMsg && saveSuccessMsg.includes("Shopify") && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2 text-emerald-400 text-xs font-bold">
+                  <CheckCircle2 size={16} />
+                  {saveSuccessMsg}
+                </div>
+              )}
+            </div>
+          </div>
           <div className="rounded-2xl border border-zinc-800/80 bg-[#0E1118] p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3.5">
