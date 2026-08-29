@@ -223,12 +223,11 @@ export async function POST(request: NextRequest) {
     if (!enrichedUserData.fbp && sessionData.fbp) enrichedUserData.fbp = sessionData.fbp;
     if (!enrichedUserData.fbc && sessionData.fbc) enrichedUserData.fbc = sessionData.fbc;
 
-    // 4.1 Para Purchase e InitiateCheckout: enriquecimento reverso de PII
-    // Busca email/telefone em eventos anteriores da mesma sessão (IC, ATC)
-    const isPurchase = event_name === "Purchase";
-    const isIC = event_name === "InitiateCheckout";
+    // 4.1 Enriquecimento reverso de PII para TODOS os eventos
+    // Busca email/telefone/nome em eventos anteriores da mesma sessão (IC, ATC)
+    // para aumentar a qualidade de correspondência (EMQ) em eventos de topo de funil (PageView)
 
-    if ((isPurchase || isIC) && (!enrichedUserData.email || !enrichedUserData.phone)) {
+    if (!enrichedUserData.email || !enrichedUserData.phone) {
       try {
         // Busca em ICs anteriores desta sessão/fbp com dados de contato
         let prevQuery = supabase

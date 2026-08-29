@@ -44,6 +44,7 @@ const dashboardItems: NavItem[] = [
   { label: "Integrações", href: "/dashboard/settings/integrations", icon: Plug },
   { label: "Custos & Taxas", href: "/dashboard/settings/costs", icon: DollarSign },
   { label: "Health Score", href: "/dashboard/health", icon: HeartPulse },
+  { label: "Diagnósticos", href: "/dashboard/diagnostics", icon: AlertTriangle },
   { label: "Plano & Assinatura", href: "/dashboard/settings/billing", icon: CreditCard },
 ];
 
