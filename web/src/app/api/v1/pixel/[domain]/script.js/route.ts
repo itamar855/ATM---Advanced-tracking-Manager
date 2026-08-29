@@ -530,7 +530,7 @@ function generateATMScript(storeId: string, apiBase: string): string {
 
   // ── Purchase Universal Detector (Thank You / Order Confirmation) ────────
   var isThankYouPage =
-    /thank_you|orders\/|order-received|concluida|sucesso|pedido-confirmado/.test(_path) ||
+    /thank_you|orders\\/|order-received|concluida|sucesso|pedido-confirmado/.test(_path) ||
     /thank_you|order_id|order=|checkout_id/.test(window.location.search);
 
   var detectedOrderId =
