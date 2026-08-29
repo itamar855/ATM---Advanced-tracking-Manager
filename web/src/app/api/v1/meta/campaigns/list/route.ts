@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
 import { getUsdBrlRate, convertToBrl } from "@/lib/currency";
 
@@ -21,12 +21,18 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const datePreset = searchParams.get("date_preset") || "today";
 
-    const supabase = createAdminClient();
+    const storeId = searchParams.get("store_id");
+    if (!storeId) {
+      return NextResponse.json({ ok: false, error: "store_id is required" }, { status: 400 });
+    }
 
-    // 1. Busca token mestre da Meta — integração ativa mais recente
+    const supabase = await createClient();
+
+    // 1. Busca token mestre da Meta — integração ativa desta loja
     const { data: integration } = await supabase
       .from("integrations")
       .select("*")
+      .eq("store_id", storeId)
       .eq("platform", "meta")
       .eq("status", "active")
       .order("updated_at", { ascending: false })
@@ -135,10 +141,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 4. Busca eventos reais de conversão do banco no período selecionado
+    // 5. Busca Vendas Aprovadas desta loja
     const { data: dbEvents } = await supabase
       .from("events")
       .select("id, event_name, meta_response, created_at")
+      .eq("store_id", storeId)
       .in("event_name", ["Purchase", "InitiateCheckout"])
       .eq("status", "accepted")
       .gte("created_at", startDate.toISOString())

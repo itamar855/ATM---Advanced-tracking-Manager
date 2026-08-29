@@ -35,6 +35,7 @@ import {
   Building2
 } from "lucide-react";
 
+import { useStore } from "@/contexts/StoreContext";
 import UtmBuilderPage from "../../utms/page";
 
 interface AdAccount {
@@ -66,6 +67,7 @@ type TabKey = "anuncios" | "webhooks" | "utms" | "pixel" | "whatsapp" | "testes"
 
 function IntegrationsContent() {
   const searchParams = useSearchParams();
+  const { activeStore } = useStore();
 
   const [activeTab, setActiveTab] = useState<TabKey>("anuncios");
   const [loading, setLoading] = useState(false);
@@ -171,7 +173,7 @@ function IntegrationsContent() {
   const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
   const [showShopifyHelp, setShowShopifyHelp] = useState(false);
 
-  const storeId = "dckb5g-7d";
+  const storeId = activeStore?.id || "";
   const host =
     typeof window !== "undefined" && window.location.origin && !window.location.origin.includes("localhost")
       ? window.location.origin.replace(/\/$/, "")
@@ -280,7 +282,7 @@ function IntegrationsContent() {
     // Carrega credenciais do servidor e contas reais da Meta
     async function loadMetaCredentials() {
       try {
-        const accRes = await fetch("/api/v1/meta/accounts");
+        const accRes = await fetch(`/api/v1/meta/accounts?store_id=${activeStore?.id}`);
         if (accRes.ok) {
           const accData = await accRes.json();
           if (accData.ok) {
@@ -340,7 +342,7 @@ function IntegrationsContent() {
       }
     }
     loadMetaCredentials();
-  }, []);
+  }, [activeStore]);
 
   const toggleAccountSelection = (accId: string) => {
     setSelectedAccounts((prev) =>

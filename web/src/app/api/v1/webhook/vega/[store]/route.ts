@@ -245,6 +245,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
+    // Recuperação Mágica de fbc via utm_content (ex: formato Utmify Ad|id::fbclid)
+    const utmContent = normalizedOrder.trackingParams.utm_content;
+    if (!sessionData.fbc && utmContent && utmContent.includes("::")) {
+      const parts = utmContent.split("::");
+      for (const p of parts) {
+        if (p.length > 40 && /^[a-zA-Z0-9_\-]+$/.test(p)) {
+          sessionData.fbc = `fb.1.${Date.now()}.${p}`;
+          break;
+        }
+      }
+    }
+
     // Busca Reversa por Email ou Telefone no histórico de sessões se fbp/fbc ainda não foi encontrado
     if (!sessionData.fbp && normalizedOrder.customer.email) {
       try {

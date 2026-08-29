@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
 import { getUsdBrlRate, convertToBrl } from "@/lib/currency";
 
@@ -87,16 +87,22 @@ function resolveDateRange(datePreset: string, checkoutStartedAt?: string | null)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const storeId = searchParams.get("store_id");
     const datePreset = searchParams.get("date_preset") || "today";
     const selectedAccountId = searchParams.get("ad_account_id") || "all";
+    
+    if (!storeId) {
+      return NextResponse.json({ error: "store_id is required" }, { status: 400 });
+    }
 
-    const supabase = createAdminClient();
+    const supabase = await createClient();
     const usdBrlRate = await getUsdBrlRate();
 
     // 1. Busca integração Meta ativa
     const { data: integration } = await supabase
       .from("integrations")
       .select("*")
+      .eq("store_id", storeId)
       .eq("platform", "meta")
       .eq("status", "active")
       .order("updated_at", { ascending: false })
@@ -229,6 +235,7 @@ export async function GET(request: NextRequest) {
     const { data: allPurchases } = await supabase
       .from("events")
       .select("id, event_name, meta_response, created_at")
+      .eq("store_id", storeId)
       .eq("event_name", "Purchase")
       .eq("status", "accepted")
       .gte("created_at", effectiveStartDate)
@@ -239,6 +246,7 @@ export async function GET(request: NextRequest) {
     const { data: pendingPurchases } = await supabase
       .from("events")
       .select("meta_response")
+      .eq("store_id", storeId)
       .eq("event_name", "Purchase")
       .eq("status", "pending")
       .gte("created_at", effectiveStartDate)

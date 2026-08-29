@@ -17,12 +17,14 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { HealthGauge } from "@/components/dashboard/HealthGauge";
+import { useStore } from "@/contexts/StoreContext";
 
 export default function HealthPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [healthData, setHealthData] = useState<any>(null);
   const [apiError, setApiError] = useState<string | null>(null);
+  const { activeStore } = useStore();
 
   // Lista de contas disponíveis (carregadas da integração salva)
   const [availableAccounts, setAvailableAccounts] = useState<string[]>([]);
@@ -31,9 +33,10 @@ export default function HealthPage() {
 
   // Carrega lista de contas disponíveis na integração salva
   async function loadAvailableAccounts() {
+    if (!activeStore) return;
     setLoadingAccounts(true);
     try {
-      const res = await fetch("/api/v1/meta/accounts");
+      const res = await fetch(`/api/v1/meta/accounts?store_id=${activeStore.id}`);
       const data = await res.json();
       if (data.ok && Array.isArray(data.selectedAccountIds) && data.selectedAccountIds.length > 0) {
         setAvailableAccounts(data.selectedAccountIds);
@@ -62,7 +65,7 @@ export default function HealthPage() {
 
     setApiError(null);
     try {
-      const params = new URLSearchParams({ ad_account_id: accToUse });
+      const params = new URLSearchParams({ ad_account_id: accToUse, store_id: activeStore?.id || "" });
       const response = await fetch(`/api/v1/meta/account-health?${params.toString()}`);
       const result = await response.json();
 
@@ -82,12 +85,9 @@ export default function HealthPage() {
 
   // Na primeira carga, busca a lista de contas e inicia análise
   useEffect(() => {
-    async function init() {
-      await loadAvailableAccounts();
-      setLoading(false);
-    }
-    init();
-  }, []);
+    loadAvailableAccounts();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStore]);
 
   // Quando a conta selecionada muda, recarrega o health score
   useEffect(() => {

@@ -11,11 +11,13 @@ import {
   AdsetItem,
   AdItem,
 } from "@/components/campaigns/UtmifyCampaignManager";
+import { useStore } from "@/contexts/StoreContext";
 
 function CampaignsContent() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [datePreset, setDatePreset] = useState("today");
+  const { activeStore } = useStore();
 
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
@@ -25,12 +27,13 @@ function CampaignsContent() {
   const [apiError, setApiError] = useState<string | null>(null);
 
   const loadData = async (silent = false) => {
+    if (!activeStore) return;
     if (!silent) setLoading(true);
     else setIsRefreshing(true);
     setApiError(null);
 
     try {
-      const res = await fetch(`/api/v1/meta/campaigns/list?date_preset=${datePreset}`, {
+      const res = await fetch(`/api/v1/meta/campaigns/list?date_preset=${datePreset}&store_id=${activeStore.id}`, {
         cache: "no-store",
       });
 
@@ -61,16 +64,14 @@ function CampaignsContent() {
 
   useEffect(() => {
     loadData(false);
-  }, [datePreset]);
+  }, [datePreset, activeStore]);
 
-  // Polling em tempo real a cada 15 segundos
   useEffect(() => {
     const interval = setInterval(() => {
       loadData(true);
-    }, 15000);
-
+    }, 20000); // 20s
     return () => clearInterval(interval);
-  }, [datePreset]);
+  }, [datePreset, activeStore]);
 
   if (loading && accounts.length === 0) {
     return (

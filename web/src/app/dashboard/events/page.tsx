@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import { Activity, ShieldCheck, Database, Loader2, Users, ShoppingCart, RefreshCw, Zap } from "lucide-react";
 import { EventTimeline, EventItem } from "@/components/dashboard/EventTimeline";
+import { useStore } from "@/contexts/StoreContext";
 
 export default function EventsPage() {
+  const { activeStore } = useStore();
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [liveStats, setLiveStats] = useState({ onlineNow: 1, inCartNow: 0 });
@@ -17,12 +19,13 @@ export default function EventsPage() {
     let active = true;
 
     async function loadEvents(silent = false) {
+      if (!activeStore) return;
       if (!silent && events.length === 0) setLoading(true);
       try {
         const ts = Date.now();
         const [eventsRes, liveRes] = await Promise.all([
-          fetch(`/api/v1/events/list?t=${ts}`, { cache: "no-store" }),
-          fetch(`/api/v1/live?t=${ts}`, { cache: "no-store" }),
+          fetch(`/api/v1/events/list?t=${ts}&store_id=${activeStore.id}`, { cache: "no-store" }),
+          fetch(`/api/v1/live?t=${ts}&store_id=${activeStore.id}`, { cache: "no-store" }),
         ]);
 
         if (eventsRes.ok) {
@@ -61,7 +64,7 @@ export default function EventsPage() {
       clearInterval(interval);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeStore]);
 
   const handleFlushQueue = async () => {
     setFlushingQueue(true);
@@ -74,7 +77,7 @@ export default function EventsPage() {
         setTimeout(() => setQueueMsg(""), 5000);
         // Recarrega os eventos imediatamente
         try {
-          const evRes = await fetch("/api/v1/events/list", { cache: "no-store" });
+          const evRes = await fetch(`/api/v1/events/list?store_id=${activeStore?.id}`, { cache: "no-store" });
           const evData = await evRes.json();
           if (evData.ok && Array.isArray(evData.events)) {
             setEvents(evData.events);

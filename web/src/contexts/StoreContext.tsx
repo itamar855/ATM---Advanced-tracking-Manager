@@ -49,7 +49,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // Retoma loja salva no localStorage
         const savedId = typeof window !== "undefined" ? localStorage.getItem("atm_active_store_id") : null;
         const saved = savedId ? data.find((s) => s.id === savedId) : null;
-        setActiveStoreState(saved || data[0]);
+        const initialStore = saved || data[0];
+        setActiveStoreState(initialStore);
+        if (typeof window !== "undefined") {
+          document.cookie = `atm_active_store_id=${initialStore.id}; path=/; max-age=31536000; SameSite=Lax`;
+        }
       }
     } catch (err) {
       console.error("[StoreContext]", err);
@@ -62,6 +66,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setActiveStoreState(store);
     if (typeof window !== "undefined") {
       localStorage.setItem("atm_active_store_id", store.id);
+      document.cookie = `atm_active_store_id=${store.id}; path=/; max-age=31536000; SameSite=Lax`;
     }
   }
 

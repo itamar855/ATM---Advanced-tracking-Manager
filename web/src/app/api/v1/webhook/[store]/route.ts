@@ -82,6 +82,40 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
+    // 4.1 Busca Reversa por Email/Telefone caso não tenha achado a sessão ou falte dados cruciais
+    const customerEmail = payload.customer?.email || payload.email;
+    if ((!sessionData.fbp || !sessionData.fbc) && customerEmail) {
+      try {
+        const { data: revSession } = await supabase
+          .from("sessions")
+          .select("fbp, fbc, client_ip, client_user_agent")
+          .eq("store_id", storeId)
+          .ilike("event_source_url", `%${customerEmail}%`)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (revSession) {
+          if (!sessionData.fbp) sessionData.fbp = revSession.fbp;
+          if (!sessionData.fbc) sessionData.fbc = revSession.fbc;
+          if (!sessionData.client_ip) sessionData.client_ip = revSession.client_ip;
+          if (!sessionData.client_user_agent) sessionData.client_user_agent = revSession.client_user_agent;
+        }
+      } catch (err) {}
+    }
+
+    // 4.2 Recuperação Mágica de fbc via utm_content (ex: formato Utmify Ad|id::fbclid)
+    const utmContent = payload.utm_content || "";
+    if (!sessionData.fbc && utmContent && utmContent.includes("::")) {
+      const parts = utmContent.split("::");
+      for (const p of parts) {
+        if (p.length > 40 && /^[a-zA-Z0-9_\-]+$/.test(p)) {
+          sessionData.fbc = `fb.1.${Date.now()}.${p}`;
+          break;
+        }
+      }
+    }
+
     // 5. Normalizar o payload do webhook do Shopify
     const firstProduct = payload.line_items?.[0] || {};
     const normalizedOrder: NormalizedOrder = {

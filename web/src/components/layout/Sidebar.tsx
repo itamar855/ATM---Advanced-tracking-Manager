@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { useStore } from "@/contexts/StoreContext";
 
 interface NavItem {
   label: string;
@@ -50,7 +51,8 @@ const dashboardItems: NavItem[] = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const [activeOffer, setActiveOffer] = useState("Oferta BR - Gaiolas 🚀");
+  const { stores, activeStore, setActiveStore } = useStore();
+  const [storeMenuOpen, setStoreMenuOpen] = useState(false);
 
   const handleLogout = async () => {
     try {
@@ -95,16 +97,55 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* Seletor de Ofertas / Dashboards */}
-      {!collapsed && (
-        <div className="px-3 pt-3 pb-1">
-          <div className="bg-[#141824] border border-zinc-800/80 rounded-xl p-2.5 flex items-center justify-between text-xs text-zinc-300 cursor-pointer hover:border-zinc-700 transition-colors">
+      {/* Seletor de Lojas / Dashboards */}
+      {!collapsed && activeStore && (
+        <div className="px-3 pt-3 pb-1 relative">
+          <button 
+            onClick={() => setStoreMenuOpen(!storeMenuOpen)}
+            className="w-full bg-[#141824] border border-zinc-800/80 rounded-xl p-2.5 flex items-center justify-between text-xs text-zinc-300 cursor-pointer hover:border-zinc-700 transition-colors"
+          >
             <div className="flex items-center gap-2 truncate">
               <FolderTree size={14} className="text-blue-400 shrink-0" />
-              <span className="font-bold truncate text-[11px] text-white">{activeOffer}</span>
+              <span className="font-bold truncate text-[11px] text-white">
+                {activeStore.name || activeStore.shopify_domain || "Minha Loja"}
+              </span>
             </div>
-            <ChevronDown size={12} className="text-zinc-500 shrink-0" />
-          </div>
+            <ChevronDown size={12} className={cn("text-zinc-500 shrink-0 transition-transform", storeMenuOpen && "rotate-180")} />
+          </button>
+
+          {/* Store Dropdown */}
+          {storeMenuOpen && (
+            <div className="absolute left-3 right-3 top-full mt-1 bg-[#161B26] border border-zinc-800/80 rounded-xl shadow-xl z-50 py-1.5 overflow-hidden">
+              <div className="px-3 pb-1.5 pt-1 border-b border-zinc-800/80">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Dashboards (Lojas)</p>
+              </div>
+              <div className="max-h-48 overflow-y-auto pt-1">
+                {stores.map((store) => (
+                  <button
+                    key={store.id}
+                    onClick={() => { setActiveStore(store); setStoreMenuOpen(false); }}
+                    className={cn(
+                      "w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-zinc-800/50 mx-1 w-[calc(100%-8px)] rounded-lg",
+                      activeStore.id === store.id && "bg-blue-500/10"
+                    )}
+                  >
+                    <div className={cn(
+                      "w-6 h-6 rounded-md flex items-center justify-center text-[8px] font-bold shrink-0 text-white",
+                      activeStore.id === store.id ? "bg-blue-600" : "bg-zinc-800"
+                    )}>
+                      {store.name?.substring(0, 2).toUpperCase() || "ST"}
+                    </div>
+                    <span className={cn(
+                      "text-xs truncate font-medium",
+                      activeStore.id === store.id ? "text-blue-400" : "text-zinc-300"
+                    )}>
+                      {store.name || store.shopify_domain}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

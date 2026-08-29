@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useStore } from "@/contexts/StoreContext";
 import {
   ShoppingCart,
   DollarSign,
@@ -23,13 +24,15 @@ export default function OrdersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("today");
+  const { activeStore } = useStore();
 
   const loadOrders = async (silent = false) => {
+    if (!activeStore) return;
     if (!silent) setLoading(true);
     else setIsRefreshing(true);
 
     try {
-      const res = await fetch("/api/v1/orders/list", { cache: "no-store" });
+      const res = await fetch(`/api/v1/orders/list?store_id=${activeStore.id}`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         if (data.ok && Array.isArray(data.orders)) {
@@ -46,7 +49,7 @@ export default function OrdersPage() {
 
   useEffect(() => {
     loadOrders(false);
-  }, []);
+  }, [activeStore]);
 
   // Polling em tempo real a cada 10s
   useEffect(() => {
@@ -55,7 +58,7 @@ export default function OrdersPage() {
     }, 10000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [activeStore]);
 
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [syncingZedy, setSyncingZedy] = useState(false);

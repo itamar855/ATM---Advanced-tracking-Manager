@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
 import { getUsdBrlRate } from "@/lib/currency";
 
@@ -16,24 +16,26 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, level, action, value, accountCurrency } = body as {
+    const { id, level, action, value, accountCurrency, store_id } = body as {
       id: string;
       level: "campaign" | "adset" | "ad";
       action: "status" | "budget" | "duplicate" | "delete";
       value?: any;
       accountCurrency?: string;
+      store_id?: string;
     };
 
-    if (!id || !action) {
-      return NextResponse.json({ ok: false, error: "ID e action são obrigatórios" }, { status: 400 });
+    if (!id || !action || !store_id) {
+      return NextResponse.json({ ok: false, error: "ID, action e store_id são obrigatórios" }, { status: 400 });
     }
 
-    const supabase = createAdminClient();
+    const supabase = await createClient();
 
-    // 1. Busca token da Meta
+    // 1. Busca token da Meta da loja selecionada e que pertence a este usuário
     const { data: integration } = await supabase
       .from("integrations")
       .select("*")
+      .eq("store_id", store_id)
       .eq("platform", "meta")
       .order("updated_at", { ascending: false })
       .limit(1)

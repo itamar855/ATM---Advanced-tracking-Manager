@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { decrypt, encrypt } from "@/lib/encryption";
 
 export const dynamic = "force-dynamic";
@@ -21,15 +21,20 @@ export async function GET(request: NextRequest) {
     const rawToken = searchParams.get("token");
     const validateAccountId = searchParams.get("validate_account_id");
 
+    if (!storeId) {
+      return NextResponse.json({ ok: false, error: "store_id is required" }, { status: 400 });
+    }
+
     let accessToken = rawToken || "";
     let isFromDatabase = false;
 
-    const supabase = createAdminClient();
+    const supabase = await createClient();
 
     // 1. Busca token da integração caso não tenha sido enviado diretamente
     const { data: currentIntegration } = await supabase
       .from("integrations")
       .select("*")
+      .eq("store_id", storeId)
       .eq("platform", "meta")
       .order("updated_at", { ascending: false })
       .limit(1)
@@ -253,13 +258,17 @@ export async function POST(request: NextRequest) {
   try {
     const { store_id, access_token, profile_name, ad_account_ids, pixel_id, test_event_code } = await request.json();
 
-    const finalStoreId = store_id || "dckb5g-7d";
-    const supabase = createAdminClient();
+    if (!store_id) {
+      return NextResponse.json({ ok: false, error: "store_id is required" }, { status: 400 });
+    }
+
+    const supabase = await createClient();
 
     // 1. Busca integração existente para esta loja ou qualquer integração Meta ativa
     const { data: existing } = await supabase
       .from("integrations")
       .select("*")
+      .eq("store_id", store_id)
       .eq("platform", "meta")
       .order("updated_at", { ascending: false })
       .limit(1)
@@ -285,7 +294,7 @@ export async function POST(request: NextRequest) {
       .map((id: string) => (id.startsWith("act_") ? id : `act_${id}`));
 
     const integrationPayload = {
-      store_id: finalStoreId,
+      store_id: store_id,
       platform: "meta",
       pixel_id: pixel_id ? pixel_id.trim() : (existing?.pixel_id || "1104875232197441"),
       access_token_enc: finalToken,

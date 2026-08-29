@@ -163,6 +163,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (directIp) sessionData.client_ip = directIp;
     if (directUa) sessionData.client_user_agent = directUa;
 
+    // 4.1.5 Recuperação Mágica de fbc via utm_content (ex: formato Utmify Ad|id::fbclid)
+    if (!sessionData.fbc && utmContent && utmContent.includes("::")) {
+      const parts = utmContent.split("::");
+      for (const p of parts) {
+        if (p.length > 40 && /^[a-zA-Z0-9_\-]+$/.test(p)) {
+          sessionData.fbc = `fb.1.${Date.now()}.${p}`;
+          break;
+        }
+      }
+    }
+
     // 4.2 Busca por trackId na tabela sessions
     if (trackId) {
       const { data: dbSession } = await supabase

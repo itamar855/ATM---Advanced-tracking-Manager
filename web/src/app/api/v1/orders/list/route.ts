@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -9,11 +9,19 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createAdminClient();
+    const { searchParams } = new URL(request.url);
+    const storeId = searchParams.get("store_id");
+
+    if (!storeId) {
+      return NextResponse.json({ ok: false, error: "store_id is required", orders: [] }, { status: 400 });
+    }
+
+    const supabase = await createClient();
 
     const { data: events, error } = await supabase
       .from("events")
       .select("*")
+      .eq("store_id", storeId)
       .eq("event_name", "Purchase")
       .order("created_at", { ascending: false })
       .limit(300);

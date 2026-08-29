@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -9,27 +9,37 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createAdminClient();
+    const { searchParams } = new URL(request.url);
+    const storeId = searchParams.get("store_id");
+
+    if (!storeId) {
+      return NextResponse.json({ ok: false, error: "store_id is required" }, { status: 400 });
+    }
+
+    const supabase = await createClient();
 
     const now = Date.now();
     const fiveMinutesAgoIso = new Date(now - 5 * 60 * 1000).toISOString();
     const fifteenMinutesAgoIso = new Date(now - 15 * 60 * 1000).toISOString();
 
-    // 1. Busca sessões ativas nos últimos 5 minutos (via updated_at ou created_at)
+    // 1. Busca sessões ativas nos últimos 5 minutos (via updated_at ou created_at) desta loja
     const [{ data: updatedSessions }, { data: createdSessions }, { data: recentEvents }] = await Promise.all([
       supabase
         .from("sessions")
         .select("track_id, client_ip, updated_at")
+        .eq("store_id", storeId)
         .gte("updated_at", fiveMinutesAgoIso)
         .limit(500),
       supabase
         .from("sessions")
         .select("track_id, client_ip, created_at")
+        .eq("store_id", storeId)
         .gte("created_at", fiveMinutesAgoIso)
         .limit(500),
       supabase
         .from("events")
         .select("id, event_name, order_id, event_id, created_at, source")
+        .eq("store_id", storeId)
         .gte("created_at", fifteenMinutesAgoIso)
         .order("created_at", { ascending: false })
         .limit(500),

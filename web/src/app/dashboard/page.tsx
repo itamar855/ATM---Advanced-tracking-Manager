@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useStore } from "@/contexts/StoreContext";
 import {
   DollarSign,
   TrendingUp,
@@ -61,6 +62,7 @@ export default function DashboardResumoPage() {
   const [selectedAccountId, setSelectedAccountId] = useState("all");
   const [trafficSourceFilter, setTrafficSourceFilter] = useState("all");
   const [showBanner, setShowBanner] = useState(true);
+  const { activeStore } = useStore();
 
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     net_revenue: 3342.47,
@@ -99,12 +101,13 @@ export default function DashboardResumoPage() {
   const [usdBrlRate, setUsdBrlRate] = useState(5.1627);
 
   const loadData = async (silent = false) => {
+    if (!activeStore) return;
     if (!silent) setLoading(true);
     else setIsRefreshing(true);
 
     try {
       const res = await fetch(
-        `/api/v1/dashboard/metrics?date_preset=${datePreset}&ad_account_id=${selectedAccountId}`,
+        `/api/v1/dashboard/metrics?date_preset=${datePreset}&ad_account_id=${selectedAccountId}&store_id=${activeStore.id}`,
         { cache: "no-store" }
       );
       if (res.ok) {
@@ -127,7 +130,7 @@ export default function DashboardResumoPage() {
 
   useEffect(() => {
     loadData(false);
-  }, [datePreset, selectedAccountId]);
+  }, [datePreset, selectedAccountId, activeStore]);
 
   // Polling em tempo real a cada 15s
   useEffect(() => {
@@ -135,7 +138,7 @@ export default function DashboardResumoPage() {
       loadData(true);
     }, 15000);
     return () => clearInterval(interval);
-  }, [datePreset, selectedAccountId]);
+  }, [datePreset, selectedAccountId, activeStore]);
 
   const fmt = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 

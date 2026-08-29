@@ -23,6 +23,7 @@ import {
   SlidersHorizontal,
   DollarSign
 } from "lucide-react";
+import { useStore } from "@/contexts/StoreContext";
 
 export type TabType = "accounts" | "campaigns" | "adsets" | "ads";
 
@@ -141,6 +142,8 @@ export function UtmifyCampaignManager({
   isRefreshing = false,
   apiError = null,
 }: UtmifyCampaignManagerProps) {
+  const { activeStore } = useStore();
+
   // Estado da Aba Ativa
   const [activeTab, setActiveTab] = useState<TabType>("accounts");
 
@@ -202,6 +205,7 @@ export function UtmifyCampaignManager({
           level,
           action: "status",
           value: newStatus,
+          store_id: activeStore?.id,
         }),
       });
 
@@ -248,7 +252,8 @@ export function UtmifyCampaignManager({
           level: duplicateItemLevel,
           action: "duplicate",
           copies: copies,
-          newBudget: duplicateNewBudget ? Number(duplicateNewBudget) : null
+          newBudget: duplicateNewBudget ? Number(duplicateNewBudget) : null,
+          store_id: activeStore?.id,
         }),
       });
 
@@ -282,6 +287,7 @@ export function UtmifyCampaignManager({
           level,
           action: "budget",
           value: num,
+          store_id: activeStore?.id,
         }),
       });
 
