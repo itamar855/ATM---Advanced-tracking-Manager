@@ -185,6 +185,33 @@ function IntegrationsContent() {
 </script>
 <script src="${host}/api/v1/pixel/{{ shop.permanent_domain }}/script.js" defer></script>`;
 
+  const handleSyncZedy = async () => {
+    if (!zedyToken) {
+      alert("Token da Zedy não configurado.");
+      return;
+    }
+    setSyncingZedy(true);
+    setSaveSuccessMsg("");
+    try {
+      const res = await fetch("/api/v1/sync/zedy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: zedyToken })
+      });
+      const data = await res.json();
+      if (res.ok && data.ok !== false) {
+        setSaveSuccessMsg(`Sincronização concluída com sucesso! ${data.synced_count || 0} vendas sincronizadas.`);
+      } else {
+        alert("Erro na sincronização: " + (data.error || "Desconhecido"));
+      }
+    } catch (e: any) {
+      alert("Erro na requisição: " + e.message);
+    } finally {
+      setSyncingZedy(false);
+      setTimeout(() => setSaveSuccessMsg(""), 6000);
+    }
+  };
+
   useEffect(() => {
     // Carrega credenciais do servidor e contas reais da Meta
     async function loadMetaCredentials() {
@@ -694,23 +721,53 @@ function IntegrationsContent() {
               </div>
             </div>
 
-            <div className="space-y-3">
-              <label className="text-xs font-bold text-zinc-300">URL do Webhook Zedy</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={zedyWebhookUrl}
-                  className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono select-all"
-                />
-                <button
-                  onClick={() => handleCopy(zedyWebhookUrl, "zedy")}
-                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
-                >
-                  {copiedZedy ? <Check size={14} /> : <Copy size={14} />}
-                  {copiedZedy ? "Copiado!" : "Copiar URL"}
-                </button>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-zinc-300">URL do Webhook Zedy</label>
+                <div className="flex items-center gap-2 mt-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={zedyWebhookUrl}
+                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono select-all focus:outline-none"
+                  />
+                  <button
+                    onClick={() => handleCopy(zedyWebhookUrl, "zedy")}
+                    className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                  >
+                    {copiedZedy ? <Check size={14} /> : <Copy size={14} />}
+                    {copiedZedy ? "Copiado!" : "Copiar"}
+                  </button>
+                </div>
               </div>
+
+              <div>
+                <label className="text-xs font-bold text-zinc-300">API Token de Reconciliação (Zedy)</label>
+                <div className="flex items-center gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={zedyToken}
+                    onChange={(e) => setZedyToken(e.target.value)}
+                    placeholder="Cole seu Token da Zedy aqui"
+                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono focus:outline-none focus:border-emerald-500/50"
+                  />
+                  <button
+                    onClick={handleSyncZedy}
+                    disabled={syncingZedy}
+                    className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                  >
+                    {syncingZedy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    Sincronizar Pedidos
+                  </button>
+                </div>
+              </div>
+
+              {saveSuccessMsg && saveSuccessMsg.includes("Sincronização") && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2 text-emerald-400 text-xs font-bold">
+                  <CheckCircle2 size={16} />
+                  {saveSuccessMsg}
+                </div>
+              )}
             </div>
           </div>
 
