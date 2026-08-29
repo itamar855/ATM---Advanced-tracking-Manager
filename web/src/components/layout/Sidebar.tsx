@@ -107,7 +107,7 @@ export default function Sidebar() {
             <div className="flex items-center gap-2 truncate">
               <FolderTree size={14} className="text-blue-400 shrink-0" />
               <span className="font-bold truncate text-[11px] text-white">
-                {activeStore.name || activeStore.shopify_domain || "Minha Loja"}
+                {activeStore.name || activeStore.shop_domain || "Minha Loja"}
               </span>
             </div>
             <ChevronDown size={12} className={cn("text-zinc-500 shrink-0 transition-transform", storeMenuOpen && "rotate-180")} />
@@ -139,7 +139,7 @@ export default function Sidebar() {
                       "text-xs truncate font-medium",
                       activeStore.id === store.id ? "text-blue-400" : "text-zinc-300"
                     )}>
-                      {store.name || store.shopify_domain}
+                      {store.name || store.shop_domain}
                     </span>
                   </button>
                 ))}

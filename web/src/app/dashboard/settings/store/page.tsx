@@ -90,7 +90,7 @@ export default function StoreSettingsPage() {
           .from("stores")
           .update({
             name: storeName || domain,
-            shopify_domain: domain,
+            shop_domain: domain,
             checkout_domain: checkoutDomain || null,
             custom_domains: customDomains,
           })
@@ -104,7 +104,7 @@ export default function StoreSettingsPage() {
           .insert({
             tenant_id: user.id,
             name: storeName || domain,
-            shopify_domain: domain,
+            shop_domain: domain,
             checkout_domain: checkoutDomain || null,
             custom_domains: customDomains,
             platform: "shopify",

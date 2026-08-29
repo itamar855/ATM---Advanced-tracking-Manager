@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Nenhuma loja encontrada" }, { status: 400 });
     }
 
-    const domain = store.shop_domain || store.shopify_domain;
+    const domain = store.shop_domain;
     if (!domain) {
       return NextResponse.json({ ok: false, error: "Domínio da loja (Shopify) não configurado" }, { status: 400 });
     }

@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 interface Store {
   id: string;
   name: string;
-  shopify_domain?: string;
+  shop_domain?: string;
   platform?: string;
 }
 
@@ -40,7 +40,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       const { data } = await supabase
         .from("stores")
-        .select("id, name, shopify_domain, platform")
+        .select("id, name, shop_domain, platform")
         .order("created_at", { ascending: true });
 
       if (data && data.length > 0) {

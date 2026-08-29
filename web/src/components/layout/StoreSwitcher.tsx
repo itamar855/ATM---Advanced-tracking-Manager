@@ -32,7 +32,7 @@ export function StoreSwitcher() {
         <div className="w-5 h-5 rounded-md bg-gradient-to-br from-[var(--color-brand-500)] to-[var(--color-accent-500)] flex items-center justify-center text-[8px] font-bold text-white shrink-0">
           {initials}
         </div>
-        <span className="truncate">{activeStore.name || activeStore.shopify_domain || "Minha Loja"}</span>
+        <span className="truncate">{activeStore.name || activeStore.shop_domain || "Minha Loja"}</span>
         <ChevronDown size={12} className={cn("text-[var(--color-text-muted)] transition-transform shrink-0", open && "rotate-180")} />
       </button>
 
@@ -71,7 +71,7 @@ export function StoreSwitcher() {
                       {store.name || "Sem nome"}
                     </p>
                     <p className="text-[10px] text-[var(--color-text-muted)] truncate">
-                      {store.shopify_domain || store.platform || "Loja"}
+                      {store.shop_domain || store.platform || "Loja"}
                     </p>
                   </div>
                   {isActive && <Check size={13} className="text-[var(--color-brand-300)] shrink-0" />}
