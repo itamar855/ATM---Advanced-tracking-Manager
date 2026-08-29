@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Store, Globe, Loader2, X, CheckCircle2, Plus, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useStore } from "@/contexts/StoreContext";
 
 export default function StoreSettingsPage() {
   const [loading, setLoading] = useState(true);
@@ -15,6 +16,7 @@ export default function StoreSettingsPage() {
   const [newDomain, setNewDomain] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const { reload } = useStore();
 
   useEffect(() => {
     async function loadStore() {
@@ -116,6 +118,7 @@ export default function StoreSettingsPage() {
         if (newStore) setStoreId(newStore.id);
       }
 
+      reload(); // Atualiza o cache global de lojas para destravar a sidebar e layout
       setSuccessMsg("Configurações salvas com sucesso!");
       setTimeout(() => setSuccessMsg(""), 4000);
     } catch (err: any) {
