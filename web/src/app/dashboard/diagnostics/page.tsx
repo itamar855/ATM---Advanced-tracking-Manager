@@ -8,6 +8,8 @@ import { createClient } from "@/lib/supabase/client";
 export default function DiagnosticsPage() {
   const [loading, setLoading] = useState(true);
   const [diagnostics, setDiagnostics] = useState<any[]>([]);
+  const [isRecovering, setIsRecovering] = useState(false);
+  const [recoveryMsg, setRecoveryMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   useEffect(() => {
     async function loadDiagnostics() {
@@ -68,43 +70,69 @@ export default function DiagnosticsPage() {
           </p>
         </div>
         
-        <div className="flex items-end gap-3 flex-wrap">
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-zinc-400">Data Base do Resgate</label>
-            <input 
-              type="date" 
-              id="recoveryDate"
-              defaultValue={new Date(Date.now() - 86400000).toISOString().split('T')[0]} 
-              className="bg-[var(--color-bg-surface)] border border-[var(--color-border-subtle)] rounded-lg px-3 py-1.5 text-xs text-white" 
-            />
+        <div className="flex flex-col gap-3">
+          <div className="flex items-end gap-3 flex-wrap">
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-zinc-400">Data Base do Resgate</label>
+              <input 
+                type="date" 
+                id="recoveryDate"
+                defaultValue={new Date(Date.now() - 86400000).toISOString().split('T')[0]} 
+                className="bg-[var(--color-bg-surface)] border border-[var(--color-border-subtle)] rounded-lg px-3 py-1.5 text-xs text-white" 
+                disabled={isRecovering}
+              />
+            </div>
+            <button
+              disabled={isRecovering}
+              onClick={async () => {
+                const d = (document.getElementById('recoveryDate') as HTMLInputElement).value;
+                if (!d) return alert('Selecione uma data');
+                if (!confirm('Deseja reenviar as conversões (Purchases) desta data para a Meta?')) return;
+                
+                setIsRecovering(true);
+                setRecoveryMsg(null);
+                const start = new Date(d);
+                start.setHours(0, 0, 0, 0);
+                const end = new Date(d);
+                end.setHours(23, 59, 59, 999);
+                
+                try {
+                  const res = await fetch('/api/v1/sync/recovery', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ startDate: start.toISOString(), endDate: end.toISOString() })
+                  });
+                  const json = await res.json();
+                  
+                  if (res.ok) {
+                    setRecoveryMsg({ type: 'success', text: json.message });
+                  } else {
+                    setRecoveryMsg({ type: 'error', text: json.error || 'Erro desconhecido' });
+                  }
+                } catch (e: any) {
+                  setRecoveryMsg({ type: 'error', text: 'Erro de conexão: ' + e.message });
+                } finally {
+                  setIsRecovering(false);
+                }
+              }}
+              className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors mb-[1px] flex items-center gap-2"
+            >
+              {isRecovering ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" />
+                  Buscando e Processando...
+                </>
+              ) : (
+                "Iniciar Resgate"
+              )}
+            </button>
           </div>
-          <button
-            onClick={async () => {
-              const d = (document.getElementById('recoveryDate') as HTMLInputElement).value;
-              if (!d) return alert('Selecione uma data');
-              if (!confirm('Deseja reenviar as conversões (Purchases) desta data para a Meta?')) return;
-              
-              const start = new Date(d);
-              start.setHours(0, 0, 0, 0);
-              const end = new Date(d);
-              end.setHours(23, 59, 59, 999);
-              
-              try {
-                const res = await fetch('/api/v1/sync/recovery', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ startDate: start.toISOString(), endDate: end.toISOString() })
-                });
-                const json = await res.json();
-                alert(json.message || json.error);
-              } catch (e: any) {
-                alert('Erro de conexão: ' + e.message);
-              }
-            }}
-            className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors mb-[1px]"
-          >
-            Iniciar Resgate
-          </button>
+          
+          {recoveryMsg && (
+            <div className={`text-xs px-3 py-2 rounded border ${recoveryMsg.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+              {recoveryMsg.text}
+            </div>
+          )}
         </div>
       </div>
 
