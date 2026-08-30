@@ -312,6 +312,33 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       emqScore
     );
 
+    // 8. Disparo de Notificação Pushcut
+    try {
+      const { data: storeData } = await supabase
+        .from("stores")
+        .select("pushcut_url")
+        .eq("id", storeId)
+        .maybeSingle();
+
+      if (storeData?.pushcut_url) {
+        const formattedValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: payload.currency || 'BRL' }).format(orderValue);
+        const customerName = `${customer.name || "Cliente"}`.trim();
+        
+        // Dispara de forma assíncrona para não bloquear a resposta do webhook
+        fetch(storeData.pushcut_url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: "💰 Venda Aprovada (Zedy)",
+            text: `${formattedValue} - ${customerName}`,
+            sound: "cash_register" // Som customizado se configurado no app
+          }),
+        }).catch(e => console.error("Erro interno no disparo do Pushcut (Zedy):", e));
+      }
+    } catch (e) {
+      console.error("Erro ao buscar store para Pushcut (Zedy):", e);
+    }
+
     return NextResponse.json({ ok: true, metaResponse, emq_score: emqScore, signals_sent: userDataKeys });
 
   } catch (error: any) {

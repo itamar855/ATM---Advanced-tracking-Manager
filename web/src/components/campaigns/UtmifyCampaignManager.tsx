@@ -244,7 +244,7 @@ export function UtmifyCampaignManager({
     const level = activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad";
     let successCount = 0;
     
-    setIsDeleting(true);
+    setIsBulkActionRunning(true);
     
     try {
       const promises = selectedRowIds.map(id => 
@@ -337,6 +337,12 @@ export function UtmifyCampaignManager({
     setDuplicateModalOpen(true);
   };
 
+  const handleOpenBulkBudget = () => {
+    if (selectedRowIds.length === 0) return;
+    setBulkBudgetValue("");
+    setBulkBudgetModalOpen(true);
+  };
+
   const handleConfirmDuplicate = async () => {
     if (duplicateItemIds.length === 0 || !duplicateItemLevel) return;
     const copies = Number(duplicateCopies);
@@ -378,6 +384,47 @@ export function UtmifyCampaignManager({
       setSelectedRowIds([]);
     } catch (e: any) {
       alert("Erro ao duplicar: " + e.message);
+    } finally {
+      setIsBulkActionRunning(false);
+    }
+  };
+
+  const handleConfirmBulkBudget = async () => {
+    if (selectedRowIds.length === 0 || !bulkBudgetValue) return;
+    
+    setBulkBudgetModalOpen(false);
+    setIsBulkActionRunning(true);
+    let successCount = 0;
+
+    const level = activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad";
+
+    try {
+      const promises = selectedRowIds.map(id =>
+        fetch("/api/v1/meta/campaigns/manage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id,
+            level,
+            action: "budget",
+            value: bulkBudgetValue,
+            store_id: activeStore?.id,
+          }),
+        })
+      );
+      
+      const results = await Promise.all(promises);
+      for (const res of results) {
+        if (res.ok) successCount++;
+      }
+      
+      if (successCount < selectedRowIds.length) {
+        alert(`Atenção: Apenas ${successCount} de ${selectedRowIds.length} orçamentos foram alterados com sucesso.`);
+      }
+      
+      onRefresh();
+    } catch (e: any) {
+      alert("Erro ao alterar orçamento em massa: " + e.message);
     } finally {
       setIsBulkActionRunning(false);
     }

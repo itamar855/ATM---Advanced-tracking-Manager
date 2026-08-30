@@ -79,6 +79,11 @@ function IntegrationsContent() {
   const [metaConnected, setMetaConnected] = useState(false);
   const [hasSavedTokenInDb, setHasSavedTokenInDb] = useState(false);
 
+  // Pushcut states
+  const [pushcutUrl, setPushcutUrl] = useState("");
+  const [savingPushcut, setSavingPushcut] = useState(false);
+  const [testingPushcut, setTestingPushcut] = useState(false);
+
   // Meta Accordion states
   const [metaExpanded, setMetaExpanded] = useState(true);
   const [accountsExpanded, setAccountsExpanded] = useState(false);
@@ -277,6 +282,50 @@ function IntegrationsContent() {
       setTimeout(() => setSaveSuccessMsg(""), 6000);
     }
   };
+
+  const handleSavePushcut = async () => {
+    setSavingPushcut(true);
+    try {
+      const res = await fetch("/api/v1/settings/pushcut", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ store_id: storeId, pushcut_url: pushcutUrl })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSaveSuccessMsg("URL do Pushcut salva com sucesso!");
+      } else {
+        alert("Erro: " + data.error);
+      }
+    } catch (e: any) {
+      alert("Erro: " + e.message);
+    } finally {
+      setSavingPushcut(false);
+      setTimeout(() => setSaveSuccessMsg(""), 6000);
+    }
+  };
+
+  const handleTestPushcut = async () => {
+    setTestingPushcut(true);
+    try {
+      const res = await fetch("/api/v1/settings/pushcut/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ store_id: storeId })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert("Push de teste enviado! Verifique seu celular.");
+      } else {
+        alert("Erro no teste: " + data.error);
+      }
+    } catch (e: any) {
+      alert("Erro: " + e.message);
+    } finally {
+      setTestingPushcut(false);
+    }
+  };
+
 
   useEffect(() => {
     // Carrega credenciais do servidor e contas reais da Meta
@@ -941,6 +990,61 @@ function IntegrationsContent() {
                 {copiedWebhook ? <Check size={14} /> : <Copy size={14} />}
                 {copiedWebhook ? "Copiado!" : "Copiar URL"}
               </button>
+            </div>
+          </div>
+
+          {/* Pushcut Card */}
+          <div className="rounded-2xl border border-zinc-800/80 bg-[#0E1118] p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-sm shadow-lg shadow-blue-600/30">
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    Pushcut (Notificações no Celular)
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">Receba alertas em tempo real no iPhone quando ocorrerem vendas Aprovadas ou Pendentes.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-zinc-300">URL do Webhook do Pushcut</label>
+                <div className="flex items-center gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={pushcutUrl}
+                    onChange={(e) => setPushcutUrl(e.target.value)}
+                    placeholder="https://api.pushcut.io/xxxxxxxx/notifications/MinhaVenda"
+                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono focus:outline-none focus:border-blue-500/50"
+                  />
+                  <button
+                    onClick={handleSavePushcut}
+                    disabled={savingPushcut || !pushcutUrl.trim()}
+                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                  >
+                    {savingPushcut ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                    Salvar URL
+                  </button>
+                  <button
+                    onClick={handleTestPushcut}
+                    disabled={testingPushcut || !pushcutUrl.trim()}
+                    className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                  >
+                    {testingPushcut ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                    Testar Push
+                  </button>
+                </div>
+              </div>
+              
+              {saveSuccessMsg && saveSuccessMsg.includes("Pushcut") && (
+                <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center gap-2 text-blue-400 text-xs font-bold">
+                  <CheckCircle2 size={16} />
+                  {saveSuccessMsg}
+                </div>
+              )}
             </div>
           </div>
         </div>

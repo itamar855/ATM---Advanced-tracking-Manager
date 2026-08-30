@@ -347,6 +347,33 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       orderId
     );
 
+    // 8. Disparo de Notificação Pushcut
+    try {
+      const { data: storeData } = await supabase
+        .from("stores")
+        .select("pushcut_url")
+        .eq("id", storeId)
+        .maybeSingle();
+
+      if (storeData?.pushcut_url) {
+        const formattedValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: payload.currency || 'BRL' }).format(orderValue);
+        const customerName = `${normalizedOrder.customer.firstName} ${normalizedOrder.customer.lastName}`.trim() || "Cliente Identificado";
+        
+        // Dispara de forma assíncrona
+        fetch(storeData.pushcut_url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: payload.status === "pending" || eventType === "ORDER_CREATED" ? "🟡 Venda Pendente (Vega)" : "💰 Venda Aprovada (Vega)",
+            text: `${formattedValue} - ${customerName}`,
+            sound: "cash_register"
+          }),
+        }).catch(e => console.error("Erro interno no disparo do Pushcut (Vega):", e));
+      }
+    } catch (e) {
+      console.error("Erro ao buscar store para Pushcut (Vega):", e);
+    }
+
     return NextResponse.json({
       ok: metaResponse.ok,
       event_name: metaEventName,

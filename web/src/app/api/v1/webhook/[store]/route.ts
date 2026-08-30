@@ -207,6 +207,32 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .eq("event_id", metaEvent.event_id)
         .eq("source", "server");
 
+      // Disparo de Notificação Pushcut
+      try {
+        const { data: storeData } = await supabase
+          .from("stores")
+          .select("pushcut_url")
+          .eq("id", storeId)
+          .maybeSingle();
+
+        if (storeData?.pushcut_url) {
+          const formattedValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: payload.currency || 'BRL' }).format(Number(payload.total_price || 0));
+          const customerName = `${normalizedOrder.customer.firstName} ${normalizedOrder.customer.lastName}`.trim() || "Cliente Identificado";
+          
+          fetch(storeData.pushcut_url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: payload.financial_status === "pending" ? "🟡 Venda Pendente (Shopify)" : "💰 Venda Aprovada (Shopify)",
+              text: `${formattedValue} - ${customerName}`,
+              sound: "cash_register"
+            }),
+          }).catch(e => console.error("Erro interno no disparo do Pushcut (Shopify):", e));
+        }
+      } catch (e) {
+        console.error("Erro ao buscar store para Pushcut (Shopify):", e);
+      }
+
       return NextResponse.json({
         ok: true,
         message: "Purchase CAPI processado com sucesso",

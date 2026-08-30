@@ -48,3 +48,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 }
+
+export async function GET(request: NextRequest) {
+  try {
+    const store_id = request.nextUrl.searchParams.get("store_id");
+    if (!store_id) return NextResponse.json({ error: "store_id obrigatório" }, { status: 400 });
+
+    const supabase = await createClient();
+    const { data: store } = await supabase
+      .from("stores")
+      .select("shopify_api_key_enc, pushcut_url")
+      .eq("id", store_id)
+      .maybeSingle();
+
+    if (!store) return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
+
+    return NextResponse.json({
+      ok: true,
+      pushcutUrl: store.pushcut_url || "",
+      // Retorna apenas se o token existe e seu formato parcial por segurança, ou o original se precisar exibir
+      shopifyToken: store.shopify_api_key_enc ? "shpat_***" : "", 
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
