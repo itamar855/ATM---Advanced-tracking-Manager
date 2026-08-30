@@ -81,6 +81,8 @@ function IntegrationsContent() {
 
   // Pushcut states
   const [pushcutUrl, setPushcutUrl] = useState("");
+  const [pushcutNotifyApproved, setPushcutNotifyApproved] = useState(true);
+  const [pushcutNotifyPending, setPushcutNotifyPending] = useState(true);
   const [savingPushcut, setSavingPushcut] = useState(false);
   const [testingPushcut, setTestingPushcut] = useState(false);
 
@@ -289,7 +291,12 @@ function IntegrationsContent() {
       const res = await fetch("/api/v1/settings/pushcut", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ store_id: storeId, pushcut_url: pushcutUrl })
+        body: JSON.stringify({ 
+          store_id: storeId, 
+          pushcut_url: pushcutUrl,
+          notifyApproved: pushcutNotifyApproved,
+          notifyPending: pushcutNotifyPending
+        })
       });
       const data = await res.json();
       if (res.ok) {
@@ -384,6 +391,18 @@ function IntegrationsContent() {
             } else if (realAccounts.length > 0) {
               setSelectedAccounts(realAccounts.map((a) => a.id));
             }
+          }
+        }
+        
+        if (storeId) {
+          const credRes = await fetch(`/api/v1/settings/credentials?store_id=${storeId}`);
+          if (credRes.ok) {
+            const data = await credRes.json();
+            if (data.zedyToken) setZedyToken(data.zedyToken);
+            if (data.shopifyToken) setShopifyToken(data.shopifyToken);
+            if (data.pushcutUrl) setPushcutUrl(data.pushcutUrl);
+            if (data.pushcutNotifyApproved !== undefined) setPushcutNotifyApproved(data.pushcutNotifyApproved);
+            if (data.pushcutNotifyPending !== undefined) setPushcutNotifyPending(data.pushcutNotifyPending);
           }
         }
       } catch (err) {
@@ -1026,7 +1045,7 @@ function IntegrationsContent() {
                     className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
                   >
                     {savingPushcut ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                    Salvar URL
+                    Salvar
                   </button>
                   <button
                     onClick={handleTestPushcut}
@@ -1037,6 +1056,40 @@ function IntegrationsContent() {
                     Testar Push
                   </button>
                 </div>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <div className="relative flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={pushcutNotifyApproved}
+                      onChange={(e) => setPushcutNotifyApproved(e.target.checked)}
+                      className="sr-only"
+                    />
+                    <div className={`w-10 h-5.5 rounded-full transition-colors ${pushcutNotifyApproved ? 'bg-blue-600' : 'bg-zinc-800 border border-zinc-700'}`}></div>
+                    <div className={`absolute left-1 top-1 w-3.5 h-3.5 bg-white rounded-full transition-transform ${pushcutNotifyApproved ? 'translate-x-4.5' : 'translate-x-0'}`}></div>
+                  </div>
+                  <span className="text-xs text-zinc-300 font-semibold group-hover:text-white transition-colors">
+                    Notificar Vendas Aprovadas (💰)
+                  </span>
+                </label>
+                
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <div className="relative flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={pushcutNotifyPending}
+                      onChange={(e) => setPushcutNotifyPending(e.target.checked)}
+                      className="sr-only"
+                    />
+                    <div className={`w-10 h-5.5 rounded-full transition-colors ${pushcutNotifyPending ? 'bg-blue-600' : 'bg-zinc-800 border border-zinc-700'}`}></div>
+                    <div className={`absolute left-1 top-1 w-3.5 h-3.5 bg-white rounded-full transition-transform ${pushcutNotifyPending ? 'translate-x-4.5' : 'translate-x-0'}`}></div>
+                  </div>
+                  <span className="text-xs text-zinc-300 font-semibold group-hover:text-white transition-colors">
+                    Notificar Vendas Pendentes / Cartão Recusado / Pix Gerado (🟡)
+                  </span>
+                </label>
               </div>
               
               {saveSuccessMsg && saveSuccessMsg.includes("Pushcut") && (

@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { store_id, pushcut_url } = body;
+    const { store_id, pushcut_url, notifyApproved, notifyPending } = body;
 
     if (!store_id) {
       return NextResponse.json({ error: "store_id é obrigatório" }, { status: 400 });
@@ -31,12 +31,16 @@ export async function POST(request: NextRequest) {
     // Update
     const { error } = await supabase
       .from("stores")
-      .update({ pushcut_url: pushcut_url ? pushcut_url.trim() : null })
+      .update({ 
+        pushcut_url: pushcut_url ? pushcut_url.trim() : null,
+        pushcut_notify_approved: notifyApproved ?? true,
+        pushcut_notify_pending: notifyPending ?? true
+      })
       .eq("id", store_id);
 
     if (error) throw error;
 
-    return NextResponse.json({ ok: true, message: "URL do Pushcut salva com sucesso" });
+    return NextResponse.json({ ok: true, message: "URL do Pushcut e preferências salvas com sucesso" });
   } catch (err: any) {
     console.error("[Pushcut Settings API Error]", err);
     return NextResponse.json({ error: err.message }, { status: 500 });

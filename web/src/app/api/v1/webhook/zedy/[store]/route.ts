@@ -316,11 +316,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     try {
       const { data: storeData } = await supabase
         .from("stores")
-        .select("pushcut_url")
+        .select("pushcut_url, pushcut_notify_approved")
         .eq("id", storeId)
         .maybeSingle();
 
-      if (storeData?.pushcut_url) {
+      const shouldNotify = storeData?.pushcut_url && storeData.pushcut_notify_approved !== false;
+
+      if (shouldNotify) {
         const formattedValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: payload.currency || 'BRL' }).format(orderValue);
         const customerName = `${customer.name || "Cliente"}`.trim();
         

@@ -211,11 +211,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       try {
         const { data: storeData } = await supabase
           .from("stores")
-          .select("pushcut_url")
+          .select("pushcut_url, pushcut_notify_approved, pushcut_notify_pending")
           .eq("id", storeId)
           .maybeSingle();
 
-        if (storeData?.pushcut_url) {
+        const isPending = payload.financial_status === "pending";
+        const shouldNotify = storeData?.pushcut_url && (
+          (isPending && storeData.pushcut_notify_pending !== false) ||
+          (!isPending && storeData.pushcut_notify_approved !== false)
+        );
+
+        if (shouldNotify) {
           const formattedValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: payload.currency || 'BRL' }).format(Number(payload.total_price || 0));
           const customerName = `${normalizedOrder.customer.firstName} ${normalizedOrder.customer.lastName}`.trim() || "Cliente Identificado";
           
