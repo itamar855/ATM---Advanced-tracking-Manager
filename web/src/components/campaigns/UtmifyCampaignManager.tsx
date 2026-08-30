@@ -165,11 +165,13 @@ export function UtmifyCampaignManager({
 
   // Duplicação Modal
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
-  const [duplicateItemId, setDuplicateItemId] = useState<string | null>(null);
+  const [duplicateItemIds, setDuplicateItemIds] = useState<string[]>([]);
   const [duplicateItemLevel, setDuplicateItemLevel] = useState<"campaign" | "adset" | "ad" | null>(null);
   const [duplicateCopies, setDuplicateCopies] = useState<string>("1");
   const [duplicateNewBudget, setDuplicateNewBudget] = useState<string>("");
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isBulkActionRunning, setIsBulkActionRunning] = useState(false);
+  const [bulkBudgetModalOpen, setBulkBudgetModalOpen] = useState(false);
+  const [bulkBudgetValue, setBulkBudgetValue] = useState("");
 
   // ── Navegação & Drill-Down ───────────────────────────────────────────────
 
@@ -273,55 +275,111 @@ export function UtmifyCampaignManager({
     } catch (e: any) {
       alert("Erro ao excluir: " + e.message);
     } finally {
-      setIsDeleting(false);
+      setIsBulkActionRunning(false);
+    }
+  };
+
+  const handleBulkStatus = async (newStatus: "active" | "paused") => {
+    if (selectedRowIds.length === 0) return;
+    const level = activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad";
+    
+    setIsBulkActionRunning(true);
+    let successCount = 0;
+    
+    try {
+      const promises = selectedRowIds.map(id => 
+        fetch("/api/v1/meta/campaigns/manage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id,
+            level,
+            action: "status",
+            value: newStatus,
+            store_id: activeStore?.id,
+          }),
+        })
+      );
+      
+      const results = await Promise.all(promises);
+      for (const res of results) {
+        if (res.ok) successCount++;
+      }
+      
+      if (successCount < selectedRowIds.length) {
+        alert(`Atenção: ${successCount} de ${selectedRowIds.length} foram alterados com sucesso.`);
+      }
+      
+      onRefresh();
+    } catch (e: any) {
+      alert("Erro ao alterar status em massa: " + e.message);
+    } finally {
+      setIsBulkActionRunning(false);
     }
   };
 
   // ── Ação de Duplicar e Alterar Orçamento ──────────────────────────────
 
   const handleOpenDuplicate = (id: string, level: "campaign" | "adset" | "ad", currentBudget?: number) => {
-    setDuplicateItemId(id);
+    setDuplicateItemIds([id]);
     setDuplicateItemLevel(level);
     setDuplicateCopies("1");
     setDuplicateNewBudget(currentBudget && currentBudget > 0 ? String(currentBudget) : "");
     setDuplicateModalOpen(true);
   };
 
+  const handleOpenBulkDuplicate = () => {
+    if (selectedRowIds.length === 0) return;
+    setDuplicateItemIds(selectedRowIds);
+    setDuplicateItemLevel(activeTab as "campaign" | "adset" | "ad");
+    setDuplicateCopies("1");
+    setDuplicateNewBudget("");
+    setDuplicateModalOpen(true);
+  };
+
   const handleConfirmDuplicate = async () => {
-    if (!duplicateItemId || !duplicateItemLevel) return;
+    if (duplicateItemIds.length === 0 || !duplicateItemLevel) return;
     const copies = Number(duplicateCopies);
     if (isNaN(copies) || copies < 1) {
       alert("A quantidade de cópias deve ser no mínimo 1.");
       return;
     }
 
-    setActionLoadingId(duplicateItemId);
     setDuplicateModalOpen(false);
+    setIsBulkActionRunning(true);
+    let successCount = 0;
 
     try {
-      const res = await fetch("/api/v1/meta/campaigns/manage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: duplicateItemId,
-          level: duplicateItemLevel,
-          action: "duplicate",
-          copies: copies,
-          newBudget: duplicateNewBudget ? Number(duplicateNewBudget) : null,
-          store_id: activeStore?.id,
-        }),
-      });
-
-      if (res.ok) {
-        onRefresh();
-      } else {
-        const d = await res.json();
-        alert("Erro na Meta: " + (d.error || "Não foi possível duplicar."));
+      const promises = duplicateItemIds.map(id => 
+        fetch("/api/v1/meta/campaigns/manage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id,
+            level: duplicateItemLevel,
+            action: "duplicate",
+            copies,
+            newBudget: duplicateNewBudget ? Number(duplicateNewBudget) : null,
+            store_id: activeStore?.id,
+          }),
+        })
+      );
+      
+      const results = await Promise.all(promises);
+      for (const res of results) {
+        if (res.ok) successCount++;
       }
+      
+      if (successCount < duplicateItemIds.length) {
+        alert(`Atenção: Apenas ${successCount} de ${duplicateItemIds.length} foram duplicados.`);
+      }
+      
+      onRefresh();
+      setSelectedRowIds([]);
     } catch (e: any) {
-      alert("Erro ao conectar: " + e.message);
+      alert("Erro ao duplicar: " + e.message);
     } finally {
-      setActionLoadingId(null);
+      setIsBulkActionRunning(false);
     }
   };
 
@@ -602,17 +660,53 @@ export function UtmifyCampaignManager({
             </button>
 
             {selectedRowIds.length > 0 && activeTab !== "accounts" && (
-              <button
-                onClick={handleBulkDelete}
-                disabled={isDeleting}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-semibold text-xs border border-rose-500/20 transition-all",
-                  isDeleting && "opacity-50 cursor-not-allowed"
+              <>
+                <button
+                  onClick={() => handleBulkStatus("active")}
+                  disabled={isBulkActionRunning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-semibold text-xs border border-emerald-500/20 transition-all disabled:opacity-50"
+                >
+                  <Check size={13} />
+                  Ativar
+                </button>
+                <button
+                  onClick={() => handleBulkStatus("paused")}
+                  disabled={isBulkActionRunning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-500/10 hover:bg-zinc-500/20 text-zinc-400 font-semibold text-xs border border-zinc-500/20 transition-all disabled:opacity-50"
+                >
+                  <X size={13} />
+                  Pausar
+                </button>
+                {(activeTab === "campaigns" || activeTab === "adsets") && (
+                  <button
+                    onClick={handleOpenBulkBudget}
+                    disabled={isBulkActionRunning}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 font-semibold text-xs border border-blue-500/20 transition-all disabled:opacity-50"
+                  >
+                    <DollarSign size={13} />
+                    Orçamentos
+                  </button>
                 )}
-              >
-                <X size={13} className={isDeleting ? "animate-spin" : ""} />
-                {isDeleting ? "Excluindo..." : `Excluir ${selectedRowIds.length}`}
-              </button>
+                <button
+                  onClick={handleOpenBulkDuplicate}
+                  disabled={isBulkActionRunning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 font-semibold text-xs border border-purple-500/20 transition-all disabled:opacity-50"
+                >
+                  <Layers size={13} />
+                  Duplicar
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={isBulkActionRunning}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-semibold text-xs border border-rose-500/20 transition-all",
+                    isBulkActionRunning && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <X size={13} className={isBulkActionRunning ? "animate-spin" : ""} />
+                  {isBulkActionRunning ? "Aguarde..." : `Excluir ${selectedRowIds.length}`}
+                </button>
+              </>
             )}
 
             {untrackedSalesCount > 0 && (
@@ -1150,6 +1244,62 @@ export function UtmifyCampaignManager({
                 className="flex-1 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-500/20 transition-all active:scale-95"
               >
                 Duplicar Agora
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Orçamento em Massa */}
+      {bulkBudgetModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#0B0E14] border border-blue-500/20 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
+            <button
+              onClick={() => setBulkBudgetModalOpen(false)}
+              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+              <DollarSign size={18} className="text-blue-500" />
+              Orçamento em Massa
+            </h3>
+            <p className="text-xs text-zinc-400 mb-5">
+              Altere o orçamento diário de {selectedRowIds.length} {activeTab === "campaigns" ? "campanhas" : "conjuntos"} ao mesmo tempo.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-zinc-300 mb-1.5">
+                  Novo Orçamento Diário
+                </label>
+                <div className="relative">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm font-bold">R$</div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Ex: 50.00"
+                    value={bulkBudgetValue}
+                    onChange={(e) => setBulkBudgetValue(e.target.value)}
+                    className="w-full bg-[#121622] border border-zinc-800 rounded-lg pl-9 pr-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => setBulkBudgetModalOpen(false)}
+                className="flex-1 py-2.5 rounded-lg border border-zinc-800 text-zinc-300 font-bold text-sm hover:bg-zinc-800/50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmBulkBudget}
+                disabled={isBulkActionRunning}
+                className="flex-1 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-500/20 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {isBulkActionRunning ? "Aplicando..." : "Aplicar Orçamento"}
               </button>
             </div>
           </div>
