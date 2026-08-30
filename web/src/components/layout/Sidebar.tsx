@@ -99,7 +99,7 @@ export default function Sidebar() {
       </div>
 
       {/* Seletor de Lojas / Dashboards */}
-      {!collapsed && activeStore && (
+      {!collapsed && (
         <div className="px-3 pt-3 pb-1 relative">
           <button 
             onClick={() => setStoreMenuOpen(!storeMenuOpen)}
@@ -108,7 +108,7 @@ export default function Sidebar() {
             <div className="flex items-center gap-2 truncate">
               <FolderTree size={14} className="text-blue-400 shrink-0" />
               <span className="font-bold truncate text-[11px] text-white">
-                {activeStore.name || activeStore.shop_domain || "Minha Loja"}
+                {activeStore ? (activeStore.name || activeStore.shop_domain || "Minha Loja") : "Lojas"}
               </span>
             </div>
             <ChevronDown size={12} className={cn("text-zinc-500 shrink-0 transition-transform", storeMenuOpen && "rotate-180")} />
@@ -127,18 +127,18 @@ export default function Sidebar() {
                     onClick={() => { setActiveStore(store); setStoreMenuOpen(false); }}
                     className={cn(
                       "w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-zinc-800/50 mx-1 w-[calc(100%-8px)] rounded-lg",
-                      activeStore.id === store.id && "bg-blue-500/10"
+                      activeStore?.id === store.id && "bg-blue-500/10"
                     )}
                   >
                     <div className={cn(
                       "w-6 h-6 rounded-md flex items-center justify-center text-[8px] font-bold shrink-0 text-white",
-                      activeStore.id === store.id ? "bg-blue-600" : "bg-zinc-800"
+                      activeStore?.id === store.id ? "bg-blue-600" : "bg-zinc-800"
                     )}>
                       {store.name?.substring(0, 2).toUpperCase() || "ST"}
                     </div>
                     <span className={cn(
                       "text-xs truncate font-medium",
-                      activeStore.id === store.id ? "text-blue-400" : "text-zinc-300"
+                      activeStore?.id === store.id ? "text-blue-400" : "text-zinc-300"
                     )}>
                       {store.name || store.shop_domain}
                     </span>
