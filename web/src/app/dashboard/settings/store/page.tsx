@@ -123,6 +123,7 @@ export default function StoreSettingsPage() {
         const { data: newStore, error } = await supabase
           .from("stores")
           .insert({
+            id: crypto.randomUUID(),
             tenant_id: user.id,
             name: storeName || domain,
             shop_domain: domain,
