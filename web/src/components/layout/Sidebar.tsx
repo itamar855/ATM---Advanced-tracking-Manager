@@ -22,7 +22,8 @@ import {
   Tag,
   Sliders,
   FileText,
-  Bell
+  Bell,
+  Plus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -143,6 +144,16 @@ export default function Sidebar() {
                     </span>
                   </button>
                 ))}
+              </div>
+              <div className="border-t border-zinc-800/80 mt-1 p-1">
+                <Link
+                  href="/dashboard/settings/store?new=true"
+                  onClick={() => setStoreMenuOpen(false)}
+                  className="w-full flex items-center gap-2.5 px-2 py-2 text-xs text-zinc-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                >
+                  <Plus size={14} className="shrink-0" />
+                  <span className="font-medium">Adicionar nova loja</span>
+                </Link>
               </div>
             </div>
           )}

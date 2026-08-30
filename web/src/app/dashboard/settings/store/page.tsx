@@ -16,17 +16,36 @@ export default function StoreSettingsPage() {
   const [newDomain, setNewDomain] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
-  const { reload } = useStore();
+  const { activeStore, reload, setActiveStore } = useStore();
 
   useEffect(() => {
     async function loadStore() {
+      setLoading(true);
+      
+      const isNew = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get("new") === "true" : false;
+      
+      if (isNew) {
+        setStoreId(null);
+        setStoreName("");
+        setDomain("");
+        setCheckoutDomain("");
+        setCustomDomains([]);
+        setLoading(false);
+        return;
+      }
+      
+      if (!activeStore) {
+        setLoading(false);
+        return;
+      }
+
       try {
         const supabase = createClient();
         const { data: store } = await supabase
           .from("stores")
           .select("*")
-          .limit(1)
-          .maybeSingle();
+          .eq("id", activeStore.id)
+          .single();
 
         if (store) {
           setStoreId(store.id);
@@ -42,7 +61,7 @@ export default function StoreSettingsPage() {
       }
     }
     loadStore();
-  }, []);
+  }, [activeStore]);
 
   const handleAddDomain = () => {
     const trimmed = newDomain.trim();
@@ -115,7 +134,17 @@ export default function StoreSettingsPage() {
           .single();
 
         if (error) throw error;
-        if (newStore) setStoreId(newStore.id);
+        if (newStore) {
+          setStoreId(newStore.id);
+          setActiveStore(newStore);
+          
+          // Remove ?new=true from url without reloading the page
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('new');
+            window.history.replaceState({}, '', url);
+          }
+        }
       }
 
       reload(); // Atualiza o cache global de lojas para destravar a sidebar e layout
