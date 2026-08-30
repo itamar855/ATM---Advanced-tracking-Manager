@@ -18,14 +18,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify ownership
-    const { data: store } = await supabase
+    const { data: store, error: storeError } = await supabase
       .from("stores")
       .select("tenant_id")
       .eq("id", store_id)
       .maybeSingle();
 
-    if (!store || store.tenant_id !== user.id) {
-      return NextResponse.json({ error: "Loja não encontrada ou não autorizada" }, { status: 403 });
+    if (storeError) {
+      return NextResponse.json({ error: "Erro no BD ao buscar loja: " + storeError.message }, { status: 500 });
+    }
+
+    if (!store) {
+      return NextResponse.json({ error: `Loja ${store_id} não encontrada no banco (ou bloqueada por RLS). tenant_id do user: ${user.id}` }, { status: 404 });
+    }
+
+    if (store.tenant_id !== user.id) {
+      return NextResponse.json({ error: `Loja não autorizada. Dono: ${store.tenant_id}, Você: ${user.id}` }, { status: 403 });
     }
 
     // Update
