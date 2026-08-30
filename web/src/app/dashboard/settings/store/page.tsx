@@ -128,7 +128,6 @@ export default function StoreSettingsPage() {
             shop_domain: domain,
             checkout_domain: checkoutDomain || null,
             custom_domains: customDomains,
-            platform: "shopify",
           })
           .select()
           .single();
