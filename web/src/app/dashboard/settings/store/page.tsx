@@ -4,8 +4,10 @@ import { useState, useEffect } from "react";
 import { Store, Globe, Loader2, X, CheckCircle2, Plus, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useStore } from "@/contexts/StoreContext";
+import { useSearchParams } from "next/navigation";
 
 export default function StoreSettingsPage() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [storeId, setStoreId] = useState<string | null>(null);
@@ -22,7 +24,7 @@ export default function StoreSettingsPage() {
     async function loadStore() {
       setLoading(true);
       
-      const isNew = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get("new") === "true" : false;
+      const isNew = searchParams.get("new") === "true";
       
       if (isNew) {
         setStoreId(null);
@@ -61,7 +63,7 @@ export default function StoreSettingsPage() {
       }
     }
     loadStore();
-  }, [activeStore]);
+  }, [activeStore, searchParams]);
 
   const handleAddDomain = () => {
     const trimmed = newDomain.trim();
