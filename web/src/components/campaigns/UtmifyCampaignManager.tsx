@@ -169,6 +169,7 @@ export function UtmifyCampaignManager({
   const [duplicateItemLevel, setDuplicateItemLevel] = useState<"campaign" | "adset" | "ad" | null>(null);
   const [duplicateCopies, setDuplicateCopies] = useState<string>("1");
   const [duplicateNewBudget, setDuplicateNewBudget] = useState<string>("");
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // ── Navegação & Drill-Down ───────────────────────────────────────────────
 
@@ -222,7 +223,61 @@ export function UtmifyCampaignManager({
     }
   };
 
-  // ── Ação de Alterar Orçamento ───────────────────────────────────────────
+  // ── Ação de Excluir ─────────────────────────────────────────────────────
+
+  const handleBulkDelete = async () => {
+    if (selectedRowIds.length === 0) return;
+    
+    if (activeTab === "accounts") {
+      alert("Não é possível excluir contas de anúncios por aqui.");
+      return;
+    }
+    
+    const typeLabel = activeTab === "campaigns" ? "campanha(s)" : activeTab === "adsets" ? "conjunto(s)" : "anúncio(s)";
+    
+    if (!window.confirm(`Tem certeza que deseja excluir ${selectedRowIds.length} ${typeLabel}? Esta ação não pode ser desfeita e excluirá o conteúdo na própria Meta.`)) {
+      return;
+    }
+    
+    const level = activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad";
+    let successCount = 0;
+    
+    setIsDeleting(true);
+    
+    try {
+      const promises = selectedRowIds.map(id => 
+        fetch("/api/v1/meta/campaigns/manage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id,
+            level,
+            action: "delete",
+            store_id: activeStore?.id,
+          }),
+        })
+      );
+      
+      const results = await Promise.all(promises);
+      
+      for (const res of results) {
+        if (res.ok) successCount++;
+      }
+      
+      if (successCount < selectedRowIds.length) {
+        alert(`Atenção: Apenas ${successCount} de ${selectedRowIds.length} foram excluídos com sucesso. Alguns podem ter falhado na Meta.`);
+      }
+      
+      setSelectedRowIds([]);
+      onRefresh();
+    } catch (e: any) {
+      alert("Erro ao excluir: " + e.message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // ── Ação de Duplicar e Alterar Orçamento ──────────────────────────────
 
   const handleOpenDuplicate = (id: string, level: "campaign" | "adset" | "ad", currentBudget?: number) => {
     setDuplicateItemId(id);
@@ -545,6 +600,20 @@ export function UtmifyCampaignManager({
             <button className="p-2 rounded-lg bg-zinc-800/60 hover:bg-zinc-700/60 text-zinc-400 hover:text-white transition-colors" title="Colunas">
               <SlidersHorizontal size={14} />
             </button>
+
+            {selectedRowIds.length > 0 && activeTab !== "accounts" && (
+              <button
+                onClick={handleBulkDelete}
+                disabled={isDeleting}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-semibold text-xs border border-rose-500/20 transition-all",
+                  isDeleting && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                <X size={13} className={isDeleting ? "animate-spin" : ""} />
+                {isDeleting ? "Excluindo..." : `Excluir ${selectedRowIds.length}`}
+              </button>
+            )}
 
             {untrackedSalesCount > 0 && (
               <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold">
