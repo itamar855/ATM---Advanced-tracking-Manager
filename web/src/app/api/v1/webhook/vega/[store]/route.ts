@@ -347,38 +347,40 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       orderId
     );
 
-    // 8. Disparo de Notificação Pushcut
+    // 8. Disparo de Notificação Telegram
     try {
       const { data: storeData } = await supabase
         .from("stores")
-        .select("pushcut_url, pushcut_notify_approved, pushcut_notify_pending")
+        .select("telegram_bot_token, telegram_chat_id, telegram_notify_approved, telegram_notify_pending")
         .eq("id", storeId)
         .maybeSingle();
 
       const isPending = payload.status === "pending" || eventType === "ORDER_CREATED";
       
-      const shouldNotify = storeData?.pushcut_url && (
-        (isPending && storeData.pushcut_notify_pending !== false) ||
-        (!isPending && storeData.pushcut_notify_approved !== false)
-      );
+      const shouldNotify = 
+        (isPending && storeData?.telegram_notify_pending !== false) ||
+        (!isPending && storeData?.telegram_notify_approved !== false);
 
-      if (shouldNotify) {
+      if (storeData?.telegram_bot_token && storeData?.telegram_chat_id && shouldNotify) {
         const formattedValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: payload.currency || 'BRL' }).format(orderValue);
         const customerName = `${normalizedOrder.customer.firstName} ${normalizedOrder.customer.lastName}`.trim() || "Cliente Identificado";
         
-        // Dispara de forma assíncrona
-        fetch(storeData.pushcut_url, {
+        const emoji = isPending ? "🟡" : "💰";
+        const statusText = isPending ? "Venda Pendente/Pix" : "Venda Aprovada";
+        const message = `${emoji} *${statusText}!*\n\n*Valor:* ${formattedValue}\n*Gateway:* Vega\n*Produto:* ${products?.[0]?.title || 'Não informado'}\n*Cliente:* ${customerName}`;
+
+        fetch(`https://api.telegram.org/bot${storeData.telegram_bot_token}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            title: payload.status === "pending" || eventType === "ORDER_CREATED" ? "🟡 Venda Pendente (Vega)" : "💰 Venda Aprovada (Vega)",
-            text: `${formattedValue} - ${customerName}`,
-            sound: "cash_register"
-          }),
-        }).catch(e => console.error("Erro interno no disparo do Pushcut (Vega):", e));
+            chat_id: storeData.telegram_chat_id,
+            text: message,
+            parse_mode: "Markdown"
+          })
+        }).catch(err => console.error("[Telegram Push Error (Vega)]", err));
       }
     } catch (e) {
-      console.error("Erro ao buscar store para Pushcut (Vega):", e);
+      console.error("Erro ao buscar store para Telegram (Vega):", e);
     }
 
     return NextResponse.json({

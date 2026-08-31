@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const { data: store } = await supabase
       .from("stores")
-      .select("shopify_api_key_enc, pushcut_url, pushcut_notify_approved, pushcut_notify_pending")
+      .select("shopify_api_key_enc, telegram_bot_token, telegram_chat_id, telegram_notify_approved, telegram_notify_pending")
       .eq("id", store_id)
       .maybeSingle();
 
@@ -65,9 +65,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      pushcutUrl: store.pushcut_url || "",
-      pushcutNotifyApproved: store.pushcut_notify_approved ?? true,
-      pushcutNotifyPending: store.pushcut_notify_pending ?? true,
+      telegramBotToken: store.telegram_bot_token || "",
+      telegramChatId: store.telegram_chat_id || "",
+      telegramNotifyApproved: store.telegram_notify_approved ?? true,
+      telegramNotifyPending: store.telegram_notify_pending ?? true,
       // Retorna apenas se o token existe e seu formato parcial por segurança, ou o original se precisar exibir
       shopifyToken: store.shopify_api_key_enc ? "shpat_***" : "", 
     });

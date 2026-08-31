@@ -11,16 +11,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { store_id } = body;
+    const { store_id, botToken, chatId, notifyApproved, notifyPending } = body;
 
     if (!store_id) {
       return NextResponse.json({ error: "store_id é obrigatório" }, { status: 400 });
     }
 
-    // Check ownership and get URL
+    // Verify ownership
     const { data: store, error: storeError } = await supabase
       .from("stores")
-      .select("tenant_id, pushcut_url")
+      .select("tenant_id")
       .eq("id", store_id)
       .maybeSingle();
 
@@ -36,28 +36,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Loja não autorizada. Dono: ${store.tenant_id}, Você: ${user.id}` }, { status: 403 });
     }
 
-    if (!store.pushcut_url) {
-      return NextResponse.json({ error: "Nenhuma URL do Pushcut configurada nesta loja" }, { status: 400 });
-    }
-
-    // Dispara a notificação de teste
-    const response = await fetch(store.pushcut_url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: "✅ Teste ATM Tracking",
-        text: "Sua notificação do Pushcut está configurada corretamente!",
-        sound: "cash_register"
+    // Update
+    const { error } = await supabase
+      .from("stores")
+      .update({ 
+        telegram_bot_token: botToken ? botToken.trim() : null,
+        telegram_chat_id: chatId ? chatId.trim() : null,
+        telegram_notify_approved: notifyApproved ?? true,
+        telegram_notify_pending: notifyPending ?? true
       })
-    });
+      .eq("id", store_id);
 
-    if (!response.ok) {
-      throw new Error(`Pushcut API error: ${response.statusText}`);
-    }
+    if (error) throw error;
 
-    return NextResponse.json({ ok: true, message: "Notificação de teste enviada!" });
+    return NextResponse.json({ ok: true, message: "Telegram e preferências salvos com sucesso" });
   } catch (err: any) {
-    console.error("[Pushcut Test API Error]", err);
+    console.error("[Telegram Settings API Error]", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

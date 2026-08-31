@@ -79,12 +79,13 @@ function IntegrationsContent() {
   const [metaConnected, setMetaConnected] = useState(false);
   const [hasSavedTokenInDb, setHasSavedTokenInDb] = useState(false);
 
-  // Pushcut states
-  const [pushcutUrl, setPushcutUrl] = useState("");
-  const [pushcutNotifyApproved, setPushcutNotifyApproved] = useState(true);
-  const [pushcutNotifyPending, setPushcutNotifyPending] = useState(true);
-  const [savingPushcut, setSavingPushcut] = useState(false);
-  const [testingPushcut, setTestingPushcut] = useState(false);
+  // Telegram states
+  const [telegramBotToken, setTelegramBotToken] = useState("");
+  const [telegramChatId, setTelegramChatId] = useState("");
+  const [telegramNotifyApproved, setTelegramNotifyApproved] = useState(true);
+  const [telegramNotifyPending, setTelegramNotifyPending] = useState(true);
+  const [savingTelegram, setSavingTelegram] = useState(false);
+  const [testingTelegram, setTestingTelegram] = useState(false);
 
   // Meta Accordion states
   const [metaExpanded, setMetaExpanded] = useState(true);
@@ -285,51 +286,52 @@ function IntegrationsContent() {
     }
   };
 
-  const handleSavePushcut = async () => {
-    setSavingPushcut(true);
+  const handleSaveTelegram = async () => {
+    setSavingTelegram(true);
     try {
-      const res = await fetch("/api/v1/settings/pushcut", {
+      const res = await fetch("/api/v1/settings/telegram", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           store_id: storeId, 
-          pushcut_url: pushcutUrl,
-          notifyApproved: pushcutNotifyApproved,
-          notifyPending: pushcutNotifyPending
+          botToken: telegramBotToken,
+          chatId: telegramChatId,
+          notifyApproved: telegramNotifyApproved,
+          notifyPending: telegramNotifyPending
         })
       });
       const data = await res.json();
       if (res.ok) {
-        setSaveSuccessMsg("URL do Pushcut salva com sucesso!");
+        setSaveSuccessMsg("Configurações do Telegram salvas com sucesso!");
       } else {
         alert("Erro: " + data.error);
       }
     } catch (e: any) {
       alert("Erro: " + e.message);
     } finally {
-      setSavingPushcut(false);
+      setSavingTelegram(false);
       setTimeout(() => setSaveSuccessMsg(""), 6000);
     }
   };
 
-  const handleTestPushcut = async () => {
-    setTestingPushcut(true);
+  const handleTestTelegram = async () => {
+    setTestingTelegram(true);
     try {
-      const res = await fetch("/api/v1/settings/pushcut/test", {
+      const res = await fetch("/api/v1/settings/telegram/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ store_id: storeId })
       });
       const data = await res.json();
       if (res.ok) {
-        alert("Push de teste enviado! Verifique seu celular.");
+        alert("Push de teste enviado! Verifique seu Telegram.");
       } else {
         alert("Erro no teste: " + data.error);
       }
     } catch (e: any) {
       alert("Erro: " + e.message);
     } finally {
-      setTestingPushcut(false);
+      setTestingTelegram(false);
     }
   };
 
@@ -400,9 +402,10 @@ function IntegrationsContent() {
             const data = await credRes.json();
             if (data.zedyToken) setZedyToken(data.zedyToken);
             if (data.shopifyToken) setShopifyToken(data.shopifyToken);
-            if (data.pushcutUrl) setPushcutUrl(data.pushcutUrl);
-            if (data.pushcutNotifyApproved !== undefined) setPushcutNotifyApproved(data.pushcutNotifyApproved);
-            if (data.pushcutNotifyPending !== undefined) setPushcutNotifyPending(data.pushcutNotifyPending);
+            if (data.telegramBotToken) setTelegramBotToken(data.telegramBotToken);
+            if (data.telegramChatId) setTelegramChatId(data.telegramChatId);
+            if (data.telegramNotifyApproved !== undefined) setTelegramNotifyApproved(data.telegramNotifyApproved);
+            if (data.telegramNotifyPending !== undefined) setTelegramNotifyPending(data.telegramNotifyPending);
           }
         }
       } catch (err) {
@@ -1012,49 +1015,57 @@ function IntegrationsContent() {
             </div>
           </div>
 
-          {/* Pushcut Card */}
-          <div className="rounded-2xl border border-zinc-800/80 bg-[#0E1118] p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-sm shadow-lg shadow-blue-600/30">
-                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    Pushcut (Notificações no Celular)
-                  </h3>
-                  <p className="text-xs text-zinc-400 mt-0.5">Receba alertas em tempo real no iPhone quando ocorrerem vendas Aprovadas ou Pendentes.</p>
-                </div>
+          {/* 5. Telegram Integration */}
+          <div className="bg-[#0B0E14] border border-zinc-800 rounded-2xl p-6">
+            <div className="flex items-start gap-4 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-blue-500 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
+                <AlertCircle size={20} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-white mb-1">Telegram (Notificações no Celular)</h3>
+                <p className="text-xs text-zinc-400">Receba alertas em tempo real no app do Telegram (100% grátis) quando ocorrerem vendas.</p>
               </div>
             </div>
 
             <div className="space-y-4">
-              <div>
-                <label className="text-xs font-bold text-zinc-300">URL do Webhook do Pushcut</label>
-                <div className="flex items-center gap-2 mt-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-zinc-300">Bot Token (via BotFather)</label>
                   <input
                     type="text"
-                    value={pushcutUrl}
-                    onChange={(e) => setPushcutUrl(e.target.value)}
-                    placeholder="https://api.pushcut.io/xxxxxxxx/notifications/MinhaVenda"
-                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono focus:outline-none focus:border-blue-500/50"
+                    value={telegramBotToken}
+                    onChange={(e) => setTelegramBotToken(e.target.value)}
+                    placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+                    className="mt-2 w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono focus:outline-none focus:border-blue-500/50"
                   />
-                  <button
-                    onClick={handleSavePushcut}
-                    disabled={savingPushcut || !pushcutUrl.trim()}
-                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
-                  >
-                    {savingPushcut ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                    Salvar
-                  </button>
-                  <button
-                    onClick={handleTestPushcut}
-                    disabled={testingPushcut || !pushcutUrl.trim()}
-                    className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
-                  >
-                    {testingPushcut ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                    Testar Push
-                  </button>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-zinc-300">Chat ID</label>
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="text"
+                      value={telegramChatId}
+                      onChange={(e) => setTelegramChatId(e.target.value)}
+                      placeholder="-1001234567890"
+                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono focus:outline-none focus:border-blue-500/50"
+                    />
+                    <button
+                      onClick={handleSaveTelegram}
+                      disabled={savingTelegram || !telegramBotToken.trim() || !telegramChatId.trim()}
+                      className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                    >
+                      {savingTelegram ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                      Salvar
+                    </button>
+                    <button
+                      onClick={handleTestTelegram}
+                      disabled={testingTelegram || !telegramBotToken.trim() || !telegramChatId.trim()}
+                      className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                    >
+                      {testingTelegram ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                      Testar
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1063,12 +1074,12 @@ function IntegrationsContent() {
                   <div className="relative flex items-center">
                     <input
                       type="checkbox"
-                      checked={pushcutNotifyApproved}
-                      onChange={(e) => setPushcutNotifyApproved(e.target.checked)}
+                      checked={telegramNotifyApproved}
+                      onChange={(e) => setTelegramNotifyApproved(e.target.checked)}
                       className="sr-only"
                     />
-                    <div className={`w-10 h-5.5 rounded-full transition-colors ${pushcutNotifyApproved ? 'bg-blue-600' : 'bg-zinc-800 border border-zinc-700'}`}></div>
-                    <div className={`absolute left-1 top-1 w-3.5 h-3.5 bg-white rounded-full transition-transform ${pushcutNotifyApproved ? 'translate-x-4.5' : 'translate-x-0'}`}></div>
+                    <div className={`w-10 h-5.5 rounded-full transition-colors ${telegramNotifyApproved ? 'bg-blue-600' : 'bg-zinc-800 border border-zinc-700'}`}></div>
+                    <div className={`absolute left-1 top-1 w-3.5 h-3.5 bg-white rounded-full transition-transform ${telegramNotifyApproved ? 'translate-x-4.5' : 'translate-x-0'}`}></div>
                   </div>
                   <span className="text-xs text-zinc-300 font-semibold group-hover:text-white transition-colors">
                     Notificar Vendas Aprovadas (💰)
@@ -1079,12 +1090,12 @@ function IntegrationsContent() {
                   <div className="relative flex items-center">
                     <input
                       type="checkbox"
-                      checked={pushcutNotifyPending}
-                      onChange={(e) => setPushcutNotifyPending(e.target.checked)}
+                      checked={telegramNotifyPending}
+                      onChange={(e) => setTelegramNotifyPending(e.target.checked)}
                       className="sr-only"
                     />
-                    <div className={`w-10 h-5.5 rounded-full transition-colors ${pushcutNotifyPending ? 'bg-blue-600' : 'bg-zinc-800 border border-zinc-700'}`}></div>
-                    <div className={`absolute left-1 top-1 w-3.5 h-3.5 bg-white rounded-full transition-transform ${pushcutNotifyPending ? 'translate-x-4.5' : 'translate-x-0'}`}></div>
+                    <div className={`w-10 h-5.5 rounded-full transition-colors ${telegramNotifyPending ? 'bg-blue-600' : 'bg-zinc-800 border border-zinc-700'}`}></div>
+                    <div className={`absolute left-1 top-1 w-3.5 h-3.5 bg-white rounded-full transition-transform ${telegramNotifyPending ? 'translate-x-4.5' : 'translate-x-0'}`}></div>
                   </div>
                   <span className="text-xs text-zinc-300 font-semibold group-hover:text-white transition-colors">
                     Notificar Vendas Pendentes / Cartão Recusado / Pix Gerado (🟡)
@@ -1092,9 +1103,9 @@ function IntegrationsContent() {
                 </label>
               </div>
               
-              {saveSuccessMsg && saveSuccessMsg.includes("Pushcut") && (
+              {saveSuccessMsg && saveSuccessMsg.includes("Telegram") && (
                 <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center gap-2 text-blue-400 text-xs font-bold">
-                  <CheckCircle2 size={16} />
+                  <Check size={14} />
                   {saveSuccessMsg}
                 </div>
               )}

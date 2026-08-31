@@ -316,29 +316,35 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     try {
       const { data: storeData } = await supabase
         .from("stores")
-        .select("pushcut_url, pushcut_notify_approved")
+        .select("telegram_bot_token, telegram_chat_id, telegram_notify_approved, telegram_notify_pending")
         .eq("id", storeId)
         .maybeSingle();
 
-      const shouldNotify = storeData?.pushcut_url && storeData.pushcut_notify_approved !== false;
+      const isApproved = status === 'approved';
+      const isPending = status === 'pending';
 
-      if (shouldNotify) {
-        const formattedValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: payload.currency || 'BRL' }).format(orderValue);
-        const customerName = `${customer.name || "Cliente"}`.trim();
-        
-        // Dispara de forma assíncrona para não bloquear a resposta do webhook
-        fetch(storeData.pushcut_url, {
+      const shouldNotify = 
+      (isApproved && storeData?.telegram_notify_approved !== false) || 
+      (isPending && storeData?.telegram_notify_pending !== false);
+
+      if (storeData?.telegram_bot_token && storeData?.telegram_chat_id && shouldNotify) {
+        const emoji = isApproved ? "💰" : "🟡";
+        const statusText = isApproved ? "Venda Aprovada" : "Venda Pendente/Pix";
+        const valueText = payload.value ? `R$ ${parseFloat(payload.value).toFixed(2).replace('.', ',')}` : "Valor indefinido";
+        const message = `${emoji} *${statusText}!*\n\n*Valor:* ${valueText}\n*Gateway:* Zedy\n*Produto:* ${payload.items?.[0]?.title || 'Não informado'}\n*Cliente:* ${payload.customer?.name || 'Não informado'}`;
+
+        fetch(`https://api.telegram.org/bot${storeData.telegram_bot_token}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            title: "💰 Venda Aprovada (Zedy)",
-            text: `${formattedValue} - ${customerName}`,
-            sound: "cash_register" // Som customizado se configurado no app
-          }),
-        }).catch(e => console.error("Erro interno no disparo do Pushcut (Zedy):", e));
+            chat_id: storeData.telegram_chat_id,
+            text: message,
+            parse_mode: "Markdown"
+          })
+        }).catch(err => console.error("[Telegram Push Error]", err));
       }
     } catch (e) {
-      console.error("Erro ao buscar store para Pushcut (Zedy):", e);
+      console.error("Erro ao buscar store para Telegram (Zedy):", e);
     }
 
     return NextResponse.json({ ok: true, metaResponse, emq_score: emqScore, signals_sent: userDataKeys });

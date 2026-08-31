@@ -11,16 +11,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { store_id, pushcut_url, notifyApproved, notifyPending } = body;
+    const { store_id } = body;
 
     if (!store_id) {
       return NextResponse.json({ error: "store_id é obrigatório" }, { status: 400 });
     }
 
-    // Verify ownership
+    // Check ownership and get bot details
     const { data: store, error: storeError } = await supabase
       .from("stores")
-      .select("tenant_id")
+      .select("tenant_id, telegram_bot_token, telegram_chat_id")
       .eq("id", store_id)
       .maybeSingle();
 
@@ -36,21 +36,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Loja não autorizada. Dono: ${store.tenant_id}, Você: ${user.id}` }, { status: 403 });
     }
 
-    // Update
-    const { error } = await supabase
-      .from("stores")
-      .update({ 
-        pushcut_url: pushcut_url ? pushcut_url.trim() : null,
-        pushcut_notify_approved: notifyApproved ?? true,
-        pushcut_notify_pending: notifyPending ?? true
-      })
-      .eq("id", store_id);
+    if (!store.telegram_bot_token || !store.telegram_chat_id) {
+      return NextResponse.json({ error: "Configuração do Telegram incompleta." }, { status: 400 });
+    }
 
-    if (error) throw error;
+    // Send test notification
+    const res = await fetch(`https://api.telegram.org/bot${store.telegram_bot_token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: store.telegram_chat_id,
+        text: "⚡️ *Teste do ATM Tracking Manager*\nSua integração com o Telegram está funcionando perfeitamente!",
+        parse_mode: "Markdown"
+      }),
+    });
 
-    return NextResponse.json({ ok: true, message: "URL do Pushcut e preferências salvas com sucesso" });
+    if (!res.ok) {
+      const data = await res.text();
+      throw new Error(`Telegram API Error: ${res.status} - ${data}`);
+    }
+
+    return NextResponse.json({ ok: true, message: "Push de teste enviado com sucesso" });
   } catch (err: any) {
-    console.error("[Pushcut Settings API Error]", err);
+    console.error("[Telegram Test API Error]", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

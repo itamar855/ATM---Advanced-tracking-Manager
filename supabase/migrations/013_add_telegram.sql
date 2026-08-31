@@ -1,0 +1,1 @@
+﻿ALTER TABLE public.stores ADD COLUMN IF NOT EXISTS telegram_bot_token TEXT; ALTER TABLE public.stores ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT; ALTER TABLE public.stores ADD COLUMN IF NOT EXISTS telegram_notify_approved BOOLEAN DEFAULT true; ALTER TABLE public.stores ADD COLUMN IF NOT EXISTS telegram_notify_pending BOOLEAN DEFAULT true;

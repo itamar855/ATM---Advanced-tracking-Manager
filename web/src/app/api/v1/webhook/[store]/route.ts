@@ -207,36 +207,39 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .eq("event_id", metaEvent.event_id)
         .eq("source", "server");
 
-      // Disparo de Notificação Pushcut
+      // Disparo de Notificação Telegram
       try {
         const { data: storeData } = await supabase
           .from("stores")
-          .select("pushcut_url, pushcut_notify_approved, pushcut_notify_pending")
+          .select("telegram_bot_token, telegram_chat_id, telegram_notify_approved, telegram_notify_pending")
           .eq("id", storeId)
           .maybeSingle();
 
         const isPending = payload.financial_status === "pending";
-        const shouldNotify = storeData?.pushcut_url && (
-          (isPending && storeData.pushcut_notify_pending !== false) ||
-          (!isPending && storeData.pushcut_notify_approved !== false)
-        );
+        const shouldNotify = 
+          (isPending && storeData?.telegram_notify_pending !== false) ||
+          (!isPending && storeData?.telegram_notify_approved !== false);
 
-        if (shouldNotify) {
+        if (storeData?.telegram_bot_token && storeData?.telegram_chat_id && shouldNotify) {
           const formattedValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: payload.currency || 'BRL' }).format(Number(payload.total_price || 0));
           const customerName = `${normalizedOrder.customer.firstName} ${normalizedOrder.customer.lastName}`.trim() || "Cliente Identificado";
           
-          fetch(storeData.pushcut_url, {
+          const emoji = isPending ? "🟡" : "💰";
+          const statusText = isPending ? "Venda Pendente" : "Venda Aprovada";
+          const message = `${emoji} *${statusText}!*\n\n*Valor:* ${formattedValue}\n*Gateway:* Shopify\n*Produto:* ${payload.line_items?.[0]?.title || 'Não informado'}\n*Cliente:* ${customerName}`;
+
+          fetch(`https://api.telegram.org/bot${storeData.telegram_bot_token}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              title: payload.financial_status === "pending" ? "🟡 Venda Pendente (Shopify)" : "💰 Venda Aprovada (Shopify)",
-              text: `${formattedValue} - ${customerName}`,
-              sound: "cash_register"
-            }),
-          }).catch(e => console.error("Erro interno no disparo do Pushcut (Shopify):", e));
+              chat_id: storeData.telegram_chat_id,
+              text: message,
+              parse_mode: "Markdown"
+            })
+          }).catch(err => console.error("[Telegram Push Error (Shopify)]", err));
         }
       } catch (e) {
-        console.error("Erro ao buscar store para Pushcut (Shopify):", e);
+        console.error("Erro ao buscar store para Telegram (Shopify):", e);
       }
 
       return NextResponse.json({
