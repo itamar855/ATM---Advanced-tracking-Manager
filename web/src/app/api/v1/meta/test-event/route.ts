@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
       event_name: event_name,
       event_time: eventTime,
       event_id: eventId,
-      action_source: "website",
+      action_source: "website" as "website",
       event_source_url: `https://test-capi.${store_id}.trackingatm.com/checkout`,
       user_data: userData,
       custom_data: customData,
