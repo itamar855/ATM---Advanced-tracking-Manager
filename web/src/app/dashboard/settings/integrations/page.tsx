@@ -1114,6 +1114,92 @@ function IntegrationsContent() {
         </div>
       )}
 
+      {/* ── ABA 2.8: TESTES CAPI ───────────────────────────────────────── */}
+      {activeTab === "testes" && (
+        <div className="animate-fade-in pt-4 space-y-6">
+          <div className="bg-[#0B0E14] border border-zinc-800 rounded-2xl p-6">
+            <div className="flex items-start gap-4 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center shrink-0 shadow-lg shadow-purple-600/20">
+                <FlaskConical size={20} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-white mb-1">Central de Testes CAPI</h3>
+                <p className="text-xs text-zinc-400">Envie eventos de teste diretamente para o Pixel da Meta para validar sua integração sem precisar fazer compras reais.</p>
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <label className="text-xs font-bold text-zinc-300">Código de Teste do Gerenciador de Eventos (TESTxxxxx)</label>
+                <div className="flex gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={testEventCode}
+                    onChange={(e) => setTestEventCode(e.target.value.toUpperCase())}
+                    placeholder="Ex: TEST12345"
+                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono focus:outline-none focus:border-blue-500/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!testEventCode.startsWith("TEST")) {
+                        alert("O código deve começar com TEST (ex: TEST12345)");
+                        return;
+                      }
+                      
+                      try {
+                        const btn = document.getElementById("btn-test-purchase");
+                        if (btn) btn.innerHTML = "Enviando...";
+                        
+                        const res = await fetch("/api/v1/meta/test-event", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            store_id: storeId,
+                            test_event_code: testEventCode,
+                            event_name: "Purchase"
+                          })
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                          alert("✅ Evento Purchase enviado com sucesso! Verifique a aba de Eventos de Teste no seu Meta.");
+                        } else {
+                          alert("❌ Erro: " + data.error);
+                        }
+                      } catch (err: any) {
+                        alert("Erro de conexão: " + err.message);
+                      } finally {
+                        const btn = document.getElementById("btn-test-purchase");
+                        if (btn) btn.innerHTML = "Disparar Teste: Purchase (Venda)";
+                      }
+                    }}
+                    id="btn-test-purchase"
+                    disabled={!testEventCode.trim() || !testEventCode.startsWith("TEST")}
+                    className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-lg shadow-purple-600/20"
+                  >
+                    Disparar Teste: Purchase (Venda)
+                  </button>
+                </div>
+              </div>
+              
+              <div className="p-4 rounded-xl bg-purple-500/10 border border-purple-500/20">
+                <h4 className="text-xs font-bold text-purple-400 flex items-center gap-2 mb-2">
+                  <ShieldCheck size={14} />
+                  Como validar seus eventos:
+                </h4>
+                <ol className="text-xs text-zinc-400 space-y-1.5 list-decimal list-inside">
+                  <li>Acesse o <b>Gerenciador de Eventos da Meta</b> e abra o seu Pixel.</li>
+                  <li>Vá na aba <b>Eventos de Teste</b>.</li>
+                  <li>Copie o código gerado em <i>Testar eventos do servidor</i>.</li>
+                  <li>Cole no campo acima e dispare o teste.</li>
+                  <li>O evento aparecerá no Facebook em cerca de 5 a 15 segundos.</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── ABA 2.5: UTMs ───────────────────────────────────────── */}
       {activeTab === "utms" && (
         <div className="animate-fade-in pt-4">
