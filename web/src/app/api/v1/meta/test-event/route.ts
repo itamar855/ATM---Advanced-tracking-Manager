@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { sendMetaCAPIEvent } from "@/lib/meta/capi";
-import { decrypt } from "@/lib/utils/encryption";
+import { decrypt } from "@/lib/encryption";
 
 export async function POST(request: NextRequest) {
   try {
