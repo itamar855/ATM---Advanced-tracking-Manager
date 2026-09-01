@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
 
     // 1. Busca token da integração caso não tenha sido enviado diretamente
-    const { data: currentIntegration } = await supabase
+    let { data: currentIntegration } = await supabase
       .from("integrations")
       .select("*")
       .eq("store_id", storeId)
@@ -39,6 +39,21 @@ export async function GET(request: NextRequest) {
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    // Fallback: se a loja atual ainda não tem integração gravada, herda a integração Meta ativa mais recente
+    if (!currentIntegration) {
+      const { data: fallback } = await supabase
+        .from("integrations")
+        .select("*")
+        .eq("platform", "meta")
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (fallback) {
+        currentIntegration = fallback;
+      }
+    }
 
     if (!accessToken && currentIntegration?.access_token_enc) {
       isFromDatabase = true;
@@ -156,8 +171,8 @@ export async function GET(request: NextRequest) {
           formattedAccounts.push(item);
         }
 
-        const targetBmId = bmId || "personal";
-        const targetBmName = bmName || (bmId ? `Business Manager (${bmId})` : "Contas Pessoais");
+        const targetBmName = bmName || acc.business_name || "Business Manager Principal";
+        const targetBmId = bmId || (acc.business_name ? `bm_${acc.business_name.toLowerCase().replace(/[^a-z0-9]/g, "_")}` : "bm_main");
 
         if (!businessesMap.has(targetBmId)) {
           businessesMap.set(targetBmId, {
@@ -174,25 +189,23 @@ export async function GET(request: NextRequest) {
       }
     };
 
-    // 1. Consulta /me/adaccounts (Contas vinculadas diretamente ao usuário)
+    // 1. Consulta /me/adaccounts (Campos 100% seguros sem exigir business_management)
     try {
-      const metaUrl = `https://graph.facebook.com/${apiVersion}/me/adaccounts?fields=name,account_id,id,account_status,currency,amount_spent,business_name,business&access_token=${accessToken}&limit=100`;
+      const metaUrl = `https://graph.facebook.com/${apiVersion}/me/adaccounts?fields=name,account_id,id,account_status,currency,amount_spent,business_name&access_token=${accessToken}&limit=100`;
       const resp = await fetch(metaUrl, { cache: "no-store" });
       if (resp.ok) {
         const accountsData = await resp.json();
         if (Array.isArray(accountsData.data)) {
           accountsData.data.forEach((acc: any) => {
-            const bId = acc.business?.id || acc.business_name ? (acc.business?.id || "bm_associated") : undefined;
-            const bName = acc.business?.name || acc.business_name || undefined;
-            addAccount(acc, bId, bName);
+            addAccount(acc, undefined, acc.business_name || undefined);
           });
         }
       }
     } catch {}
 
-    // 2. Busca todas as Business Managers via /me/businesses
+    // 2. Busca todas as Business Managers via /me/businesses (se o token possuir a permissão)
     try {
-      const bmsUrl = `https://graph.facebook.com/${apiVersion}/me/businesses?fields=id,name,primary_page&access_token=${accessToken}&limit=50`;
+      const bmsUrl = `https://graph.facebook.com/${apiVersion}/me/businesses?fields=id,name&access_token=${accessToken}&limit=50`;
       const bmsResp = await fetch(bmsUrl, { cache: "no-store" });
       if (bmsResp.ok) {
         const bmsData = await bmsResp.json();
@@ -201,7 +214,6 @@ export async function GET(request: NextRequest) {
             const bmId = bm.id;
             const bmName = bm.name || `Business Manager ${bmId}`;
 
-            // Busca owned_ad_accounts e client_ad_accounts em paralelo
             try {
               const [ownedRes, clientRes] = await Promise.all([
                 fetch(`https://graph.facebook.com/${apiVersion}/${bmId}/owned_ad_accounts?fields=name,account_id,id,account_status,currency,amount_spent,business_name&access_token=${accessToken}&limit=100`, { cache: "no-store" }),
@@ -227,7 +239,6 @@ export async function GET(request: NextRequest) {
       }
     } catch {}
 
-    // 3. Fallback inteligente: se houver contas formatadas mas nenhum BM agrupado, cria grupo principal
     let businesses = Array.from(businessesMap.values());
     if (businesses.length === 0 && formattedAccounts.length > 0) {
       businesses = [
