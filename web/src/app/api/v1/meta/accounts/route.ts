@@ -195,24 +195,7 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
-    // 4. Se houver contas conhecidas que sofreram rate limit, garante inclusão resiliente
-    const defaultKnownAccounts = [
-      { id: "act_1316835733682937", account_id: "1316835733682937", name: "USD 1", currency: "USD", amount_spent: 336364, account_status: 1 },
-      { id: "act_2704031959980850", account_id: "2704031959980850", name: "USD 2", currency: "USD", amount_spent: 65131, account_status: 1 },
-      { id: "act_1552831582460812", account_id: "1552831582460812", name: "USD 3", currency: "USD", amount_spent: 427086, account_status: 1 },
-    ];
-
-    defaultKnownAccounts.forEach(addAccount);
-
-    // 5. Inclui quaisquer outras contas salvas na integração
-    const savedAccountIds: string[] = currentIntegration?.config?.ad_account_ids || [];
-    for (const savedId of savedAccountIds) {
-      const cleanSavedId = savedId.startsWith("act_") ? savedId : `act_${savedId}`;
-      if (!knownIds.has(cleanSavedId)) {
-        addAccount({ id: cleanSavedId, account_id: cleanSavedId.replace("act_", ""), name: `Conta ${cleanSavedId}`, currency: "USD", amount_spent: 0, account_status: 1 });
-      }
-    }
-
+    // Nenhuma conta fake/hardcoded. Só retornaremos as que o token realmente tiver acesso.
     const selectedAccountIds = currentIntegration?.config?.ad_account_ids || (formattedAccounts.length > 0 ? [formattedAccounts[0].id] : []);
     const savedPixelId = currentIntegration?.pixel_id || "1104875232197441";
     const savedProfileName = currentIntegration?.config?.profile_name || userName;
