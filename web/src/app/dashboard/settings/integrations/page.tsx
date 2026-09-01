@@ -114,6 +114,28 @@ function IntegrationsContent() {
   const [addingProfileLoading, setAddingProfileLoading] = useState(false);
   const [addProfileError, setAddProfileError] = useState("");
 
+  // Diagnóstico Meta em Tempo Real
+  const [isDiagnosisModalOpen, setIsDiagnosisModalOpen] = useState(false);
+  const [diagnosisData, setDiagnosisData] = useState<any>(null);
+  const [runningDiagnosis, setRunningDiagnosis] = useState(false);
+
+  const handleRunDiagnosis = async (customToken?: string) => {
+    setRunningDiagnosis(true);
+    setIsDiagnosisModalOpen(true);
+    try {
+      const currentStoreId = activeStore?.id || storeId || "";
+      const qToken = customToken || accessToken || "";
+      const url = `/api/v1/meta/debug?store_id=${encodeURIComponent(currentStoreId)}${qToken ? `&token=${encodeURIComponent(qToken)}` : ""}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      setDiagnosisData(data);
+    } catch (err: any) {
+      setDiagnosisData({ error: err.message });
+    } finally {
+      setRunningDiagnosis(false);
+    }
+  };
+
   const handleOpenMetaOAuth = () => {
     const width = 600;
     const height = 700;
@@ -609,13 +631,22 @@ function IntegrationsContent() {
                       <Layers size={14} className="text-blue-400" />
                       Conecte seus perfis por aqui:
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => setIsAddProfileModalOpen(true)}
-                      className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/30 transition-all flex items-center gap-1.5"
-                    >
-                      <Plus size={14} /> Adicionar perfil
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleRunDiagnosis()}
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#1A2133] hover:bg-[#222C44] text-blue-300 border border-blue-500/30 transition-all flex items-center gap-1.5"
+                      >
+                        <FlaskConical size={14} className="text-blue-400" /> Diagnosticar Conexão
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddProfileModalOpen(true)}
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/30 transition-all flex items-center gap-1.5"
+                      >
+                        <Plus size={14} /> Adicionar perfil
+                      </button>
+                    </div>
                   </div>
 
                   {/* Lista de Perfis Conectados */}
@@ -1371,6 +1402,120 @@ function IntegrationsContent() {
                 </button>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Diagnóstico Meta em Tempo Real */}
+      {isDiagnosisModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-2xl bg-[#0F131D] border border-blue-500/30 rounded-3xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                  <FlaskConical size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Diagnóstico da Conexão Meta Graph API</h3>
+                  <p className="text-[11px] text-zinc-400">Raio-X em tempo real do token, permissões e contas retornadas pelo Facebook</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDiagnosisModalOpen(false)}
+                className="text-zinc-500 hover:text-white text-xs px-2.5 py-1 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {runningDiagnosis ? (
+              <div className="py-12 text-center space-y-3">
+                <Loader2 size={32} className="animate-spin text-blue-500 mx-auto" />
+                <p className="text-xs text-zinc-300 font-semibold">Consultando Meta Graph API v23.0...</p>
+                <p className="text-[11px] text-zinc-500">Testando /me, /me/permissions, /me/adaccounts e /me/businesses...</p>
+              </div>
+            ) : diagnosisData ? (
+              <div className="space-y-4">
+                {/* Resumo do Status */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="p-3 rounded-xl bg-[#141824] border border-zinc-800">
+                    <span className="text-[10px] text-zinc-400 font-semibold uppercase">Token Banco</span>
+                    <p className="text-xs font-bold text-white mt-1">
+                      {diagnosisData.database?.found_in_store ? "Loja Atual" : (diagnosisData.database?.found_in_fallback ? "Fallback Ativo" : "Não Encontrado")}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#141824] border border-zinc-800">
+                    <span className="text-[10px] text-zinc-400 font-semibold uppercase">Validade Meta</span>
+                    <p className={`text-xs font-bold mt-1 ${diagnosisData.diagnosis_summary?.token_valid ? "text-emerald-400" : "text-red-400"}`}>
+                      {diagnosisData.diagnosis_summary?.token_valid ? "Válido (Ativo)" : "Inválido / Expirado"}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#141824] border border-zinc-800">
+                    <span className="text-[10px] text-zinc-400 font-semibold uppercase">Contas Descobertas</span>
+                    <p className="text-xs font-bold text-blue-400 mt-1">
+                      {diagnosisData.diagnosis_summary?.total_accounts_found || 0} conta(s)
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#141824] border border-zinc-800">
+                    <span className="text-[10px] text-zinc-400 font-semibold uppercase">BMs Encontradas</span>
+                    <p className="text-xs font-bold text-indigo-400 mt-1">
+                      {diagnosisData.diagnosis_summary?.total_bms_found || 0} BM(s)
+                    </p>
+                  </div>
+                </div>
+
+                {/* Recomendações e Diagnóstico */}
+                {diagnosisData.diagnosis_summary?.recommendations?.length > 0 && (
+                  <div className="p-4 rounded-xl bg-blue-950/20 border border-blue-500/20 space-y-1.5">
+                    <span className="text-xs font-bold text-blue-300 flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-blue-400" /> Diagnóstico do Sistema:
+                    </span>
+                    {diagnosisData.diagnosis_summary.recommendations.map((rec: string, i: number) => (
+                      <p key={i} className="text-xs text-zinc-300 leading-relaxed">
+                        • {rec}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {/* Visualizador do JSON Bruto */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-zinc-400">Resposta Bruta da Graph API:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(JSON.stringify(diagnosisData, null, 2), "snippet")}
+                      className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 hover:text-white flex items-center gap-1"
+                    >
+                      <Copy size={11} /> Copiar JSON
+                    </button>
+                  </div>
+                  <pre className="p-3 rounded-xl bg-[#090C12] border border-zinc-800/80 text-[10px] text-zinc-300 font-mono overflow-x-auto max-h-60">
+                    {JSON.stringify(diagnosisData, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-between border-t border-zinc-800 pt-4">
+              <button
+                type="button"
+                onClick={() => handleRunDiagnosis()}
+                disabled={runningDiagnosis}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all flex items-center gap-2"
+              >
+                <RefreshCw size={13} className={runningDiagnosis ? "animate-spin" : ""} />
+                Testar Novamente
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsDiagnosisModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-white transition-all"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}
