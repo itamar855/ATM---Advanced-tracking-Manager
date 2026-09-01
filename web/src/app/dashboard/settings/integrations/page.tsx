@@ -89,7 +89,7 @@ function IntegrationsContent() {
 
   // Meta Accordion states
   const [metaExpanded, setMetaExpanded] = useState(true);
-  const [accountsExpanded, setAccountsExpanded] = useState(false);
+  const [accountsExpanded, setAccountsExpanded] = useState(true);
   const [expandedProfiles, setExpandedProfiles] = useState<Record<string, boolean>>({
     "prof-1": true,
     "prof-2": false,
@@ -359,8 +359,9 @@ function IntegrationsContent() {
               accountId: a.accountId || a.id.replace("act_", ""),
               name: a.name || a.id,
               status: a.status || "ACTIVE",
-              currency: a.currency || "USD",
-              amountSpent: Number(a.spend || a.amountSpent || 0),
+              currency: a.currency || "BRL",
+              amountSpent: Number(a.amountSpent || a.spend || 0),
+              businessName: a.businessName || null,
             }));
 
             const bmList: BusinessManagerItem[] =
@@ -372,10 +373,11 @@ function IntegrationsContent() {
                           accountId: a.accountId || a.id.replace("act_", ""),
                           name: a.name || a.id,
                           status: a.status || "ACTIVE",
-                          currency: a.currency || "USD",
-                          amountSpent: Number(a.spend || a.amountSpent || 0),
+                          currency: a.currency || "BRL",
+                          amountSpent: Number(a.amountSpent || a.spend || 0),
+                          businessName: b.name || a.businessName || null,
                         }))
-                      : realAccounts;
+                      : [];
 
                     return {
                       id: b.id,
@@ -385,13 +387,13 @@ function IntegrationsContent() {
                   })
                 : [
                     {
-                      id: "bm_default",
+                      id: "bm_main",
                       name: "Business Manager Principal",
                       accounts: realAccounts,
                     },
                   ];
 
-            const profileName = accData.diagnostics?.userName || accData.user?.name || "Itamar Almeida (Meta Ads)";
+            const profileName = accData.profile?.name || accData.diagnostics?.userName || accData.user?.name || "Itamar Almeida (Meta Ads)";
             const realProfile: ProfileItem = {
               id: "prof-main",
               name: profileName,
@@ -519,7 +521,7 @@ function IntegrationsContent() {
       {/* Navegação por Abas Estilo Apple / UTMify */}
       <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-[#0E1118] border border-[#1E2330] overflow-x-auto shadow-inner">
         {[
-          { key: "anuncios", label: "Meta Ads", icon: Radio, count: "Ativo" },
+          { key: "anuncios", label: "Campanhas", icon: Radio, count: "Ativo" },
           { key: "webhooks", label: "Webhooks & Checkouts", icon: Plug, count: "2" },
           { key: "utms", label: "UTMs", icon: Sliders },
           { key: "pixel", label: "Pixel", icon: Code2 },
@@ -554,10 +556,10 @@ function IntegrationsContent() {
         })}
       </div>
 
-      {/* ── ABA 1: ANÚNCIOS ─────────────────────────────────────────────── */}
+      {/* ── ABA 1: CAMPANHAS ─────────────────────────────────────────────── */}
       {activeTab === "anuncios" && (
         <div className="space-y-4 animate-fade-in">
-          {/* Card Principal: Meta Ads */}
+          {/* Card Principal: Campanhas (Meta Ads) */}
           <div className="rounded-2xl border border-blue-500/30 bg-[#0F131D] shadow-2xl overflow-hidden transition-all">
             {/* Header Accordion Meta */}
             <div
@@ -572,14 +574,14 @@ function IntegrationsContent() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold text-white tracking-tight">Meta Ads</h3>
+                    <h3 className="text-base font-bold text-white tracking-tight">Campanhas (Meta Ads)</h3>
                     <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                       Conectado
                     </span>
                   </div>
                   <p className="text-xs text-zinc-400 mt-0.5">
-                    Rastreamento de campanhas, conjuntos, anúncios e conversões via CAPI v23.0
+                    Rastreamento de contas de anúncio, campanhas, conjuntos, anúncios e conversões via CAPI v23.0
                   </p>
                 </div>
               </div>
@@ -842,7 +844,7 @@ function IntegrationsContent() {
                     className="px-6 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all flex items-center gap-2 disabled:opacity-50"
                   >
                     {loading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                    Salvar Integração Meta Ads
+                    Salvar Integração de Campanhas
                   </button>
                 </div>
               </div>

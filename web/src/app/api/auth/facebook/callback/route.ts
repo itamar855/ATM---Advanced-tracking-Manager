@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { discoverFullMetaHierarchy } from "@/lib/meta/graph-service";
 
 export const dynamic = "force-dynamic";
 
@@ -61,70 +62,18 @@ export async function GET(request: NextRequest) {
       finalToken = longData.access_token || shortLivedToken;
     }
 
-    // 3. Busca o nome do usuário/perfil
-    let profileName = "Perfil Facebook";
-    try {
-      const meRes = await fetch(`https://graph.facebook.com/v23.0/me?fields=id,name&access_token=${finalToken}`);
-      if (meRes.ok) {
-        const meData = await meRes.json();
-        profileName = meData.name || profileName;
-      }
-    } catch {}
-
-    // 4. Busca exaustiva de contas de anúncio reais
-    const discoveredAccountIds = new Set<string>();
-
-    // 4.1 /me/adaccounts
-    try {
-      const adAccRes = await fetch(`https://graph.facebook.com/v23.0/me/adaccounts?fields=id,name,account_id&access_token=${finalToken}&limit=100`);
-      if (adAccRes.ok) {
-        const adAccData = await adAccRes.json();
-        if (Array.isArray(adAccData.data)) {
-          adAccData.data.forEach((acc: any) => {
-            const id = acc.id?.startsWith("act_") ? acc.id : `act_${acc.account_id || acc.id}`;
-            if (id) discoveredAccountIds.add(id);
-          });
+    // 3. Descoberta completa da árvore de BMs e Contas
+    const profile = await discoverFullMetaHierarchy(finalToken);
+    const discoveredAccountIds: string[] = [];
+    profile.businesses.forEach((bm) => {
+      bm.accounts.forEach((acc) => {
+        if (!discoveredAccountIds.includes(acc.id)) {
+          discoveredAccountIds.push(acc.id);
         }
-      }
-    } catch {}
+      });
+    });
 
-    // 4.2 /me/businesses (todas as BMs associadas)
-    try {
-      const bmRes = await fetch(`https://graph.facebook.com/v23.0/me/businesses?fields=id,name&access_token=${finalToken}&limit=50`);
-      if (bmRes.ok) {
-        const bmData = await bmRes.json();
-        if (Array.isArray(bmData.data)) {
-          for (const bm of bmData.data) {
-            try {
-              const [ownedRes, clientRes] = await Promise.all([
-                fetch(`https://graph.facebook.com/v23.0/${bm.id}/owned_ad_accounts?fields=id,account_id&access_token=${finalToken}&limit=100`),
-                fetch(`https://graph.facebook.com/v23.0/${bm.id}/client_ad_accounts?fields=id,account_id&access_token=${finalToken}&limit=100`),
-              ]);
-              if (ownedRes.ok) {
-                const owned = await ownedRes.json();
-                if (Array.isArray(owned.data)) {
-                  owned.data.forEach((acc: any) => {
-                    const id = acc.id?.startsWith("act_") ? acc.id : `act_${acc.account_id || acc.id}`;
-                    if (id) discoveredAccountIds.add(id);
-                  });
-                }
-              }
-              if (clientRes.ok) {
-                const clients = await clientRes.json();
-                if (Array.isArray(clients.data)) {
-                  clients.data.forEach((acc: any) => {
-                    const id = acc.id?.startsWith("act_") ? acc.id : `act_${acc.account_id || acc.id}`;
-                    if (id) discoveredAccountIds.add(id);
-                  });
-                }
-              }
-            } catch {}
-          }
-        }
-      }
-    } catch {}
-
-    // 5. Salva no banco de dados do Supabase
+    // 4. Salva no banco de dados do Supabase
     const supabase = createAdminClient();
 
     // Se targetStoreId não foi recebido via state, busca a loja ativa mais recente
@@ -147,8 +96,6 @@ export async function GET(request: NextRequest) {
       .limit(1)
       .maybeSingle();
 
-    const adAccountIdsArray = Array.from(discoveredAccountIds);
-
     const payload = {
       store_id: targetStoreId,
       platform: "meta",
@@ -157,8 +104,8 @@ export async function GET(request: NextRequest) {
       status: "active",
       config: {
         ...(existing?.config || {}),
-        profile_name: profileName,
-        ad_account_ids: adAccountIdsArray.length > 0 ? adAccountIdsArray : (existing?.config?.ad_account_ids || []),
+        profile_name: profile.name,
+        ad_account_ids: discoveredAccountIds.length > 0 ? discoveredAccountIds : (existing?.config?.ad_account_ids || []),
         oauth_connected: true,
         updated_at: new Date().toISOString(),
       },
@@ -171,7 +118,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.redirect(
-      `${appUrl}/dashboard/settings/integrations?oauth=success&profile=${encodeURIComponent(profileName)}`
+      `${appUrl}/dashboard/settings/integrations?oauth=success&profile=${encodeURIComponent(profile.name)}`
     );
   } catch (error: any) {
     console.error("[Facebook Callback Error]:", error);

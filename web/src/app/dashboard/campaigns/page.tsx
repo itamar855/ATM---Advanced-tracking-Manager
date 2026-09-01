@@ -50,7 +50,7 @@ function CampaignsContent() {
           setApiError(data.warning || data.notice);
         }
       } else {
-        setApiError(data.error || "Não foi possível carregar os dados da Meta Ads.");
+        setApiError(data.error || "Não foi possível carregar os dados das Campanhas.");
         setAccounts(data.accounts || []);
         setCampaigns(data.campaigns || []);
         setAdsets(data.adsets || []);
@@ -58,7 +58,7 @@ function CampaignsContent() {
       }
     } catch (err: any) {
       console.error("[Campaigns Page] Erro ao carregar dados:", err);
-      setApiError("Erro de conexão ao carregar campanhas da Meta.");
+      setApiError("Erro de conexão ao carregar campanhas.");
     } finally {
       if (!silent) setLoading(false);
       setIsRefreshing(false);

@@ -683,7 +683,7 @@ export function UtmifyCampaignManager({
         <div className="flex items-center gap-4 text-zinc-400">
             <AlertTriangle size={18} className="text-amber-400 shrink-0" />
             <div>
-              <p className="font-bold text-amber-200">Aviso sobre Conexão Meta Ads:</p>
+              <p className="font-bold text-amber-200">Aviso sobre Conexão das Campanhas:</p>
               <p className="text-zinc-300 mt-0.5">{apiError}</p>
             </div>
           </div>
