@@ -179,6 +179,14 @@ export async function GET(request: NextRequest) {
           });
         }
       }
+      
+      const bRes = await fetch(`https://graph.facebook.com/${apiVersion}/me/businesses?fields=id&access_token=${accessToken}`, { cache: "no-store" });
+      if (bRes.ok) {
+        const bData = await bRes.json();
+        if (Array.isArray(bData.data)) {
+          bData.data.forEach((b: any) => businessIds.add(b.id));
+        }
+      }
     } catch {}
 
     // 3. Consulta owned_ad_accounts e client_ad_accounts para cada Business Manager
@@ -190,6 +198,15 @@ export async function GET(request: NextRequest) {
           const bmData = await bmResp.json();
           if (Array.isArray(bmData.data)) {
             bmData.data.forEach(addAccount);
+          }
+        }
+        
+        const clientUrl = `https://graph.facebook.com/${apiVersion}/${bmId}/client_ad_accounts?fields=name,account_id,id,account_status,currency,amount_spent,business_name&access_token=${accessToken}&limit=100`;
+        const clientResp = await fetch(clientUrl, { cache: "no-store" });
+        if (clientResp.ok) {
+          const clientData = await clientResp.json();
+          if (Array.isArray(clientData.data)) {
+            clientData.data.forEach(addAccount);
           }
         }
       } catch {}
