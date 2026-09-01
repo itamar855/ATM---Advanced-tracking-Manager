@@ -12,9 +12,21 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const error = searchParams.get("error");
   const errorDescription = searchParams.get("error_description");
+  const stateRaw = searchParams.get("state");
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://trackingatm.vercel.app";
   const redirectUri = `${appUrl.replace(/\/$/, "")}/api/auth/facebook/callback`;
+
+  // Extrai store_id do state (se presente)
+  let targetStoreId = "";
+  if (stateRaw) {
+    try {
+      const decodedState = JSON.parse(Buffer.from(stateRaw, "base64url").toString("utf8"));
+      if (decodedState.store_id) targetStoreId = decodedState.store_id;
+    } catch {
+      targetStoreId = stateRaw;
+    }
+  }
 
   if (error || !code) {
     console.error("[Facebook OAuth Error]:", error, errorDescription);
@@ -59,14 +71,55 @@ export async function GET(request: NextRequest) {
       }
     } catch {}
 
-    // 4. Busca as contas de anúncio desse perfil
-    let adAccountIds: string[] = [];
+    // 4. Busca exaustiva de contas de anúncio reais
+    const discoveredAccountIds = new Set<string>();
+
+    // 4.1 /me/adaccounts
     try {
-      const adAccRes = await fetch(`https://graph.facebook.com/v23.0/me/adaccounts?fields=id,name&access_token=${finalToken}&limit=50`);
+      const adAccRes = await fetch(`https://graph.facebook.com/v23.0/me/adaccounts?fields=id,name,account_id&access_token=${finalToken}&limit=100`);
       if (adAccRes.ok) {
         const adAccData = await adAccRes.json();
         if (Array.isArray(adAccData.data)) {
-          adAccountIds = adAccData.data.map((acc: any) => acc.id);
+          adAccData.data.forEach((acc: any) => {
+            const id = acc.id?.startsWith("act_") ? acc.id : `act_${acc.account_id || acc.id}`;
+            if (id) discoveredAccountIds.add(id);
+          });
+        }
+      }
+    } catch {}
+
+    // 4.2 /me/businesses (todas as BMs associadas)
+    try {
+      const bmRes = await fetch(`https://graph.facebook.com/v23.0/me/businesses?fields=id,name&access_token=${finalToken}&limit=50`);
+      if (bmRes.ok) {
+        const bmData = await bmRes.json();
+        if (Array.isArray(bmData.data)) {
+          for (const bm of bmData.data) {
+            try {
+              const [ownedRes, clientRes] = await Promise.all([
+                fetch(`https://graph.facebook.com/v23.0/${bm.id}/owned_ad_accounts?fields=id,account_id&access_token=${finalToken}&limit=100`),
+                fetch(`https://graph.facebook.com/v23.0/${bm.id}/client_ad_accounts?fields=id,account_id&access_token=${finalToken}&limit=100`),
+              ]);
+              if (ownedRes.ok) {
+                const owned = await ownedRes.json();
+                if (Array.isArray(owned.data)) {
+                  owned.data.forEach((acc: any) => {
+                    const id = acc.id?.startsWith("act_") ? acc.id : `act_${acc.account_id || acc.id}`;
+                    if (id) discoveredAccountIds.add(id);
+                  });
+                }
+              }
+              if (clientRes.ok) {
+                const clients = await clientRes.json();
+                if (Array.isArray(clients.data)) {
+                  clients.data.forEach((acc: any) => {
+                    const id = acc.id?.startsWith("act_") ? acc.id : `act_${acc.account_id || acc.id}`;
+                    if (id) discoveredAccountIds.add(id);
+                  });
+                }
+              }
+            } catch {}
+          }
         }
       }
     } catch {}
@@ -74,22 +127,38 @@ export async function GET(request: NextRequest) {
     // 5. Salva no banco de dados do Supabase
     const supabase = createAdminClient();
 
+    // Se targetStoreId não foi recebido via state, busca a loja ativa mais recente
+    if (!targetStoreId) {
+      const { data: storeRow } = await supabase
+        .from("stores")
+        .select("id")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      targetStoreId = storeRow?.id || "dckb5g-7d";
+    }
+
     const { data: existing } = await supabase
       .from("integrations")
-      .select("id, pixel_id")
+      .select("id, pixel_id, config")
+      .eq("store_id", targetStoreId)
       .eq("platform", "meta")
+      .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
+    const adAccountIdsArray = Array.from(discoveredAccountIds);
+
     const payload = {
-      store_id: "dckb5g-7d",
+      store_id: targetStoreId,
       platform: "meta",
       pixel_id: existing?.pixel_id || "1104875232197441",
       access_token_enc: finalToken,
       status: "active",
       config: {
+        ...(existing?.config || {}),
         profile_name: profileName,
-        ad_account_ids: adAccountIds.length > 0 ? adAccountIds : ["act_1316835733682937"],
+        ad_account_ids: adAccountIdsArray.length > 0 ? adAccountIdsArray : (existing?.config?.ad_account_ids || []),
         oauth_connected: true,
         updated_at: new Date().toISOString(),
       },

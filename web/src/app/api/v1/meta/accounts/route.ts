@@ -136,94 +136,118 @@ export async function GET(request: NextRequest) {
     // ── Busca de Contas de Anúncio via /me/adaccounts & Business Managers ──
     let formattedAccounts: any[] = [];
     const knownIds = new Set<string>();
+    const businessesMap = new Map<string, { id: string; name: string; accounts: any[] }>();
 
-    const addAccount = (acc: any) => {
+    const addAccount = (acc: any, bmId?: string, bmName?: string) => {
       const cleanId = acc.id?.startsWith("act_") ? acc.id : `act_${acc.account_id || acc.id}`;
-      if (!knownIds.has(cleanId) && acc.id) {
-        knownIds.add(cleanId);
-        formattedAccounts.push({
+      if (acc.id || acc.account_id) {
+        const item = {
           id: cleanId,
           accountId: acc.account_id || cleanId.replace("act_", ""),
           name: acc.name || `Conta ${acc.account_id || cleanId}`,
           status: acc.account_status === 1 ? "ACTIVE" : acc.account_status === 2 ? "DISABLED" : "PAUSED",
-          currency: acc.currency || "USD",
+          currency: (acc.currency || "BRL").toUpperCase(),
           amountSpent: acc.amount_spent ? Number(acc.amount_spent) / 100 : 0,
-          businessName: acc.business_name || null,
-        });
+          businessName: bmName || acc.business_name || null,
+        };
+
+        if (!knownIds.has(cleanId)) {
+          knownIds.add(cleanId);
+          formattedAccounts.push(item);
+        }
+
+        const targetBmId = bmId || "personal";
+        const targetBmName = bmName || (bmId ? `Business Manager (${bmId})` : "Contas Pessoais");
+
+        if (!businessesMap.has(targetBmId)) {
+          businessesMap.set(targetBmId, {
+            id: targetBmId,
+            name: targetBmName,
+            accounts: [],
+          });
+        }
+
+        const bmEntry = businessesMap.get(targetBmId)!;
+        if (!bmEntry.accounts.some((a) => a.id === cleanId)) {
+          bmEntry.accounts.push(item);
+        }
       }
     };
 
-    // 1. Consulta /me/adaccounts
+    // 1. Consulta /me/adaccounts (Contas vinculadas diretamente ao usuário)
     try {
-      const metaUrl = `https://graph.facebook.com/${apiVersion}/me/adaccounts?fields=name,account_id,id,account_status,currency,amount_spent,business_name&access_token=${accessToken}&limit=100`;
+      const metaUrl = `https://graph.facebook.com/${apiVersion}/me/adaccounts?fields=name,account_id,id,account_status,currency,amount_spent,business_name,business&access_token=${accessToken}&limit=100`;
       const resp = await fetch(metaUrl, { cache: "no-store" });
       if (resp.ok) {
         const accountsData = await resp.json();
         if (Array.isArray(accountsData.data)) {
-          accountsData.data.forEach(addAccount);
-        }
-      }
-    } catch {}
-
-    // 2. Busca Business Manager IDs a partir do debug_token e /me/businesses
-    const businessIds = new Set<string>(["1279546367377201"]);
-    try {
-      const dbgRes = await fetch(`https://graph.facebook.com/${apiVersion}/debug_token?input_token=${accessToken}&access_token=${accessToken}`, { cache: "no-store" });
-      if (dbgRes.ok) {
-        const dbg = await dbgRes.json();
-        if (Array.isArray(dbg.data?.granular_scopes)) {
-          dbg.data.granular_scopes.forEach((sc: any) => {
-            if (Array.isArray(sc.target_ids)) {
-              sc.target_ids.forEach((id: string) => businessIds.add(id));
-            }
+          accountsData.data.forEach((acc: any) => {
+            const bId = acc.business?.id || acc.business_name ? (acc.business?.id || "bm_associated") : undefined;
+            const bName = acc.business?.name || acc.business_name || undefined;
+            addAccount(acc, bId, bName);
           });
         }
       }
-      
-      const bRes = await fetch(`https://graph.facebook.com/${apiVersion}/me/businesses?fields=id&access_token=${accessToken}`, { cache: "no-store" });
-      if (bRes.ok) {
-        const bData = await bRes.json();
-        if (Array.isArray(bData.data)) {
-          bData.data.forEach((b: any) => businessIds.add(b.id));
+    } catch {}
+
+    // 2. Busca todas as Business Managers via /me/businesses
+    try {
+      const bmsUrl = `https://graph.facebook.com/${apiVersion}/me/businesses?fields=id,name,primary_page&access_token=${accessToken}&limit=50`;
+      const bmsResp = await fetch(bmsUrl, { cache: "no-store" });
+      if (bmsResp.ok) {
+        const bmsData = await bmsResp.json();
+        if (Array.isArray(bmsData.data)) {
+          for (const bm of bmsData.data) {
+            const bmId = bm.id;
+            const bmName = bm.name || `Business Manager ${bmId}`;
+
+            // Busca owned_ad_accounts e client_ad_accounts em paralelo
+            try {
+              const [ownedRes, clientRes] = await Promise.all([
+                fetch(`https://graph.facebook.com/${apiVersion}/${bmId}/owned_ad_accounts?fields=name,account_id,id,account_status,currency,amount_spent,business_name&access_token=${accessToken}&limit=100`, { cache: "no-store" }),
+                fetch(`https://graph.facebook.com/${apiVersion}/${bmId}/client_ad_accounts?fields=name,account_id,id,account_status,currency,amount_spent,business_name&access_token=${accessToken}&limit=100`, { cache: "no-store" }),
+              ]);
+
+              if (ownedRes.ok) {
+                const owned = await ownedRes.json();
+                if (Array.isArray(owned.data)) {
+                  owned.data.forEach((acc: any) => addAccount(acc, bmId, bmName));
+                }
+              }
+
+              if (clientRes.ok) {
+                const clients = await clientRes.json();
+                if (Array.isArray(clients.data)) {
+                  clients.data.forEach((acc: any) => addAccount(acc, bmId, bmName));
+                }
+              }
+            } catch {}
+          }
         }
       }
     } catch {}
 
-    // 3. Consulta owned_ad_accounts e client_ad_accounts para cada Business Manager
-    for (const bmId of Array.from(businessIds)) {
-      try {
-        const bmUrl = `https://graph.facebook.com/${apiVersion}/${bmId}/owned_ad_accounts?fields=name,account_id,id,account_status,currency,amount_spent,business_name&access_token=${accessToken}&limit=100`;
-        const bmResp = await fetch(bmUrl, { cache: "no-store" });
-        if (bmResp.ok) {
-          const bmData = await bmResp.json();
-          if (Array.isArray(bmData.data)) {
-            bmData.data.forEach(addAccount);
-          }
-        }
-        
-        const clientUrl = `https://graph.facebook.com/${apiVersion}/${bmId}/client_ad_accounts?fields=name,account_id,id,account_status,currency,amount_spent,business_name&access_token=${accessToken}&limit=100`;
-        const clientResp = await fetch(clientUrl, { cache: "no-store" });
-        if (clientResp.ok) {
-          const clientData = await clientResp.json();
-          if (Array.isArray(clientData.data)) {
-            clientData.data.forEach(addAccount);
-          }
-        }
-      } catch {}
+    // 3. Fallback inteligente: se houver contas formatadas mas nenhum BM agrupado, cria grupo principal
+    let businesses = Array.from(businessesMap.values());
+    if (businesses.length === 0 && formattedAccounts.length > 0) {
+      businesses = [
+        {
+          id: "bm_default",
+          name: "Business Manager Principal",
+          accounts: formattedAccounts,
+        },
+      ];
     }
 
-    // Nenhuma conta fake/hardcoded. Só retornaremos as que o token realmente tiver acesso.
-    const selectedAccountIds = currentIntegration?.config?.ad_account_ids || (formattedAccounts.length > 0 ? [formattedAccounts[0].id] : []);
+    const savedSelected = currentIntegration?.config?.ad_account_ids;
+    const selectedAccountIds = Array.isArray(savedSelected)
+      ? savedSelected
+      : formattedAccounts.length > 0
+      ? formattedAccounts.map((a) => a.id)
+      : [];
+
     const savedPixelId = currentIntegration?.pixel_id || "1104875232197441";
     const savedProfileName = currentIntegration?.config?.profile_name || userName;
-
-    const businesses = [
-      {
-        id: "1279546367377201",
-        name: "Business Manager Principal",
-        accounts: formattedAccounts,
-      },
-    ];
 
     return NextResponse.json({
       ok: true,
@@ -239,7 +263,7 @@ export async function GET(request: NextRequest) {
       },
       user: { name: savedProfileName || userName },
       pixelId: savedPixelId,
-      selectedAccountIds: Array.isArray(selectedAccountIds) ? selectedAccountIds : [selectedAccountIds],
+      selectedAccountIds,
       accounts: formattedAccounts,
       businesses,
       fetchAccountsError: null,

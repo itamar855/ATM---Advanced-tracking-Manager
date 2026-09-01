@@ -46,6 +46,9 @@ function CampaignsContent() {
         if (data.untracked_sales_count !== undefined) {
           setUntrackedSalesCount(data.untracked_sales_count);
         }
+        if (data.warning || data.notice) {
+          setApiError(data.warning || data.notice);
+        }
       } else {
         setApiError(data.error || "Não foi possível carregar os dados da Meta Ads.");
         setAccounts(data.accounts || []);

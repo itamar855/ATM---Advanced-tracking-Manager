@@ -76,7 +76,6 @@ function IntegrationsContent() {
   const [copiedZedy, setCopiedZedy] = useState(false);
   const [copiedShopify, setCopiedShopify] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
-  const [copiedGateway7, setCopiedGateway7] = useState(false);
   const [metaConnected, setMetaConnected] = useState(false);
   const [hasSavedTokenInDb, setHasSavedTokenInDb] = useState(false);
 
@@ -120,8 +119,9 @@ function IntegrationsContent() {
     const height = 700;
     const left = window.screen.width / 2 - width / 2;
     const top = window.screen.height / 2 - height / 2;
+    const currentStoreId = activeStore?.id || storeId || "";
     window.open(
-      "/api/auth/facebook",
+      `/api/auth/facebook?store_id=${encodeURIComponent(currentStoreId)}`,
       "facebook_oauth",
       `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,status=yes`
     );
@@ -184,13 +184,12 @@ function IntegrationsContent() {
 
   const storeId = activeStore?.id || "";
   const host =
-    typeof window !== "undefined"
+    typeof window !== "undefined" && window.location.origin && !window.location.origin.includes("localhost")
       ? window.location.origin.replace(/\/$/, "")
       : "https://trackingatm.vercel.app";
 
   const vegaWebhookUrl = `${host}/api/v1/webhook/vega/${storeId}`;
   const zedyWebhookUrl = `${host}/api/v1/webhook/zedy/${storeId}`;
-  const gateway7WebhookUrl = `${host}/api/v1/webhook/gateway7/${storeId}`;
 
   const installSnippet = `<!-- ATM Pixel v4.4 — Cole antes de </head> no theme.liquid -->
 <script>
@@ -366,14 +365,27 @@ function IntegrationsContent() {
 
             const bmList: BusinessManagerItem[] =
               Array.isArray(accData.businesses) && accData.businesses.length > 0
-                ? accData.businesses.map((b: any) => ({
-                    id: b.id,
-                    name: b.name || "Business Manager Principal",
-                    accounts: realAccounts,
-                  }))
+                ? accData.businesses.map((b: any) => {
+                    const bmAccs = Array.isArray(b.accounts) && b.accounts.length > 0
+                      ? b.accounts.map((a: any) => ({
+                          id: a.id,
+                          accountId: a.accountId || a.id.replace("act_", ""),
+                          name: a.name || a.id,
+                          status: a.status || "ACTIVE",
+                          currency: a.currency || "USD",
+                          amountSpent: Number(a.spend || a.amountSpent || 0),
+                        }))
+                      : realAccounts;
+
+                    return {
+                      id: b.id,
+                      name: b.name || `Business Manager (${b.id})`,
+                      accounts: bmAccs,
+                    };
+                  })
                 : [
                     {
-                      id: "1279546367377201",
+                      id: "bm_default",
                       name: "Business Manager Principal",
                       accounts: realAccounts,
                     },
@@ -456,7 +468,7 @@ function IntegrationsContent() {
     }
   };
 
-  const handleCopy = (text: string, type: "webhook" | "zedy" | "snippet" | "shopify" | "gateway7") => {
+  const handleCopy = (text: string, type: "webhook" | "zedy" | "snippet" | "shopify") => {
     navigator.clipboard.writeText(text);
     if (type === "webhook") {
       setCopiedWebhook(true);
@@ -467,9 +479,6 @@ function IntegrationsContent() {
     } else if (type === "shopify") {
       setCopiedShopify(true);
       setTimeout(() => setCopiedShopify(false), 2000);
-    } else if (type === "gateway7") {
-      setCopiedGateway7(true);
-      setTimeout(() => setCopiedGateway7(false), 2000);
     } else {
       setCopiedSnippet(true);
       setTimeout(() => setCopiedSnippet(false), 2000);
@@ -1016,36 +1025,6 @@ function IntegrationsContent() {
               >
                 {copiedWebhook ? <Check size={14} /> : <Copy size={14} />}
                 {copiedWebhook ? "Copiado!" : "Copiar URL"}
-              </button>
-            </div>
-          </div>
-
-          {/* 4. Gateway7 Checkout */}
-          <div className="rounded-2xl border border-zinc-800/80 bg-[#0E1118] p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-orange-600 flex items-center justify-center text-white font-black text-sm">
-                  G7
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white">Gateway7 Checkout</h3>
-                  <p className="text-xs text-zinc-400">Webhook para eventos de pagamento e conversão da Gateway7</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                readOnly
-                value={gateway7WebhookUrl}
-                className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono select-all"
-              />
-              <button
-                onClick={() => handleCopy(gateway7WebhookUrl, "gateway7")}
-                className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
-              >
-                {copiedGateway7 ? <Check size={14} /> : <Copy size={14} />}
-                {copiedGateway7 ? "Copiado!" : "Copiar URL"}
               </button>
             </div>
           </div>

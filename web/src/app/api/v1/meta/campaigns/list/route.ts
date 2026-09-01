@@ -105,26 +105,61 @@ export async function GET(request: NextRequest) {
         break;
     }
 
-    // 3. Busca TODAS as contas vinculadas ao token via /me/adaccounts
+    // 3. Busca contas vinculadas ao token via /me/adaccounts e /me/businesses
     let metaAccountsRaw: any[] = [];
     let fetchError: string | null = null;
     try {
       const accRes = await fetch(
-        `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,name,currency,account_status,balance,amount_spent,spend_cap,funding_source_details&access_token=${token}&limit=50`,
+        `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,name,currency,account_status,balance,amount_spent,spend_cap,funding_source_details&access_token=${token}&limit=100`,
         { cache: "no-store" }
       );
       if (accRes.ok) {
         const accData = await accRes.json();
         if (Array.isArray(accData.data)) {
           metaAccountsRaw = accData.data;
-        } else if (accData.error) {
-          fetchError = accData.error.message;
-          console.error("[Meta /me/adaccounts Error]:", accData.error);
         }
       }
     } catch (e) {
       console.error("[Meta Accounts Fetch Error]:", e);
     }
+
+    // Se /me/adaccounts não retornou todas, busca também via /me/businesses
+    try {
+      const bmRes = await fetch(`https://graph.facebook.com/v23.0/me/businesses?fields=id,name&access_token=${token}&limit=50`, { cache: "no-store" });
+      if (bmRes.ok) {
+        const bmData = await bmRes.json();
+        if (Array.isArray(bmData.data)) {
+          for (const bm of bmData.data) {
+            try {
+              const [ownedRes, clientRes] = await Promise.all([
+                fetch(`https://graph.facebook.com/v23.0/${bm.id}/owned_ad_accounts?fields=id,name,currency,account_status,balance,amount_spent,spend_cap,funding_source_details&access_token=${token}&limit=100`, { cache: "no-store" }),
+                fetch(`https://graph.facebook.com/v23.0/${bm.id}/client_ad_accounts?fields=id,name,currency,account_status,balance,amount_spent,spend_cap,funding_source_details&access_token=${token}&limit=100`, { cache: "no-store" }),
+              ]);
+              if (ownedRes.ok) {
+                const owned = await ownedRes.json();
+                if (Array.isArray(owned.data)) {
+                  owned.data.forEach((acc: any) => {
+                    if (!metaAccountsRaw.some((existing: any) => existing.id === acc.id)) {
+                      metaAccountsRaw.push(acc);
+                    }
+                  });
+                }
+              }
+              if (clientRes.ok) {
+                const clients = await clientRes.json();
+                if (Array.isArray(clients.data)) {
+                  clients.data.forEach((acc: any) => {
+                    if (!metaAccountsRaw.some((existing: any) => existing.id === acc.id)) {
+                      metaAccountsRaw.push(acc);
+                    }
+                  });
+                }
+              }
+            } catch {}
+          }
+        }
+      }
+    } catch {}
 
     const configuredAccountIds: string[] = integration?.config?.ad_account_ids || [];
 
@@ -135,8 +170,11 @@ export async function GET(request: NextRequest) {
 
     if (accountIdsToProcess.length === 0) {
       return NextResponse.json({
-        ok: false,
-        error: fetchError || "Nenhuma conta de anúncio encontrada. Verifique se o token tem permissão ads_management.",
+        ok: true,
+        usdBrlRate,
+        untracked_sales_count: 0,
+        account_errors: [],
+        notice: "Nenhuma conta de anúncio selecionada para esta loja. Acesse Configurações -> Integrações e selecione as contas desejadas.",
         accounts: [], campaigns: [], adsets: [], ads: [],
       });
     }
@@ -623,12 +661,18 @@ export async function GET(request: NextRequest) {
     allAdsets.sort((a, b) => b.spend - a.spend);
     allAds.sort((a, b) => b.spend - a.spend);
 
-    // Se nenhuma conta retornou dados e houve erros, expõe o erro para a UI alertar o usuário
+    // Se nenhuma conta retornou dados e houve erros, expõe o aviso para a UI sem derrubar a tela
     if (formattedAccounts.length === 0 && accountErrors.length > 0) {
       return NextResponse.json({
-        ok: false,
-        error: `Falha ao acessar as contas selecionadas: ${accountErrors[0].error}`,
-        accounts: [], campaigns: [], adsets: [], ads: [],
+        ok: true,
+        usdBrlRate,
+        untracked_sales_count: untrackedSalesCount,
+        account_errors: accountErrors,
+        warning: `Falha ao acessar as contas selecionadas (${accountErrors[0].error}). Verifique se o token possui acesso concedido a essas contas no Facebook Business Manager ou selecione outras contas em Integrações.`,
+        accounts: [],
+        campaigns: [],
+        adsets: [],
+        ads: [],
       });
     }
 
