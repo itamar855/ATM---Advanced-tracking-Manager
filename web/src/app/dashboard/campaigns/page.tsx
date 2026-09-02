@@ -72,7 +72,7 @@ function CampaignsContent() {
   useEffect(() => {
     const interval = setInterval(() => {
       loadData(true);
-    }, 20000); // 20s
+    }, 60000); // 60s
     return () => clearInterval(interval);
   }, [datePreset, activeStore]);
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
 import { getUsdBrlRate } from "@/lib/currency";
 
@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
  * POST /api/v1/meta/campaigns/manage
  * Permite controle total de campanhas, conjuntos e anúncios:
  * - status: 'ACTIVE' | 'PAUSED'
+ * - name: renomeia campanha, conjunto ou anúncio
  * - budget: altera orçamento diário
  * - duplicate: duplica o objeto
  * - delete: remove o objeto
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
     const { id, level, action, value, accountCurrency, store_id } = body as {
       id: string;
       level: "campaign" | "adset" | "ad";
-      action: "status" | "budget" | "duplicate" | "delete";
+      action: "status" | "name" | "rename" | "budget" | "duplicate" | "delete";
       value?: any;
       accountCurrency?: string;
       store_id?: string;
@@ -29,9 +30,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "ID, action e store_id são obrigatórios" }, { status: 400 });
     }
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
-    // 1. Busca token da Meta da loja selecionada e que pertence a este usuário
+    // 1. Busca token da Meta da loja selecionada
     const { data: integration } = await supabase
       .from("integrations")
       .select("*")
@@ -61,6 +62,12 @@ export async function POST(request: NextRequest) {
 
     if (action === "status") {
       payload = { status: value === "active" || value === "ACTIVE" ? "ACTIVE" : "PAUSED" };
+    } else if (action === "name" || action === "rename") {
+      const newName = String(value || "").trim();
+      if (!newName) {
+        return NextResponse.json({ ok: false, error: "O novo nome não pode ficar vazio" }, { status: 400 });
+      }
+      payload = { name: newName };
     } else if (action === "budget") {
       let budgetAmount = Number(value || 0);
       // Se a conta for USD e o usuário digitou em BRL, converte para USD
@@ -141,6 +148,8 @@ export async function POST(request: NextRequest) {
         errMsg = "Sem permissão. Você precisa adicionar 'ads_management' no Token da Meta e atualizar as Integrações.";
       } else if (resData.error?.code === 190) {
         errMsg = "O Token da Meta expirou ou é inválido. Gere um novo nas configurações.";
+      } else if (errMsg.includes("Campaign budget is not supported") || errMsg.includes("ad set budget") || errMsg.includes("campaign budget")) {
+        errMsg = "Esta campanha é ABO (Orçamento no Conjunto). O orçamento deve ser alterado no nível de Conjuntos de Anúncios (CJs).";
       }
       
       return NextResponse.json({ ok: false, error: errMsg }, { status: 400 });
@@ -153,7 +162,7 @@ export async function POST(request: NextRequest) {
       meta_response: resData,
     });
   } catch (error: any) {
-    console.error("[Meta Campaign Manage Route Error]:", error);
+    console.error("[POST /api/v1/meta/campaigns/manage Error]:", error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 }

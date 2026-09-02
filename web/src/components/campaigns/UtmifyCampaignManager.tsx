@@ -56,6 +56,8 @@ export interface CampaignItem {
   status: "active" | "paused";
   budget: number;
   budget_type: string;
+  is_cbo?: boolean;
+  adset_count?: number;
   spend: number;
   revenue: number;
   profit: number;
@@ -79,6 +81,7 @@ export interface AdsetItem {
   status: "active" | "paused";
   budget: number;
   budget_type: string;
+  is_cbo?: boolean;
   spend: number;
   revenue: number;
   profit: number;
@@ -162,6 +165,45 @@ export function UtmifyCampaignManager({
   const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
   const [editBudgetValue, setEditBudgetValue] = useState<string>("");
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
+  // Edição de Nome
+  const [editingNameId, setEditingNameId] = useState<string | null>(null);
+  const [editNameValue, setEditNameValue] = useState<string>("");
+
+  const handleSaveName = async (id: string, level: "campaign" | "adset" | "ad") => {
+    const trimmed = editNameValue.trim();
+    if (!trimmed) {
+      alert("O nome não pode ficar vazio.");
+      return;
+    }
+
+    setActionLoadingId(id);
+    try {
+      const res = await fetch("/api/v1/meta/campaigns/manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          level,
+          action: "name",
+          value: trimmed,
+          store_id: activeStore?.id,
+        }),
+      });
+
+      if (res.ok) {
+        setEditingNameId(null);
+        onRefresh();
+      } else {
+        const d = await res.json();
+        alert("Erro na Meta: " + (d.error || "Não foi possível alterar o nome."));
+      }
+    } catch (e: any) {
+      alert("Erro ao renomear: " + e.message);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
 
   // Duplicação Modal
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
@@ -661,17 +703,18 @@ export function UtmifyCampaignManager({
           )}
         >
           <ImageIcon size={14} className={activeTab === "ads" ? "text-blue-400" : "text-zinc-500"} />
-          <span>ADs {selectedCampaignId || selectedAdsetId ? `de 1 campanha` : ""}</span>
-          {selectedAdsetId && (
+          <span>ADs {selectedAdsetId ? `do conjunto` : selectedCampaignId ? `da campanha` : ""}</span>
+          {(selectedAdsetId || selectedCampaignId) && (
             <span
               onClick={(e) => {
                 e.stopPropagation();
                 setSelectedAdsetId(null);
+                setSelectedCampaignId(null);
               }}
               className="ml-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] flex items-center gap-1 hover:bg-blue-500/40"
-              title="Limpar filtro de conjunto"
+              title="Limpar filtros e ver todos os anúncios"
             >
-              {selectedAdsetObj?.name.slice(0, 15) || "1 conj."}... <X size={10} />
+              {selectedAdsetObj?.name.slice(0, 12) || selectedCampaignObj?.name.slice(0, 12) || "Filtrado"} <X size={10} />
             </span>
           )}
         </button>
@@ -979,35 +1022,82 @@ export function UtmifyCampaignManager({
                         )}
                       </td>
 
-                      {/* Nome do Item com Drill-Down ao clicar */}
+                      {/* Nome do Item com Edição e Drill-Down */}
                       <td className="py-2.5 px-3">
-                        <div
-                          onClick={() => {
-                            if (activeTab === "accounts") handleSelectAccount(row.id);
-                            else if (activeTab === "campaigns") handleSelectCampaign(row.id);
-                            else if (activeTab === "adsets") handleSelectAdset(row.id);
-                          }}
-                          className="flex items-center gap-1.5 font-bold text-white hover:text-blue-400 cursor-pointer transition-colors group/name"
-                        >
-                          <span className="truncate max-w-[240px] font-medium" title={row.name}>
-                            {row.name}
-                          </span>
-                          {activeTab !== "ads" && activeTab !== "accounts" && (
-                            <ChevronRight size={12} className="text-zinc-600 group-hover/name:text-blue-400 transition-colors shrink-0" />
-                          )}
-                          {activeTab !== "accounts" && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenDuplicate(row.id, activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad", (row as any).budget);
+                        {editingNameId === row.id ? (
+                          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              value={editNameValue}
+                              onChange={(e) => setEditNameValue(e.target.value)}
+                              className="bg-[#141824] border border-blue-500 rounded-lg px-2 py-1 text-xs text-white font-medium focus:outline-none w-full max-w-[220px]"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleSaveName(row.id, activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad");
+                                if (e.key === "Escape") setEditingNameId(null);
                               }}
-                              className="opacity-0 group-hover/name:opacity-100 p-0.5 text-zinc-500 hover:text-blue-400 transition-opacity ml-1"
-                              title="Duplicar"
+                            />
+                            <button
+                              onClick={() => handleSaveName(row.id, activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad")}
+                              disabled={actionLoadingId === row.id}
+                              className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
+                              title="Salvar Nome"
                             >
-                              <Layers size={12} />
+                              <Check size={12} />
                             </button>
-                          )}
-                        </div>
+                            <button
+                              onClick={() => setEditingNameId(null)}
+                              className="p-1 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300"
+                              title="Cancelar"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 font-bold text-white group/name">
+                            <div
+                              onClick={() => {
+                                if (activeTab === "accounts") handleSelectAccount(row.id);
+                                else if (activeTab === "campaigns") handleSelectCampaign(row.id);
+                                else if (activeTab === "adsets") handleSelectAdset(row.id);
+                              }}
+                              className="flex items-center gap-1.5 hover:text-blue-400 cursor-pointer transition-colors max-w-[230px]"
+                            >
+                              <span className="truncate font-medium" title={row.name}>
+                                {row.name}
+                              </span>
+                              {activeTab !== "ads" && activeTab !== "accounts" && (
+                                <ChevronRight size={12} className="text-zinc-600 group-hover/name:text-blue-400 transition-colors shrink-0" />
+                              )}
+                            </div>
+
+                            {activeTab !== "accounts" && (
+                              <div className="flex items-center gap-1 opacity-0 group-hover/name:opacity-100 transition-opacity">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingNameId(row.id);
+                                    setEditNameValue(row.name);
+                                  }}
+                                  className="p-1 text-zinc-400 hover:text-blue-400 hover:bg-zinc-800 rounded transition-colors"
+                                  title="Editar Nome"
+                                >
+                                  <Edit2 size={11} />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenDuplicate(row.id, activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad", (row as any).budget);
+                                  }}
+                                  className="p-1 text-zinc-400 hover:text-purple-400 hover:bg-zinc-800 rounded transition-colors"
+                                  title="Duplicar"
+                                >
+                                  <Layers size={11} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {row.account_name && activeTab !== "accounts" && (
                           <span className="text-[9px] text-zinc-500 block truncate max-w-[200px]">
                             {row.account_name}
@@ -1046,7 +1136,7 @@ export function UtmifyCampaignManager({
                       {/* Colunas Exclusivas de Campanhas / Conjuntos / Anúncios */}
                       {activeTab !== "accounts" && (
                         <>
-                          {/* Orçamento Editável Inline */}
+                          {/* Orçamento com Distinção Clara CBO vs ABO */}
                           <td className="py-2.5 px-2 text-right font-mono">
                             {isEditingBudget ? (
                               <div className="flex items-center justify-end gap-1">
@@ -1054,8 +1144,12 @@ export function UtmifyCampaignManager({
                                   type="number"
                                   value={editBudgetValue}
                                   onChange={(e) => setEditBudgetValue(e.target.value)}
-                                  className="w-16 bg-zinc-800/40 border border-blue-500 rounded px-1.5 py-0.5 text-xs text-white font-mono text-right focus:outline-none"
+                                  className="w-20 bg-zinc-800/80 border border-blue-500 rounded px-1.5 py-0.5 text-xs text-white font-mono text-right focus:outline-none"
                                   autoFocus
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") handleSaveBudget(row.id, activeTab === "campaigns" ? "campaign" : "adset");
+                                    if (e.key === "Escape") setEditingBudgetId(null);
+                                  }}
                                 />
                                 <button
                                   onClick={() => handleSaveBudget(row.id, activeTab === "campaigns" ? "campaign" : "adset")}
@@ -1071,21 +1165,60 @@ export function UtmifyCampaignManager({
                                 </button>
                               </div>
                             ) : (
-                              <div className="flex items-center justify-end gap-1 group/b">
-                                <span className="text-[9px] text-zinc-500">{row.budget_type}</span>
-                                <span className="font-bold text-white">
-                                  {row.budget > 0 ? fmtBrl(row.budget) : "N/A"}
+                              <div className="flex items-center justify-end gap-1.5 group/b">
+                                {/* Badge CBO ou ABO */}
+                                <span
+                                  className={cn(
+                                    "text-[9px] px-1.5 py-0.5 rounded font-bold uppercase",
+                                    row.budget_type?.includes("CBO") || row.is_cbo
+                                      ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                                      : "bg-purple-500/20 text-purple-400 border border-purple-500/30"
+                                  )}
+                                  title={row.budget_type?.includes("CBO") || row.is_cbo ? "Orçamento a nível de Campanha (CBO/Advantage)" : "Orçamento a nível de Conjunto (ABO)"}
+                                >
+                                  {row.budget_type?.includes("CBO") || row.is_cbo ? "CBO" : "ABO"}
                                 </span>
-                                {row.budget > 0 && (
+
+                                <span className="font-bold text-white text-xs">
+                                  {row.budget > 0 ? fmtBrl(row.budget) : (activeTab === "campaigns" && !row.is_cbo ? "Sob CJs" : "N/A")}
+                                </span>
+
+                                {/* Botão de Edição de Orçamento para CBO */}
+                                {activeTab === "campaigns" && (row.is_cbo || row.budget_type?.includes("CBO")) && (
                                   <button
                                     onClick={() => {
                                       setEditingBudgetId(row.id);
-                                      setEditBudgetValue(String(row.budget));
+                                      setEditBudgetValue(String(row.budget || ""));
                                     }}
-                                    className="opacity-0 group-hover/b:opacity-100 p-0.5 text-zinc-500 hover:text-blue-400 transition-opacity"
-                                    title="Editar Orçamento"
+                                    className="opacity-0 group-hover/b:opacity-100 p-0.5 text-zinc-400 hover:text-blue-400 transition-opacity"
+                                    title="Editar Orçamento da Campanha"
                                   >
-                                    <Edit2 size={9} />
+                                    <Edit2 size={10} />
+                                  </button>
+                                )}
+
+                                {/* Se for campanha ABO, botão para abrir os CJs daquela campanha */}
+                                {activeTab === "campaigns" && !row.is_cbo && (
+                                  <button
+                                    onClick={() => handleSelectCampaign(row.id)}
+                                    className="opacity-0 group-hover/b:opacity-100 p-0.5 text-zinc-400 hover:text-purple-400 transition-opacity"
+                                    title="Ver / Ajustar Orçamentos dos CJs desta campanha"
+                                  >
+                                    <LayoutGrid size={10} />
+                                  </button>
+                                )}
+
+                                {/* Se for Adset (CJ), botão para editar seu orçamento individual */}
+                                {activeTab === "adsets" && !row.is_cbo && (
+                                  <button
+                                    onClick={() => {
+                                      setEditingBudgetId(row.id);
+                                      setEditBudgetValue(String(row.budget || ""));
+                                    }}
+                                    className="opacity-0 group-hover/b:opacity-100 p-0.5 text-zinc-400 hover:text-blue-400 transition-opacity"
+                                    title="Editar Orçamento deste Conjunto"
+                                  >
+                                    <Edit2 size={10} />
                                   </button>
                                 )}
                               </div>
@@ -1175,7 +1308,21 @@ export function UtmifyCampaignManager({
               ) : (
                 <tr>
                   <td colSpan={15} className="py-12 text-center text-zinc-500">
-                    Nenhum registro encontrado para os filtros selecionados.
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <p className="text-xs">Nenhum registro encontrado para os filtros selecionados.</p>
+                      {(selectedCampaignId || selectedAdsetId) && (
+                        <button
+                          onClick={() => {
+                            setSelectedCampaignId(null);
+                            setSelectedAdsetId(null);
+                          }}
+                          className="px-3.5 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 text-xs font-semibold border border-blue-500/30 transition-all inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <X size={12} />
+                          <span>Limpar filtros e ver tudo em {activeTab === "campaigns" ? "Campanhas" : activeTab === "adsets" ? "Conjuntos" : "Anúncios"}</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )}

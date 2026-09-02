@@ -5,6 +5,14 @@ import { getUsdBrlRate, convertToBrl } from "@/lib/currency";
 
 export const dynamic = "force-dynamic";
 
+// Cache em memória para evitar Rate Limit da Meta (code 17) por polling frequente
+interface CacheEntry {
+  timestamp: number;
+  data: any;
+}
+const MEMORY_CACHE = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 25000; // 25 segundos
+
 /**
  * GET /api/v1/meta/campaigns/list
  * Retorna dados estruturados em 4 níveis (Contas, Campanhas, Conjuntos/AdSets, Anúncios/Ads)
@@ -18,6 +26,13 @@ export async function GET(request: NextRequest) {
     const storeId = searchParams.get("store_id");
     if (!storeId) {
       return NextResponse.json({ ok: false, error: "store_id is required" }, { status: 400 });
+    }
+
+    const cacheKey = `${storeId}_${datePreset}_${searchParams.get("account_id") || "all"}`;
+    const nowMs = Date.now();
+    const cached = MEMORY_CACHE.get(cacheKey);
+    if (cached && (nowMs - cached.timestamp < CACHE_TTL_MS)) {
+      return NextResponse.json(cached.data);
     }
 
     const supabase = createAdminClient();
@@ -686,7 +701,21 @@ export async function GET(request: NextRequest) {
         const cMargin = cNetRevenue > 0 ? (cProfit / cNetRevenue) * 100 : (cSpend > 0 ? -100 : 0);
         const cRoi = cSpend > 0 ? cProfit / cSpend : 0;
 
-        const rawBudget = camp.daily_budget ? Number(camp.daily_budget) / 100 : Number(camp.lifetime_budget || 0) / 100;
+        // Identifica se a campanha é CBO (Advantage) ou ABO
+        const matchingAdsets = rawAdsets.filter((s: any) => s.campaign_id === camp.id);
+        const isCBO = Boolean(camp.daily_budget || camp.lifetime_budget);
+        
+        let rawBudget = 0;
+        if (isCBO) {
+          rawBudget = camp.daily_budget ? Number(camp.daily_budget) / 100 : Number(camp.lifetime_budget || 0) / 100;
+        } else {
+          // Em campanhas ABO, soma o orçamento de todos os conjuntos ativos daquela campanha
+          rawBudget = matchingAdsets.reduce((sum: number, s: any) => {
+            const b = s.daily_budget ? Number(s.daily_budget) / 100 : Number(s.lifetime_budget || 0) / 100;
+            return sum + b;
+          }, 0);
+        }
+
         const convertedBudget = convertToBrl(rawBudget, currency, usdBrlRate);
         const isActive = camp.effective_status === "ACTIVE" || (camp.effective_status === undefined && camp.status === "ACTIVE");
 
@@ -698,7 +727,9 @@ export async function GET(request: NextRequest) {
           status: isActive ? "active" : "paused",
           effective_status: camp.effective_status || camp.status,
           budget: convertedBudget,
-          budget_type: camp.daily_budget ? "Diário" : (camp.lifetime_budget ? "Vitalício" : "ABO"),
+          budget_type: isCBO ? (camp.daily_budget ? "CBO" : "CBO (Vitalício)") : "ABO",
+          is_cbo: isCBO,
+          adset_count: matchingAdsets.length,
           spend: cSpend,
           revenue: cNetRevenue,
           profit: cProfit,
@@ -729,6 +760,7 @@ export async function GET(request: NextRequest) {
         const asMargin = asNetRevenue > 0 ? (asProfit / asNetRevenue) * 100 : (asSpend > 0 ? -100 : 0);
         const asRoi = asSpend > 0 ? asProfit / asSpend : 0;
 
+        const asIsCBO = !as.daily_budget && !as.lifetime_budget;
         const asRawBudget = as.daily_budget ? Number(as.daily_budget) / 100 : Number(as.lifetime_budget || 0) / 100;
         const asConvertedBudget = convertToBrl(asRawBudget, currency, usdBrlRate);
         const asIsActive = as.effective_status === "ACTIVE" || (as.effective_status === undefined && as.status === "ACTIVE");
@@ -743,7 +775,8 @@ export async function GET(request: NextRequest) {
           status: asIsActive ? "active" : "paused",
           effective_status: as.effective_status || as.status,
           budget: asConvertedBudget,
-          budget_type: as.daily_budget ? "Diário" : (as.lifetime_budget ? "Vitalício" : "CBO"),
+          budget_type: asIsCBO ? "CBO" : (as.daily_budget ? "Diário" : "Vitalício"),
+          is_cbo: asIsCBO,
           spend: asSpend,
           revenue: asNetRevenue,
           profit: asProfit,
@@ -827,7 +860,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({
+    const finalResponse = {
       ok: true,
       usdBrlRate,
       untracked_sales_count: untrackedSalesCount,
@@ -836,7 +869,10 @@ export async function GET(request: NextRequest) {
       campaigns: allCampaigns,
       adsets: allAdsets,
       ads: allAds,
-    });
+    };
+
+    MEMORY_CACHE.set(cacheKey, { timestamp: nowMs, data: finalResponse });
+    return NextResponse.json(finalResponse);
   } catch (error: any) {
     console.error("[Campaigns List Multi-Tier API Error]:", error);
     return NextResponse.json(
