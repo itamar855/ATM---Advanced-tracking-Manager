@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
 
 export const dynamic = "force-dynamic";
@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
   // 1. Consulta no Banco de Dados
   if (!token && storeId) {
     try {
-      const supabase = await createClient();
+      const supabase = createAdminClient();
 
       const { data: storeInt } = await supabase
         .from("integrations")

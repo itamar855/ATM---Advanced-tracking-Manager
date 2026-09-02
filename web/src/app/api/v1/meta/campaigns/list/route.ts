@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
 import { getUsdBrlRate, convertToBrl } from "@/lib/currency";
 
@@ -9,12 +9,6 @@ export const dynamic = "force-dynamic";
  * GET /api/v1/meta/campaigns/list
  * Retorna dados estruturados em 4 níveis (Contas, Campanhas, Conjuntos/AdSets, Anúncios/Ads)
  * enriquecidos com Ciclo de cobrança, Cartão de crédito, Métricas de Lucro, ROAS, IC, CPI e Margem.
- *
- * v3.1.0 - Fixes:
- *   - Removidos IDs hardcoded; usa exclusivamente contas do token conectado + config
- *   - Busca integração pela integração mais recente ativa (sem depender de store_id específico)
- *   - Adicionado effective_status para refletir status real de veiculação
- *   - Error handling granular por conta (falha numa conta não derruba tudo)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -26,7 +20,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "store_id is required" }, { status: 400 });
     }
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // 1. Busca token mestre da Meta — integração ativa desta loja
     const { data: integration } = await supabase

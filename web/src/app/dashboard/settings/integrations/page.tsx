@@ -357,100 +357,100 @@ function IntegrationsContent() {
     }
   };
 
+  const loadMetaCredentials = async () => {
+    try {
+      const targetStoreId = activeStore?.id || storeId || (typeof window !== "undefined" ? localStorage.getItem("atm_active_store_id") : null) || "dckb5g-7d";
+      const accRes = await fetch(`/api/v1/meta/accounts?store_id=${targetStoreId}`);
+      if (accRes.ok) {
+        const accData = await accRes.json();
+        if (accData.ok) {
+          setMetaConnected(accData.connected);
+          setHasSavedTokenInDb(accData.isFromDatabase);
+          if (accData.pixelId) setPixelId(accData.pixelId);
+
+          const savedAccountIds: string[] = Array.isArray(accData.selectedAccountIds)
+            ? accData.selectedAccountIds
+            : [];
+
+          const rawAccounts = Array.isArray(accData.accounts) ? accData.accounts : [];
+          const realAccounts: AdAccount[] = rawAccounts.map((a: any) => ({
+            id: a.id,
+            accountId: a.accountId || a.id.replace("act_", ""),
+            name: a.name || a.id,
+            status: a.status || "ACTIVE",
+            currency: a.currency || "BRL",
+            amountSpent: Number(a.amountSpent || a.spend || 0),
+            businessName: a.businessName || null,
+          }));
+
+          const bmList: BusinessManagerItem[] =
+            Array.isArray(accData.businesses) && accData.businesses.length > 0
+              ? accData.businesses.map((b: any) => {
+                  const bmAccs = Array.isArray(b.accounts) && b.accounts.length > 0
+                    ? b.accounts.map((a: any) => ({
+                        id: a.id,
+                        accountId: a.accountId || a.id.replace("act_", ""),
+                        name: a.name || a.id,
+                        status: a.status || "ACTIVE",
+                        currency: a.currency || "BRL",
+                        amountSpent: Number(a.amountSpent || a.spend || 0),
+                        businessName: b.name || a.businessName || null,
+                      }))
+                    : [];
+
+                  return {
+                    id: b.id,
+                    name: b.name || `Business Manager (${b.id})`,
+                    accounts: bmAccs,
+                  };
+                })
+              : [
+                  {
+                    id: "bm_main",
+                    name: "Business Manager Principal",
+                    accounts: realAccounts,
+                  },
+                ];
+
+          const profileName = accData.profile?.name || accData.diagnostics?.userName || accData.user?.name || "Itamar Almeida (Meta Ads)";
+          const realProfile: ProfileItem = {
+            id: "prof-main",
+            name: profileName,
+            accountsCount: realAccounts.length,
+            businesses: bmList,
+            accounts: realAccounts,
+          };
+
+          setProfiles([realProfile]);
+          // Preserva exatamente as contas salvas no banco
+          if (savedAccountIds.length > 0) {
+            setSelectedAccounts(savedAccountIds);
+          } else if (realAccounts.length > 0) {
+            setSelectedAccounts(realAccounts.map((a) => a.id));
+          }
+        }
+      }
+      
+      if (targetStoreId) {
+        const credRes = await fetch(`/api/v1/settings/credentials?store_id=${targetStoreId}`);
+        if (credRes.ok) {
+          const data = await credRes.json();
+          if (data.zedyToken) setZedyToken(data.zedyToken);
+          if (data.shopifyToken) setShopifyToken(data.shopifyToken);
+          if (data.telegramBotToken) setTelegramBotToken(data.telegramBotToken);
+          if (data.telegramChatId) setTelegramChatId(data.telegramChatId);
+          if (data.telegramNotifyApproved !== undefined) setTelegramNotifyApproved(data.telegramNotifyApproved);
+          if (data.telegramNotifyPending !== undefined) setTelegramNotifyPending(data.telegramNotifyPending);
+        }
+      }
+    } catch (err) {
+      console.warn("[Integrations] Erro ao carregar contas reais:", err);
+    }
+  };
 
   useEffect(() => {
-    // Carrega credenciais do servidor e contas reais da Meta
-    async function loadMetaCredentials() {
-      try {
-        const accRes = await fetch(`/api/v1/meta/accounts?store_id=${activeStore?.id}`);
-        if (accRes.ok) {
-          const accData = await accRes.json();
-          if (accData.ok) {
-            setMetaConnected(accData.connected);
-            setHasSavedTokenInDb(accData.isFromDatabase);
-            if (accData.pixelId) setPixelId(accData.pixelId);
-
-            const savedAccountIds: string[] = Array.isArray(accData.selectedAccountIds)
-              ? accData.selectedAccountIds
-              : [];
-
-            const rawAccounts = Array.isArray(accData.accounts) ? accData.accounts : [];
-            const realAccounts: AdAccount[] = rawAccounts.map((a: any) => ({
-              id: a.id,
-              accountId: a.accountId || a.id.replace("act_", ""),
-              name: a.name || a.id,
-              status: a.status || "ACTIVE",
-              currency: a.currency || "BRL",
-              amountSpent: Number(a.amountSpent || a.spend || 0),
-              businessName: a.businessName || null,
-            }));
-
-            const bmList: BusinessManagerItem[] =
-              Array.isArray(accData.businesses) && accData.businesses.length > 0
-                ? accData.businesses.map((b: any) => {
-                    const bmAccs = Array.isArray(b.accounts) && b.accounts.length > 0
-                      ? b.accounts.map((a: any) => ({
-                          id: a.id,
-                          accountId: a.accountId || a.id.replace("act_", ""),
-                          name: a.name || a.id,
-                          status: a.status || "ACTIVE",
-                          currency: a.currency || "BRL",
-                          amountSpent: Number(a.amountSpent || a.spend || 0),
-                          businessName: b.name || a.businessName || null,
-                        }))
-                      : [];
-
-                    return {
-                      id: b.id,
-                      name: b.name || `Business Manager (${b.id})`,
-                      accounts: bmAccs,
-                    };
-                  })
-                : [
-                    {
-                      id: "bm_main",
-                      name: "Business Manager Principal",
-                      accounts: realAccounts,
-                    },
-                  ];
-
-            const profileName = accData.profile?.name || accData.diagnostics?.userName || accData.user?.name || "Itamar Almeida (Meta Ads)";
-            const realProfile: ProfileItem = {
-              id: "prof-main",
-              name: profileName,
-              accountsCount: realAccounts.length,
-              businesses: bmList,
-              accounts: realAccounts,
-            };
-
-            setProfiles([realProfile]);
-            // Preserva exatamente as contas salvas no banco
-            if (savedAccountIds.length > 0) {
-              setSelectedAccounts(savedAccountIds);
-            } else if (realAccounts.length > 0) {
-              setSelectedAccounts(realAccounts.map((a) => a.id));
-            }
-          }
-        }
-        
-        if (storeId) {
-          const credRes = await fetch(`/api/v1/settings/credentials?store_id=${storeId}`);
-          if (credRes.ok) {
-            const data = await credRes.json();
-            if (data.zedyToken) setZedyToken(data.zedyToken);
-            if (data.shopifyToken) setShopifyToken(data.shopifyToken);
-            if (data.telegramBotToken) setTelegramBotToken(data.telegramBotToken);
-            if (data.telegramChatId) setTelegramChatId(data.telegramChatId);
-            if (data.telegramNotifyApproved !== undefined) setTelegramNotifyApproved(data.telegramNotifyApproved);
-            if (data.telegramNotifyPending !== undefined) setTelegramNotifyPending(data.telegramNotifyPending);
-          }
-        }
-      } catch (err) {
-        console.warn("[Integrations] Erro ao carregar contas reais:", err);
-      }
-    }
     loadMetaCredentials();
-  }, [activeStore]);
+  }, [activeStore?.id, storeId]);
 
   const toggleAccountSelection = (accId: string) => {
     setSelectedAccounts((prev) =>
@@ -461,12 +461,13 @@ function IntegrationsContent() {
   const handleSaveMeta = async () => {
     setLoading(true);
     setSaveSuccessMsg("");
+    const targetStoreId = activeStore?.id || storeId || (typeof window !== "undefined" ? localStorage.getItem("atm_active_store_id") : null) || "dckb5g-7d";
     try {
       const res = await fetch("/api/v1/meta/accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          store_id: storeId,
+          store_id: targetStoreId,
           platform: "meta",
           pixel_id: pixelId,
           access_token: accessToken.trim() ? accessToken.trim() : undefined,
@@ -477,15 +478,15 @@ function IntegrationsContent() {
       });
 
       if (res.ok) {
-        setSaveSuccessMsg("Configurações e contas selecionadas salvas com sucesso!");
-        setMetaConnected(true);
+        setSaveSuccessMsg("Integração e contas de anúncio salvas com sucesso!");
+        await loadMetaCredentials();
         setTimeout(() => setSaveSuccessMsg(""), 4000);
       } else {
-        const errJson = await res.json();
-        alert(errJson.error || "Erro ao salvar integração Meta.");
+        const data = await res.json();
+        alert("Erro ao salvar: " + (data.error || "Tente novamente"));
       }
-    } catch (e: any) {
-      alert("Erro ao conectar com a API: " + e.message);
+    } catch (err: any) {
+      alert("Erro de conexão ao salvar: " + err.message);
     } finally {
       setLoading(false);
     }

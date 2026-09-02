@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
 import {
   discoverFullMetaHierarchy,
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     let accessToken = rawToken ? rawToken.trim() : "";
     let isFromDatabase = false;
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // 1. Busca integração específica da loja
     let currentIntegration: any = null;
@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "store_id is required" }, { status: 400 });
     }
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // 1. Busca integração existente para esta loja ou integração mestre
     const { data: existing } = await supabase
