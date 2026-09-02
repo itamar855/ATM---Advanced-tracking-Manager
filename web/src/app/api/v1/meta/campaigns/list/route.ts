@@ -89,39 +89,33 @@ export async function GET(request: NextRequest) {
     const metaDatePreset = presetMap[datePreset] || "today";
 
     const now = new Date();
-    const endDate = new Date(now);
-    endDate.setHours(23, 59, 59, 999);
+    const brDateStr = now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
-    let startDate = new Date(now);
-    startDate.setHours(0, 0, 0, 0);
+    let startDate = new Date(`${brDateStr}T00:00:00-03:00`);
+    let endDate = new Date(`${brDateStr}T23:59:59.999-03:00`);
 
     switch (datePreset) {
-      case "yesterday":
-        startDate = new Date(now);
-        startDate.setDate(startDate.getDate() - 1);
-        startDate.setHours(0, 0, 0, 0);
-        endDate.setDate(endDate.getDate() - 1);
-        endDate.setHours(23, 59, 59, 999);
+      case "yesterday": {
+        const yest = new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
+        const yestStr = yest.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+        startDate = new Date(`${yestStr}T00:00:00-03:00`);
+        endDate = new Date(`${yestStr}T23:59:59.999-03:00`);
         break;
+      }
       case "last_7d":
-        startDate = new Date(now);
-        startDate.setDate(startDate.getDate() - 7);
-        startDate.setHours(0, 0, 0, 0);
+        startDate = new Date(startDate.getTime() - 7 * 24 * 60 * 60 * 1000);
         break;
       case "last_30d":
-        startDate = new Date(now);
-        startDate.setDate(startDate.getDate() - 30);
-        startDate.setHours(0, 0, 0, 0);
+        startDate = new Date(startDate.getTime() - 30 * 24 * 60 * 60 * 1000);
         break;
       case "last_60d":
-        startDate = new Date(now);
-        startDate.setDate(startDate.getDate() - 60);
-        startDate.setHours(0, 0, 0, 0);
+        startDate = new Date(startDate.getTime() - 60 * 24 * 60 * 60 * 1000);
         break;
-      case "this_month":
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        startDate.setHours(0, 0, 0, 0);
+      case "this_month": {
+        const [year, month] = brDateStr.split("-");
+        startDate = new Date(`${year}-${month}-01T00:00:00-03:00`);
         break;
+      }
       default: // "today"
         break;
     }

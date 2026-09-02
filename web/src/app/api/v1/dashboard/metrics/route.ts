@@ -19,39 +19,37 @@ function resolveDateRange(datePreset: string, checkoutStartedAt?: string | null)
   effectiveStartDate: string;
 } {
   const now = new Date();
-  const endDate = new Date(now);
-  endDate.setHours(23, 59, 59, 999);
+  // Formato da data em Brasília YYYY-MM-DD
+  const brDateStr = now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
-  let startDate = new Date(now);
-  startDate.setHours(0, 0, 0, 0);
+  let startDate = new Date(`${brDateStr}T00:00:00-03:00`);
+  let endDate = new Date(`${brDateStr}T23:59:59.999-03:00`);
 
   switch (datePreset) {
-    case "yesterday":
-      startDate = new Date(now);
-      startDate.setDate(startDate.getDate() - 1);
-      startDate.setHours(0, 0, 0, 0);
-      endDate.setDate(endDate.getDate() - 1);
-      endDate.setHours(23, 59, 59, 999);
+    case "yesterday": {
+      const yest = new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
+      const yestStr = yest.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      startDate = new Date(`${yestStr}T00:00:00-03:00`);
+      endDate = new Date(`${yestStr}T23:59:59.999-03:00`);
       break;
-    case "last_7d":
-      startDate = new Date(now);
-      startDate.setDate(startDate.getDate() - 7);
-      startDate.setHours(0, 0, 0, 0);
+    }
+    case "last_7d": {
+      startDate = new Date(startDate.getTime() - 7 * 24 * 60 * 60 * 1000);
       break;
-    case "last_30d":
-      startDate = new Date(now);
-      startDate.setDate(startDate.getDate() - 30);
-      startDate.setHours(0, 0, 0, 0);
+    }
+    case "last_30d": {
+      startDate = new Date(startDate.getTime() - 30 * 24 * 60 * 60 * 1000);
       break;
-    case "last_60d":
-      startDate = new Date(now);
-      startDate.setDate(startDate.getDate() - 60);
-      startDate.setHours(0, 0, 0, 0);
+    }
+    case "last_60d": {
+      startDate = new Date(startDate.getTime() - 60 * 24 * 60 * 60 * 1000);
       break;
-    case "this_month":
-      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      startDate.setHours(0, 0, 0, 0);
+    }
+    case "this_month": {
+      const [year, month] = brDateStr.split("-");
+      startDate = new Date(`${year}-${month}-01T00:00:00-03:00`);
       break;
+    }
     default: // "today"
       break;
   }
@@ -265,12 +263,20 @@ export async function GET(request: NextRequest) {
 
     const targetAccount = availableAccounts.find((a) => a.id === selectedAccountId);
     const targetAccNameClean = targetAccount ? targetAccount.name.toLowerCase().replace(/[^a-z0-9]/g, "") : "";
+    const seenOrderIds = new Set<string>();
 
     (allPurchases || []).forEach((ev) => {
       const metaResp = ev.meta_response || {};
       const orderDetails = metaResp.order_details || {};
       const customData = metaResp.custom_data || {};
       const tracking = orderDetails.tracking_params || {};
+
+      // Deduplicação por order_id para garantir consistência com a plataforma de checkout
+      const orderId = String(orderDetails.order_id || customData.order_id || ev.id || "").trim();
+      if (orderId && seenOrderIds.has(orderId)) {
+        return;
+      }
+      if (orderId) seenOrderIds.add(orderId);
 
       const utmCampaign = String(customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || "").toLowerCase().replace(/[^a-z0-9]/g, "");
       const utmSource = String(customData.utm_source || orderDetails.utm_source || tracking.utm_source || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -306,16 +312,10 @@ export async function GET(request: NextRequest) {
       const isBoleto = method.includes("boleto");
       const isPix = method.includes("pix") || method === ""; // Default pix
       
-      // Aplicar Taxas Hardcoded (Conforme config Utmify)
+      // Aplicar Taxa Real do Gateway (Pix ~9.9%, Cartão ~15%)
       let fee = 0;
       if (val > 0) {
-        if (isCard) {
-          // Cartão: 7.99% + 23.00% = 30.99% + R$ 3.99 fixo
-          fee = (val * 0.3099) + 3.99;
-        } else {
-          // Pix/Boleto: 10.00% + R$ 5.00 fixo
-          fee = (val * 0.10) + 5.00;
-        }
+        fee = isCard ? (val * 0.15) : (val * 0.099);
       }
       totalTaxes += fee;
 
