@@ -296,26 +296,41 @@ export async function GET(request: NextRequest) {
       rawCampaigns: any[];
       rawAdsets: any[];
       rawAds: any[];
+      campaignInsightsMap: Map<string, any>;
+      adsetInsightsMap: Map<string, any>;
+      adInsightsMap: Map<string, any>;
+      accountInsight: any;
     }> = [];
     const accountErrors: Array<{ id: string; error: string }> = [];
 
     const fetchPromises = accountIdsToProcess.map(async (accId) => {
-      const rawAcc = metaAccountsRaw.find((a: any) => a.id === accId) || {};
+      const cleanAccId = accId.startsWith("act_") ? accId : `act_${accId}`;
+      const rawAcc = metaAccountsRaw.find((a: any) => a.id === cleanAccId || a.id === accId) || {};
       const currency = ((rawAcc.currency || "BRL") as string).toUpperCase();
 
-      // ── Fetch 1: Dados da conta (sem campos privilegiados que causam 403) ──
-      // funding_source_details foi removido pois é um campo restrito e causa
-      // falha silenciosa em contas de BM cujo usuário não é admin full.
-      const accFields = "name,account_status,balance,amount_spent,currency,insights.date_preset(" + metaDatePreset + "){spend,impressions,clicks,actions}";
-      const accUrl = `https://graph.facebook.com/v23.0/${accId}?fields=${encodeURIComponent(accFields)}&access_token=${token}`;
+      // ── Fetch 1: Metadados puros da Conta (Campos seguros, nunca falham) ──
+      const accUrl = `https://graph.facebook.com/v23.0/${cleanAccId}?fields=id,account_id,name,account_status,balance,amount_spent,currency&access_token=${token}`;
 
-      // ── Fetch 2-4: Campanhas, Conjuntos e Anúncios — SEMPRE executados ──
-      // Mesmo que o fetch da conta falhe, buscamos campanhas/adsets/ads separadamente.
-      const [accRes, campRes, adsetRes, adRes] = await Promise.all([
+      // ── Fetch 2-4: Estrutura de Campanhas, Conjuntos e Anúncios ──
+      const campUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time&access_token=${token}&limit=200`;
+      const adsetUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id&access_token=${token}&limit=200`;
+      const adUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id&access_token=${token}&limit=200`;
+
+      // ── Fetch 5-8: Insights em lote por nível (evita erros de sintaxe nos nós) ──
+      const campInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=campaign&date_preset=${metaDatePreset}&fields=campaign_id,spend,impressions,clicks,actions&access_token=${token}&limit=500`;
+      const adsetInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=adset&date_preset=${metaDatePreset}&fields=adset_id,spend,impressions,clicks,actions&access_token=${token}&limit=500`;
+      const adInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=ad&date_preset=${metaDatePreset}&fields=ad_id,spend,impressions,clicks,actions&access_token=${token}&limit=500`;
+      const accInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=account&date_preset=${metaDatePreset}&fields=spend,impressions,clicks,actions&access_token=${token}`;
+
+      const [accRes, campRes, adsetRes, adRes, cInsRes, asInsRes, aInsRes, acInsRes] = await Promise.all([
         fetch(accUrl, { cache: "no-store" }),
-        fetch(`https://graph.facebook.com/v23.0/${accId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,insights.date_preset(${metaDatePreset}){spend,actions}&access_token=${token}&limit=200`, { cache: "no-store" }),
-        fetch(`https://graph.facebook.com/v23.0/${accId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id,insights.date_preset(${metaDatePreset}){spend,actions}&access_token=${token}&limit=200`, { cache: "no-store" }),
-        fetch(`https://graph.facebook.com/v23.0/${accId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id,insights.date_preset(${metaDatePreset}){spend,actions}&access_token=${token}&limit=200`, { cache: "no-store" }),
+        fetch(campUrl, { cache: "no-store" }),
+        fetch(adsetUrl, { cache: "no-store" }),
+        fetch(adUrl, { cache: "no-store" }),
+        fetch(campInsightsUrl, { cache: "no-store" }).catch(() => null),
+        fetch(adsetInsightsUrl, { cache: "no-store" }).catch(() => null),
+        fetch(adInsightsUrl, { cache: "no-store" }).catch(() => null),
+        fetch(accInsightsUrl, { cache: "no-store" }).catch(() => null),
       ]);
 
       let accData: any = {};
@@ -324,19 +339,17 @@ export async function GET(request: NextRequest) {
         if (accRes.ok && !raw.error) {
           accData = raw;
         } else {
-          // Conta-meta falhou, mas não interrompe — usamos dados do rawAcc (de /me/adaccounts)
-          console.warn(`[Campaigns] Account meta fetch failed for ${accId}:`, raw.error?.message);
           accData = {
-            name: rawAcc.name || accId,
+            name: rawAcc.name || `Conta ${cleanAccId.replace("act_", "")}`,
             account_status: rawAcc.account_status || 1,
             balance: rawAcc.balance || 0,
             amount_spent: rawAcc.amount_spent || 0,
             currency: rawAcc.currency || "BRL",
           };
         }
-      } catch (err) {
+      } catch {
         accData = {
-          name: rawAcc.name || accId,
+          name: rawAcc.name || `Conta ${cleanAccId.replace("act_", "")}`,
           account_status: 1,
           balance: 0,
           amount_spent: 0,
@@ -344,7 +357,6 @@ export async function GET(request: NextRequest) {
         };
       }
 
-      // Se campanhas/adsets/ads falharam com erro fatal, registra e pula
       let rawCampaigns: any[] = [];
       let rawAdsets: any[] = [];
       let rawAds: any[] = [];
@@ -352,7 +364,7 @@ export async function GET(request: NextRequest) {
       try {
         const campData = campRes.ok ? await campRes.json() : {};
         if (campData.error) {
-          accountErrors.push({ id: accId, error: campData.error.message || `Erro ao buscar campanhas` });
+          accountErrors.push({ id: cleanAccId, error: campData.error.message || "Erro ao buscar campanhas" });
         } else {
           rawCampaigns = Array.isArray(campData.data) ? campData.data : [];
         }
@@ -368,14 +380,63 @@ export async function GET(request: NextRequest) {
         rawAds = Array.isArray(adData.data) ? adData.data : [];
       } catch {}
 
+      // Mapeamento de Insights
+      const campaignInsightsMap = new Map<string, any>();
+      try {
+        if (cInsRes && cInsRes.ok) {
+          const cInsData = await cInsRes.json();
+          if (Array.isArray(cInsData.data)) {
+            cInsData.data.forEach((ins: any) => {
+              if (ins.campaign_id) campaignInsightsMap.set(ins.campaign_id, ins);
+            });
+          }
+        }
+      } catch {}
+
+      const adsetInsightsMap = new Map<string, any>();
+      try {
+        if (asInsRes && asInsRes.ok) {
+          const asInsData = await asInsRes.json();
+          if (Array.isArray(asInsData.data)) {
+            asInsData.data.forEach((ins: any) => {
+              if (ins.adset_id) adsetInsightsMap.set(ins.adset_id, ins);
+            });
+          }
+        }
+      } catch {}
+
+      const adInsightsMap = new Map<string, any>();
+      try {
+        if (aInsRes && aInsRes.ok) {
+          const aInsData = await aInsRes.json();
+          if (Array.isArray(aInsData.data)) {
+            aInsData.data.forEach((ins: any) => {
+              if (ins.ad_id) adInsightsMap.set(ins.ad_id, ins);
+            });
+          }
+        }
+      } catch {}
+
+      let accountInsight: any = {};
+      try {
+        if (acInsRes && acInsRes.ok) {
+          const acInsData = await acInsRes.json();
+          accountInsight = acInsData.data?.[0] || {};
+        }
+      } catch {}
+
       accountRawResults.push({
-        accId,
+        accId: cleanAccId,
         accData,
         rawAcc,
         currency,
         rawCampaigns,
         rawAdsets,
         rawAds,
+        campaignInsightsMap,
+        adsetInsightsMap,
+        adInsightsMap,
+        accountInsight,
       });
     });
 
@@ -521,18 +582,29 @@ export async function GET(request: NextRequest) {
     const allAds: any[] = [];
 
     accountRawResults.forEach((acc) => {
-      const { accId, accData, rawAcc, currency, rawCampaigns, rawAdsets, rawAds } = acc;
+      const {
+        accId,
+        accData,
+        rawAcc,
+        currency,
+        rawCampaigns,
+        rawAdsets,
+        rawAds,
+        campaignInsightsMap,
+        adsetInsightsMap,
+        adInsightsMap,
+        accountInsight,
+      } = acc;
 
-      const accName = accData.name || rawAcc.name || accId;
+      const accName = accData.name || rawAcc.name || `Conta ${accId.replace("act_", "")}`;
       const accStatusCode = accData.account_status;
       const accStatus = accStatusCode === 1 ? "Ativo" : accStatusCode === 2 ? "Desabilitado" : accStatusCode === 3 ? "Não Verificado" : "Pendente";
-      const cardDisplay = "N/A"; // funding_source_details removido (campo privilegiado)
+      const cardDisplay = "N/A";
 
       const rawBalance = Number(accData.balance || rawAcc.balance || 0) / 100;
       const cycleBrl = convertToBrl(rawBalance, currency, usdBrlRate);
 
-      const accInsights = accData.insights?.data?.[0] || {};
-      const rawPeriodSpend = Number(accInsights.spend || 0);
+      const rawPeriodSpend = Number(accountInsight?.spend || 0);
       const periodSpendBrl = convertToBrl(rawPeriodSpend, currency, usdBrlRate);
 
       const accAttr = accountAttribution.get(accId) || { grossRevenue: 0, netRevenue: 0, count: 0 };
@@ -567,7 +639,7 @@ export async function GET(request: NextRequest) {
 
       // Processa Campanhas
       rawCampaigns.forEach((camp: any) => {
-        const cIns = camp.insights?.data?.[0] || {};
+        const cIns = campaignInsightsMap.get(camp.id) || {};
         const cRawSpend = Number(cIns.spend || 0);
         const cSpend = convertToBrl(cRawSpend, currency, usdBrlRate);
 
@@ -610,7 +682,7 @@ export async function GET(request: NextRequest) {
 
       // Processa AdSets
       rawAdsets.forEach((as: any) => {
-        const asIns = as.insights?.data?.[0] || {};
+        const asIns = adsetInsightsMap.get(as.id) || {};
         const asRawSpend = Number(asIns.spend || 0);
         const asSpend = convertToBrl(asRawSpend, currency, usdBrlRate);
 
@@ -627,13 +699,12 @@ export async function GET(request: NextRequest) {
         const asRawBudget = as.daily_budget ? Number(as.daily_budget) / 100 : Number(as.lifetime_budget || 0) / 100;
         const asConvertedBudget = convertToBrl(asRawBudget, currency, usdBrlRate);
         const asIsActive = as.effective_status === "ACTIVE" || (as.effective_status === undefined && as.status === "ACTIVE");
-        const parentCamp = allCampaigns.find((c) => c.id === as.campaign_id);
 
         allAdsets.push({
           id: as.id,
           name: as.name,
-          campaign_id: as.campaign_id || (parentCamp?.id || ""),
-          campaign_name: parentCamp?.name || "Campanha",
+          campaign_id: as.campaign_id,
+          campaign_name: rawCampaigns.find((c: any) => c.id === as.campaign_id)?.name || as.campaign_id,
           account_id: accId,
           account_name: accName,
           status: asIsActive ? "active" : "paused",
@@ -656,7 +727,7 @@ export async function GET(request: NextRequest) {
 
       // Processa Ads
       rawAds.forEach((ad: any) => {
-        const adIns = ad.insights?.data?.[0] || {};
+        const adIns = adInsightsMap.get(ad.id) || {};
         const adRawSpend = Number(adIns.spend || 0);
         const adSpend = convertToBrl(adRawSpend, currency, usdBrlRate);
 
@@ -671,20 +742,20 @@ export async function GET(request: NextRequest) {
         const adRoi = adSpend > 0 ? adProfit / adSpend : 0;
 
         const adIsActive = ad.effective_status === "ACTIVE" || (ad.effective_status === undefined && ad.status === "ACTIVE");
-        const parentCamp = allCampaigns.find((c) => c.id === ad.campaign_id);
-        const parentAdset = allAdsets.find((as) => as.id === ad.adset_id);
 
         allAds.push({
           id: ad.id,
           name: ad.name,
-          adset_id: ad.adset_id || (parentAdset?.id || ""),
-          adset_name: parentAdset?.name || "Conjunto",
-          campaign_id: ad.campaign_id || (parentCamp?.id || ""),
-          campaign_name: parentCamp?.name || "Campanha",
+          adset_id: ad.adset_id,
+          adset_name: rawAdsets.find((s: any) => s.id === ad.adset_id)?.name || ad.adset_id,
+          campaign_id: ad.campaign_id,
+          campaign_name: rawCampaigns.find((c: any) => c.id === ad.campaign_id)?.name || ad.campaign_id,
           account_id: accId,
           account_name: accName,
           status: adIsActive ? "active" : "paused",
           effective_status: ad.effective_status || ad.status,
+          budget: 0,
+          budget_type: "AdSet/Campanha",
           spend: adSpend,
           revenue: adNetRevenue,
           profit: adProfit,
