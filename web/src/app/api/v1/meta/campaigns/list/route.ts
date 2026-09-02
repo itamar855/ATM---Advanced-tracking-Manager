@@ -106,41 +106,47 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. Busca contas vinculadas ao token via /me/adaccounts e /me/businesses
+    // Campos seguros: sem funding_source_details e spend_cap (campos privilegiados
+    // que causam falha silenciosa ou erro em contas de parceiros/BMs de clientes)
     let metaAccountsRaw: any[] = [];
-    let fetchError: string | null = null;
     try {
       const accRes = await fetch(
-        `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,name,currency,account_status,balance,amount_spent,spend_cap,funding_source_details&access_token=${token}&limit=100`,
+        `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,account_id,name,currency,account_status,balance,amount_spent&access_token=${token}&limit=200`,
         { cache: "no-store" }
       );
       if (accRes.ok) {
         const accData = await accRes.json();
         if (Array.isArray(accData.data)) {
           metaAccountsRaw = accData.data;
+        } else if (accData.error) {
+          console.error("[Campaigns] /me/adaccounts error:", accData.error.message);
         }
       }
     } catch (e) {
-      console.error("[Meta Accounts Fetch Error]:", e);
+      console.error("[Campaigns] /me/adaccounts fetch error:", e);
     }
 
-    // Se /me/adaccounts não retornou todas, busca também via /me/businesses
+    // Complementa com contas das Business Managers
     try {
-      const bmRes = await fetch(`https://graph.facebook.com/v23.0/me/businesses?fields=id,name&access_token=${token}&limit=50`, { cache: "no-store" });
+      const bmRes = await fetch(
+        `https://graph.facebook.com/v23.0/me/businesses?fields=id,name&access_token=${token}&limit=50`,
+        { cache: "no-store" }
+      );
       if (bmRes.ok) {
         const bmData = await bmRes.json();
         if (Array.isArray(bmData.data)) {
           for (const bm of bmData.data) {
             try {
               const [ownedRes, clientRes] = await Promise.all([
-                fetch(`https://graph.facebook.com/v23.0/${bm.id}/owned_ad_accounts?fields=id,name,currency,account_status,balance,amount_spent,spend_cap,funding_source_details&access_token=${token}&limit=100`, { cache: "no-store" }),
-                fetch(`https://graph.facebook.com/v23.0/${bm.id}/client_ad_accounts?fields=id,name,currency,account_status,balance,amount_spent,spend_cap,funding_source_details&access_token=${token}&limit=100`, { cache: "no-store" }),
+                fetch(`https://graph.facebook.com/v23.0/${bm.id}/owned_ad_accounts?fields=id,account_id,name,currency,account_status,balance,amount_spent&access_token=${token}&limit=200`, { cache: "no-store" }),
+                fetch(`https://graph.facebook.com/v23.0/${bm.id}/client_ad_accounts?fields=id,account_id,name,currency,account_status,balance,amount_spent&access_token=${token}&limit=200`, { cache: "no-store" }),
               ]);
               if (ownedRes.ok) {
                 const owned = await ownedRes.json();
                 if (Array.isArray(owned.data)) {
                   owned.data.forEach((acc: any) => {
-                    if (!metaAccountsRaw.some((existing: any) => existing.id === acc.id)) {
-                      metaAccountsRaw.push(acc);
+                    if (!metaAccountsRaw.some((ex: any) => ex.id === acc.id)) {
+                      metaAccountsRaw.push({ ...acc, _bm_name: bm.name });
                     }
                   });
                 }
@@ -149,8 +155,8 @@ export async function GET(request: NextRequest) {
                 const clients = await clientRes.json();
                 if (Array.isArray(clients.data)) {
                   clients.data.forEach((acc: any) => {
-                    if (!metaAccountsRaw.some((existing: any) => existing.id === acc.id)) {
-                      metaAccountsRaw.push(acc);
+                    if (!metaAccountsRaw.some((ex: any) => ex.id === acc.id)) {
+                      metaAccountsRaw.push({ ...acc, _bm_name: bm.name });
                     }
                   });
                 }
