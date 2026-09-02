@@ -297,39 +297,80 @@ export async function GET(request: NextRequest) {
       const rawAcc = metaAccountsRaw.find((a: any) => a.id === accId) || {};
       const currency = ((rawAcc.currency || "BRL") as string).toUpperCase();
 
-      const accFields = "name,account_status,balance,amount_spent,currency,funding_source_details,insights.date_preset(" + metaDatePreset + "){spend,impressions,clicks,actions}";
+      // ── Fetch 1: Dados da conta (sem campos privilegiados que causam 403) ──
+      // funding_source_details foi removido pois é um campo restrito e causa
+      // falha silenciosa em contas de BM cujo usuário não é admin full.
+      const accFields = "name,account_status,balance,amount_spent,currency,insights.date_preset(" + metaDatePreset + "){spend,impressions,clicks,actions}";
       const accUrl = `https://graph.facebook.com/v23.0/${accId}?fields=${encodeURIComponent(accFields)}&access_token=${token}`;
 
+      // ── Fetch 2-4: Campanhas, Conjuntos e Anúncios — SEMPRE executados ──
+      // Mesmo que o fetch da conta falhe, buscamos campanhas/adsets/ads separadamente.
+      const [accRes, campRes, adsetRes, adRes] = await Promise.all([
+        fetch(accUrl, { cache: "no-store" }),
+        fetch(`https://graph.facebook.com/v23.0/${accId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,insights.date_preset(${metaDatePreset}){spend,actions}&access_token=${token}&limit=200`, { cache: "no-store" }),
+        fetch(`https://graph.facebook.com/v23.0/${accId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id,insights.date_preset(${metaDatePreset}){spend,actions}&access_token=${token}&limit=200`, { cache: "no-store" }),
+        fetch(`https://graph.facebook.com/v23.0/${accId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id,insights.date_preset(${metaDatePreset}){spend,actions}&access_token=${token}&limit=200`, { cache: "no-store" }),
+      ]);
+
+      let accData: any = {};
       try {
-        const [accRes, campRes, adsetRes, adRes] = await Promise.all([
-          fetch(accUrl, { cache: "no-store" }),
-          fetch(`https://graph.facebook.com/v23.0/${accId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,insights.date_preset(${metaDatePreset}){spend,actions}&access_token=${token}&limit=100`, { cache: "no-store" }),
-          fetch(`https://graph.facebook.com/v23.0/${accId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id,insights.date_preset(${metaDatePreset}){spend,actions}&access_token=${token}&limit=100`, { cache: "no-store" }),
-          fetch(`https://graph.facebook.com/v23.0/${accId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id,insights.date_preset(${metaDatePreset}){spend,actions}&access_token=${token}&limit=100`, { cache: "no-store" }),
-        ]);
-
-        const accData = await accRes.json();
-        if (!accRes.ok || accData.error) {
-          accountErrors.push({ id: accId, error: accData.error?.message || `HTTP ${accRes.status}` });
-          return;
+        const raw = await accRes.json();
+        if (accRes.ok && !raw.error) {
+          accData = raw;
+        } else {
+          // Conta-meta falhou, mas não interrompe — usamos dados do rawAcc (de /me/adaccounts)
+          console.warn(`[Campaigns] Account meta fetch failed for ${accId}:`, raw.error?.message);
+          accData = {
+            name: rawAcc.name || accId,
+            account_status: rawAcc.account_status || 1,
+            balance: rawAcc.balance || 0,
+            amount_spent: rawAcc.amount_spent || 0,
+            currency: rawAcc.currency || "BRL",
+          };
         }
-
-        const campData = campRes.ok ? await campRes.json() : {};
-        const adsetData = adsetRes.ok ? await adsetRes.json() : {};
-        const adData = adRes.ok ? await adRes.json() : {};
-
-        accountRawResults.push({
-          accId,
-          accData,
-          rawAcc,
-          currency,
-          rawCampaigns: Array.isArray(campData.data) ? campData.data : [],
-          rawAdsets: Array.isArray(adsetData.data) ? adsetData.data : [],
-          rawAds: Array.isArray(adData.data) ? adData.data : [],
-        });
-      } catch (err: any) {
-        accountErrors.push({ id: accId, error: err.message || "Erro de conexão" });
+      } catch (err) {
+        accData = {
+          name: rawAcc.name || accId,
+          account_status: 1,
+          balance: 0,
+          amount_spent: 0,
+          currency: rawAcc.currency || "BRL",
+        };
       }
+
+      // Se campanhas/adsets/ads falharam com erro fatal, registra e pula
+      let rawCampaigns: any[] = [];
+      let rawAdsets: any[] = [];
+      let rawAds: any[] = [];
+
+      try {
+        const campData = campRes.ok ? await campRes.json() : {};
+        if (campData.error) {
+          accountErrors.push({ id: accId, error: campData.error.message || `Erro ao buscar campanhas` });
+        } else {
+          rawCampaigns = Array.isArray(campData.data) ? campData.data : [];
+        }
+      } catch {}
+
+      try {
+        const adsetData = adsetRes.ok ? await adsetRes.json() : {};
+        rawAdsets = Array.isArray(adsetData.data) ? adsetData.data : [];
+      } catch {}
+
+      try {
+        const adData = adRes.ok ? await adRes.json() : {};
+        rawAds = Array.isArray(adData.data) ? adData.data : [];
+      } catch {}
+
+      accountRawResults.push({
+        accId,
+        accData,
+        rawAcc,
+        currency,
+        rawCampaigns,
+        rawAdsets,
+        rawAds,
+      });
     });
 
     await Promise.all(fetchPromises);
@@ -479,7 +520,7 @@ export async function GET(request: NextRequest) {
       const accName = accData.name || rawAcc.name || accId;
       const accStatusCode = accData.account_status;
       const accStatus = accStatusCode === 1 ? "Ativo" : accStatusCode === 2 ? "Desabilitado" : accStatusCode === 3 ? "Não Verificado" : "Pendente";
-      const cardDisplay = accData.funding_source_details?.display_string || rawAcc.funding_source_details?.display_string || "N/A";
+      const cardDisplay = "N/A"; // funding_source_details removido (campo privilegiado)
 
       const rawBalance = Number(accData.balance || rawAcc.balance || 0) / 100;
       const cycleBrl = convertToBrl(rawBalance, currency, usdBrlRate);
