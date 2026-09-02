@@ -117,9 +117,40 @@ export async function GET(request: NextRequest) {
       await supabase.from("integrations").insert(payload);
     }
 
-    return NextResponse.redirect(
-      `${appUrl}/dashboard/settings/integrations?oauth=success&profile=${encodeURIComponent(profile.name)}`
-    );
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Facebook Conectado - ATM</title>
+</head>
+<body style="background:#0b0e14;color:#fff;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;padding:20px;box-sizing:border-box;">
+  <div style="text-align:center;max-width:400px;background:#141824;padding:32px;border-radius:20px;border:1px solid #1e293b;box-shadow:0 20px 40px rgba(0,0,0,0.5);">
+    <div style="width:48px;height:48px;border-radius:50%;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#10b981;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:24px;font-weight:bold;">✓</div>
+    <h2 style="color:#ffffff;font-size:18px;margin:0 0 8px;">Perfil Conectado com Sucesso!</h2>
+    <p style="color:#94a3b8;font-size:13px;margin:0 0 16px;line-height:1.5;">${profile.name} e suas contas foram sincronizadas com o ATM.</p>
+    <p style="color:#64748b;font-size:11px;margin:0;">Esta janela fechará automaticamente em instantes...</p>
+  </div>
+  <script>
+    try {
+      if (window.opener) {
+        window.opener.postMessage({ type: "FB_OAUTH_SUCCESS", profile: ${JSON.stringify(profile.name)} }, "*");
+        setTimeout(function() { window.close(); }, 1200);
+      } else {
+        setTimeout(function() {
+          window.location.href = "${appUrl}/dashboard/settings/integrations?oauth=success&profile=${encodeURIComponent(profile.name)}";
+        }, 1200);
+      }
+    } catch(e) {
+      window.location.href = "${appUrl}/dashboard/settings/integrations?oauth=success&profile=${encodeURIComponent(profile.name)}";
+    }
+  </script>
+</body>
+</html>`;
+
+    return new NextResponse(html, {
+      status: 200,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
   } catch (error: any) {
     console.error("[Facebook Callback Error]:", error);
     return NextResponse.redirect(

@@ -22,16 +22,28 @@ export async function GET(request: NextRequest) {
 
     const supabase = createAdminClient();
 
-    // 1. Busca token mestre da Meta — integração ativa desta loja
-    const { data: integration } = await supabase
+    // 1. Busca token mestre da Meta — integração ativa desta loja com fallback
+    const { data: storeInt } = await supabase
       .from("integrations")
       .select("*")
       .eq("store_id", storeId)
       .eq("platform", "meta")
-      .eq("status", "active")
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    let integration = storeInt;
+    if (!integration) {
+      const { data: fallbackInt } = await supabase
+        .from("integrations")
+        .select("*")
+        .eq("platform", "meta")
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      integration = fallbackInt;
+    }
 
     let token = integration?.access_token_enc || process.env.META_ACCESS_TOKEN || "";
     if (token && !token.startsWith("EAA")) {

@@ -450,6 +450,18 @@ function IntegrationsContent() {
 
   useEffect(() => {
     loadMetaCredentials();
+
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data?.type === "FB_OAUTH_SUCCESS") {
+        setIsAddProfileModalOpen(false);
+        setSaveSuccessMsg(`Perfil ${e.data.profile || ""} conectado com sucesso!`);
+        loadMetaCredentials();
+        setTimeout(() => setSaveSuccessMsg(""), 5000);
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
   }, [activeStore?.id, storeId]);
 
   const toggleAccountSelection = (accId: string) => {
