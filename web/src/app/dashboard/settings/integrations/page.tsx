@@ -124,8 +124,7 @@ function IntegrationsContent() {
     setIsDiagnosisModalOpen(true);
     try {
       const currentStoreId = activeStore?.id || storeId || "";
-      const qToken = customToken || accessToken || "";
-      const url = `/api/v1/meta/debug?store_id=${encodeURIComponent(currentStoreId)}${qToken ? `&token=${encodeURIComponent(qToken)}` : ""}`;
+      const url = `/api/v1/meta/debug?store_id=${encodeURIComponent(currentStoreId)}${customToken ? `&token=${encodeURIComponent(customToken)}` : ""}`;
       const res = await fetch(url);
       const data = await res.json();
       setDiagnosisData(data);
@@ -470,7 +469,7 @@ function IntegrationsContent() {
           store_id: storeId,
           platform: "meta",
           pixel_id: pixelId,
-          access_token: accessToken ? accessToken.trim() : undefined,
+          access_token: accessToken.trim() ? accessToken.trim() : undefined,
           ad_account_ids: selectedAccounts,
           test_event_code: testEventCode ? testEventCode.trim() : undefined,
           profile_name: profiles[0]?.name || "Itamar Almeida (Meta Ads)",
