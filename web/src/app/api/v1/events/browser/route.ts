@@ -174,13 +174,16 @@ export async function POST(request: NextRequest) {
       client_user_agent?: string | null;
       utm_source?: string | null;
       utm_campaign?: string | null;
+      utm_medium?: string | null;
+      utm_content?: string | null;
+      utm_term?: string | null;
     } = {};
 
     // 3.1 Busca por track_id
     if (track_id) {
       const { data: session } = await supabase
         .from("sessions")
-        .select("fbp, fbc, client_ip, client_user_agent, utm_source, utm_campaign")
+        .select("fbp, fbc, client_ip, client_user_agent, utm_source, utm_campaign, utm_medium, utm_content, utm_term")
         .eq("store_id", store_id)
         .eq("track_id", track_id)
         .maybeSingle();
@@ -192,7 +195,7 @@ export async function POST(request: NextRequest) {
     if (!sessionData.client_ip && rawUserData?.fbp) {
       const { data: sessionByFbp } = await supabase
         .from("sessions")
-        .select("fbp, fbc, client_ip, client_user_agent, utm_source, utm_campaign")
+        .select("fbp, fbc, client_ip, client_user_agent, utm_source, utm_campaign, utm_medium, utm_content, utm_term")
         .eq("store_id", store_id)
         .eq("fbp", rawUserData.fbp)
         .order("updated_at", { ascending: false })
@@ -288,7 +291,14 @@ export async function POST(request: NextRequest) {
     const userDataKeys = getUserDataKeys(metaEvent.user_data);
     const emqScore = calculateEmq(userDataKeys);
 
-    // ── 7. Persiste resultado no banco com EMQ real ──
+    // ── 7. Extrai e consolida parâmetros de UTM da sessão e do payload ──
+    const utmSource = (body.utms?.utm_source || body.custom_data?.utm_source || sessionData.utm_source || "").trim() || undefined;
+    const utmCampaign = (body.utms?.utm_campaign || body.custom_data?.utm_campaign || sessionData.utm_campaign || "").trim() || undefined;
+    const utmMedium = (body.utms?.utm_medium || body.custom_data?.utm_medium || sessionData.utm_medium || "").trim() || undefined;
+    const utmContent = (body.utms?.utm_content || body.custom_data?.utm_content || sessionData.utm_content || "").trim() || undefined;
+    const utmTerm = (body.utms?.utm_term || body.custom_data?.utm_term || sessionData.utm_term || "").trim() || undefined;
+
+    // ── 8. Persiste resultado no banco com EMQ real e UTMs completas ──
     await updateEventResult(
       store_id || "dckb5g-7d",
       event_id,
@@ -296,13 +306,26 @@ export async function POST(request: NextRequest) {
       status,
       {
         ...(capiResult.response || {}),
-        custom_data: metaEvent.custom_data || rawCustomData || {},
+        custom_data: {
+          ...(metaEvent.custom_data || {}),
+          ...(rawCustomData || {}),
+          utm_source: utmSource,
+          utm_campaign: utmCampaign,
+          utm_medium: utmMedium,
+          utm_content: utmContent,
+          utm_term: utmTerm,
+        },
         order_details: {
           value: metaEvent.custom_data?.value || rawCustomData?.value || 0,
           currency: metaEvent.custom_data?.currency || "BRL",
           customer_name: `${enrichedUserData.firstName || ""} ${enrichedUserData.lastName || ""}`.trim() || undefined,
           customer_email: enrichedUserData.email || undefined,
           customer_phone: enrichedUserData.phone || undefined,
+          utm_source: utmSource,
+          utm_campaign: utmCampaign,
+          utm_medium: utmMedium,
+          utm_content: utmContent,
+          utm_term: utmTerm,
         },
       },
       latencyMs,

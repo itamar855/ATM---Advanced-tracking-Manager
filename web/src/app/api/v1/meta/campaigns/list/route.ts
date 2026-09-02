@@ -11,7 +11,7 @@ interface CacheEntry {
   data: any;
 }
 const MEMORY_CACHE = new Map<string, CacheEntry>();
-const CACHE_TTL_MS = 25000; // 25 segundos
+const CACHE_TTL_MS = 60000; // 60 segundos (carregamento ultra-rápido < 50ms)
 
 /**
  * GET /api/v1/meta/campaigns/list
@@ -274,11 +274,8 @@ export async function GET(request: NextRequest) {
       const val = Number(customData.value || orderDetails.value || 0);
       let fee = 0;
       if (val > 0 && isPurchase) {
-        if (isCard) {
-          fee = (val * 0.3099) + 3.99;
-        } else {
-          fee = (val * 0.10) + 5.00;
-        }
+        // Taxa média de gateway alinhada com Pix (cerca de 9.9% a 10% puro sem tarifa fixa extra)
+        fee = isCard ? (val * 0.15) : (val * 0.099);
       }
 
       const rawCampaign = String(customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || "").trim();
@@ -623,6 +620,68 @@ export async function GET(request: NextRequest) {
       }
     });
 
+    // 6.5 Atribuição de InitiateCheckouts (first-party)
+    const campaignIcAttribution = new Map<string, number>();
+    const adsetIcAttribution = new Map<string, number>();
+    const adIcAttribution = new Map<string, number>();
+    const accountIcAttribution = new Map<string, number>();
+
+    parsedICs.forEach((ic) => {
+      const pCampNameClean = ic.campName.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const pAdsetNameClean = ic.adsetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const pAdNameClean = ic.adName.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+      let bestCamp = globalCampaignsList.find((c) => ic.campId && c.id === ic.campId);
+      if (!bestCamp && pCampNameClean) {
+        bestCamp = globalCampaignsList.find((c) => c.cleanName === pCampNameClean);
+      }
+      if (!bestCamp && pCampNameClean) {
+        bestCamp = globalCampaignsList.find(
+          (c) => c.cleanName && (c.cleanName.includes(pCampNameClean) || pCampNameClean.includes(c.cleanName))
+        );
+      }
+      if (bestCamp) {
+        campaignIcAttribution.set(bestCamp.id, (campaignIcAttribution.get(bestCamp.id) || 0) + 1);
+        accountIcAttribution.set(bestCamp.accId, (accountIcAttribution.get(bestCamp.accId) || 0) + 1);
+      }
+
+      let bestAdset = globalAdsetsList.find((as) => ic.adsetId && as.id === ic.adsetId);
+      if (!bestAdset && pAdsetNameClean) {
+        bestAdset = globalAdsetsList.find((as) => as.cleanName === pAdsetNameClean);
+      }
+      if (!bestAdset && pAdsetNameClean) {
+        bestAdset = globalAdsetsList.find(
+          (as) => as.cleanName && (as.cleanName.includes(pAdsetNameClean) || pAdsetNameClean.includes(as.cleanName))
+        );
+      }
+      if (bestAdset) {
+        adsetIcAttribution.set(bestAdset.id, (adsetIcAttribution.get(bestAdset.id) || 0) + 1);
+      }
+
+      let bestAd = globalAdsList.find((ad) => ic.adId && ad.id === ic.adId);
+      if (!bestAd && pAdNameClean) {
+        bestAd = globalAdsList.find((ad) => ad.cleanName === pAdNameClean);
+      }
+      if (!bestAd && pAdNameClean) {
+        bestAd = globalAdsList.find(
+          (ad) => ad.cleanName && (ad.cleanName.includes(pAdNameClean) || pAdNameClean.includes(ad.cleanName))
+        );
+      }
+      if (bestAd) {
+        adIcAttribution.set(bestAd.id, (adIcAttribution.get(bestAd.id) || 0) + 1);
+      }
+    });
+
+    const extractMetaIc = (actions: any[]): number => {
+      if (!Array.isArray(actions)) return 0;
+      const act = actions.find((a: any) =>
+        a.action_type === "initiate_checkout" ||
+        a.action_type === "omni_initiated_checkout" ||
+        a.action_type === "offsite_conversion.fb_pixel_initiate_checkout"
+      );
+      return act ? Number(act.value || 0) : 0;
+    };
+
     // 7. Montagem das respostas estruturadas com métricas completas
     const formattedAccounts: any[] = [];
     const allCampaigns: any[] = [];
@@ -665,6 +724,11 @@ export async function GET(request: NextRequest) {
       const accMargin = accNetRevenue > 0 ? (accProfit / accNetRevenue) * 100 : (periodSpendBrl > 0 ? -100 : 0);
       const accRoi = periodSpendBrl > 0 ? accProfit / periodSpendBrl : 0;
 
+      const metaAccIc = extractMetaIc(accountInsight?.actions);
+      const fpAccIc = accountIcAttribution.get(accId) || 0;
+      const accIc = Math.max(metaAccIc, fpAccIc);
+      const accCpi = accIc > 0 ? periodSpendBrl / accIc : 0;
+
       formattedAccounts.push({
         id: accId,
         name: accName,
@@ -678,8 +742,8 @@ export async function GET(request: NextRequest) {
         roas: accRoas,
         sales: accSales,
         cpa: accCpa,
-        ic: 0,
-        cpi: 0,
+        ic: accIc,
+        cpi: accCpi,
         margin: accMargin,
         roi: accRoi,
         last_update: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
@@ -700,6 +764,11 @@ export async function GET(request: NextRequest) {
         const cCpa = cSales > 0 ? cSpend / cSales : 0;
         const cMargin = cNetRevenue > 0 ? (cProfit / cNetRevenue) * 100 : (cSpend > 0 ? -100 : 0);
         const cRoi = cSpend > 0 ? cProfit / cSpend : 0;
+
+        const metaCampIc = extractMetaIc(cIns.actions);
+        const fpCampIc = campaignIcAttribution.get(camp.id) || 0;
+        const cIc = Math.max(metaCampIc, fpCampIc);
+        const cCpi = cIc > 0 ? cSpend / cIc : 0;
 
         // Identifica se a campanha é CBO (Advantage) ou ABO
         const matchingAdsets = rawAdsets.filter((s: any) => s.campaign_id === camp.id);
@@ -736,8 +805,8 @@ export async function GET(request: NextRequest) {
           roas: cRoas,
           sales: cSales,
           cpa: cCpa,
-          ic: 0,
-          cpi: 0,
+          ic: cIc,
+          cpi: cCpi,
           margin: cMargin,
           roi: cRoi,
           last_update: camp.updated_time ? new Date(camp.updated_time).toLocaleString("pt-BR") : "Hoje",
@@ -765,6 +834,11 @@ export async function GET(request: NextRequest) {
         const asConvertedBudget = convertToBrl(asRawBudget, currency, usdBrlRate);
         const asIsActive = as.effective_status === "ACTIVE" || (as.effective_status === undefined && as.status === "ACTIVE");
 
+        const metaAdsetIc = extractMetaIc(asIns.actions);
+        const fpAdsetIc = adsetIcAttribution.get(as.id) || 0;
+        const asIc = Math.max(metaAdsetIc, fpAdsetIc);
+        const asCpi = asIc > 0 ? asSpend / asIc : 0;
+
         allAdsets.push({
           id: as.id,
           name: as.name,
@@ -783,8 +857,8 @@ export async function GET(request: NextRequest) {
           roas: asRoas,
           sales: asSales,
           cpa: asCpa,
-          ic: 0,
-          cpi: 0,
+          ic: asIc,
+          cpi: asCpi,
           margin: asMargin,
           roi: asRoi,
           last_update: as.updated_time ? new Date(as.updated_time).toLocaleString("pt-BR") : "Hoje",
@@ -809,6 +883,11 @@ export async function GET(request: NextRequest) {
 
         const adIsActive = ad.effective_status === "ACTIVE" || (ad.effective_status === undefined && ad.status === "ACTIVE");
 
+        const metaAdIc = extractMetaIc(adIns.actions);
+        const fpAdIc = adIcAttribution.get(ad.id) || 0;
+        const aIc = Math.max(metaAdIc, fpAdIc);
+        const aCpi = aIc > 0 ? adSpend / aIc : 0;
+
         allAds.push({
           id: ad.id,
           name: ad.name,
@@ -828,8 +907,8 @@ export async function GET(request: NextRequest) {
           roas: adRoas,
           sales: adSales,
           cpa: adCpa,
-          ic: 0,
-          cpi: 0,
+          ic: aIc,
+          cpi: aCpi,
           margin: adMargin,
           roi: adRoi,
           last_update: ad.updated_time ? new Date(ad.updated_time).toLocaleString("pt-BR") : "Hoje",

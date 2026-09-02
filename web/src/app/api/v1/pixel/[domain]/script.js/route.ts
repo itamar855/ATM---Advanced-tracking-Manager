@@ -258,10 +258,21 @@ function generateATMScript(storeId: string, apiBase: string): string {
     var ud = Object.assign({}, _ctx.customer || {}, extraUserData || {});
     _fbp = getFbp();
     _fbc = getFbc();
+    _utms = getUtms();
 
     // fbp e fbc são incluídos em user_data para enriquecimento no servidor
     ud.fbp = _fbp || ud.fbp;
     ud.fbc = _fbc || ud.fbc;
+
+    var cd = Object.assign({}, customData || {});
+    if (_utms) {
+      if (!cd.utm_source && _utms.utm_source) cd.utm_source = _utms.utm_source;
+      if (!cd.utm_campaign && _utms.utm_campaign) cd.utm_campaign = _utms.utm_campaign;
+      if (!cd.utm_medium && _utms.utm_medium) cd.utm_medium = _utms.utm_medium;
+      if (!cd.utm_content && _utms.utm_content) cd.utm_content = _utms.utm_content;
+      if (!cd.utm_term && _utms.utm_term) cd.utm_term = _utms.utm_term;
+      if (!cd.fbclid && _utms.fbclid) cd.fbclid = _utms.fbclid;
+    }
 
     var payload = JSON.stringify({
       store_id: ATM.storeId,
@@ -270,7 +281,8 @@ function generateATMScript(storeId: string, apiBase: string): string {
       event_id: eventId || uuid(),
       event_source_url: window.location.href,
       user_data: ud,
-      custom_data: customData || null,
+      custom_data: cd,
+      utms: _utms,
     });
 
     var url = ATM.apiBase + "/events/browser";
@@ -592,18 +604,27 @@ function generateATMScript(storeId: string, apiBase: string): string {
   // que apontem para o checkout do Zedy, garantindo que o webhook receba
   // o track_id e consiga amarrar a venda com a sessão do navegador.
 
-  var ZEDY_HOSTS = [
-    "link.zedy.com.br",
-    "checkout.zedy.com.br",
-    "pay.zedy.com.br",
-    "zedy.com.br/checkout",
-    "zedypay.com",
+  var CHECKOUT_DOMAINS = [
+    "zedy",
+    "vega",
+    "cartpanda",
+    "yampi",
+    "appmax",
+    "greenn",
+    "kiwify",
+    "hotmart",
+    "monetizze",
+    "braip",
+    "perfectpay",
+    "turbocheckout",
   ];
 
-  function isZedyLink(href) {
+  function isCheckoutLink(href) {
     if (!href) return false;
     var lower = href.toLowerCase();
-    return ZEDY_HOSTS.some(function (h) { return lower.indexOf(h) !== -1; });
+    // Links que vão para /checkout ou /cart
+    if (lower.indexOf("/checkout") !== -1 || lower.indexOf("/cart") !== -1) return true;
+    return CHECKOUT_DOMAINS.some(function (h) { return lower.indexOf(h) !== -1; });
   }
 
   function decorateHref(href) {
@@ -629,11 +650,11 @@ function generateATMScript(storeId: string, apiBase: string): string {
     }
   }
 
-  // Decora um elemento <a> se for link do Zedy
+  // Decora um elemento <a> se for link de checkout
   function decorateEl(el) {
     if (el.tagName !== "A") return;
     var href = el.getAttribute("href");
-    if (!isZedyLink(href)) return;
+    if (!isCheckoutLink(href)) return;
     if (el.dataset.atmDecorated) return;
     el.setAttribute("href", decorateHref(href));
     el.dataset.atmDecorated = "1";
