@@ -250,8 +250,22 @@ export async function GET(request: NextRequest) {
       .gte("created_at", effectiveStartDate)
       .lte("created_at", endDate);
 
+    // Busca regras de impostos e taxas configuradas pelo usuário para esta loja
+    const { data: storeTaxesAndDuties } = await supabase
+      .from("taxes_and_duties")
+      .select("*")
+      .eq("store_id", storeId);
+
+    // Busca tabela de custos de produto (COGS)
+    const { data: storeProductCosts } = await supabase
+      .from("product_costs")
+      .select("*")
+      .eq("store_id", storeId);
+
     let grossRevenue = 0;
     let totalTaxes = 0;
+    let totalOperationalTaxes = 0;
+    let totalCogs = 0;
     let paidSalesCount = 0;
     let pixCount = 0;
     let cardCount = 0;
@@ -311,13 +325,60 @@ export async function GET(request: NextRequest) {
       const isCard = method.includes("card") || method.includes("cartao") || method.includes("credit") || method.includes("visa") || method.includes("master");
       const isBoleto = method.includes("boleto");
       const isPix = method.includes("pix") || method === ""; // Default pix
-      
-      // Aplicar Taxa Real do Gateway (Pix ~9.9%, Cartão ~15%)
+
+      // Cálculo de Taxas e Impostos Dinâmicos (Cadastrados pelo Usuário)
       let fee = 0;
-      if (val > 0) {
-        fee = isCard ? (val * 0.15) : (val * 0.099);
+      let operationalTax = 0;
+      let cogs = 0;
+
+      const hasCustomRules = (storeTaxesAndDuties || []).length > 0;
+
+      if (hasCustomRules) {
+        // 1. Impostos Operacionais (ex: Simples Nacional)
+        (storeTaxesAndDuties || []).filter((t: any) => t.type === "tax").forEach((t: any) => {
+          operationalTax += val * (Number(t.value || 0) / 100);
+        });
+
+        // 2. Taxas de Gateway por Forma de Pagamento
+        (storeTaxesAndDuties || []).filter((t: any) => t.type === "duty").forEach((t: any) => {
+          const matchMethod = t.payment_method === "all" ||
+            (isPix && t.payment_method === "pix") ||
+            (isCard && t.payment_method === "credit_card") ||
+            (isBoleto && t.payment_method === "boleto");
+
+          if (matchMethod) {
+            if (t.value_type === "percentage") {
+              fee += val * (Number(t.value || 0) / 100);
+            } else {
+              fee += Number(t.value || 0);
+            }
+          }
+        });
+      } else {
+        // Fallback seguro enquanto o usuário não cadastrar suas regras personalizadas
+        if (val > 0) {
+          fee = isCard ? (val * 0.15) : (val * 0.099);
+        }
       }
+
+      // 3. Custo de Mercadorias (COGS)
+      const products = orderDetails.products || customData.products || [];
+      if (Array.isArray(products) && (storeProductCosts || []).length > 0) {
+        products.forEach((p: any) => {
+          const pName = String(p.name || p.product_name || "").toLowerCase().trim();
+          const pQty = Number(p.quantity || 1);
+          const matched = (storeProductCosts || []).find((c: any) =>
+            pName && String(c.product_name || "").toLowerCase().trim().includes(pName)
+          );
+          if (matched && matched.cost_price) {
+            cogs += Number(matched.cost_price) * pQty;
+          }
+        });
+      }
+
       totalTaxes += fee;
+      totalOperationalTaxes += operationalTax;
+      totalCogs += cogs;
 
       paidSalesCount += 1;
 
@@ -361,11 +422,13 @@ export async function GET(request: NextRequest) {
     const cardPercent = totalOrders > 0 ? Math.round((cardCount / totalOrders) * 100) : 0;
     const boletoPercent = totalOrders > 0 ? Math.round((boletoCount / totalOrders) * 100) : 0;
 
-    // Métricas Financeiras (Padrão Utmify)
+    // Métricas Financeiras Conciliadas
     const taxes = totalTaxes;
-    const netRevenue = grossRevenue - taxes;
+    const operationalTaxes = totalOperationalTaxes;
+    const cogs = totalCogs;
+    const netRevenue = grossRevenue - taxes - operationalTaxes;
     const totalSpend = totalSpendBrl;
-    const totalProfit = netRevenue - totalSpend;
+    const totalProfit = netRevenue - totalSpend - cogs;
     // ROAS da Utmify é baseado no Faturamento BRUTO
     const roas = totalSpend > 0 ? grossRevenue / totalSpend : 0;
     const roi = totalSpend > 0 ? totalProfit / totalSpend : 0;
@@ -391,7 +454,9 @@ export async function GET(request: NextRequest) {
         roas: Math.round(roas * 100) / 100,
         pending_sales_value: Math.round(pendingSalesValue * 100) / 100,
         margin: Math.round(margin * 10) / 10,
-        taxes: taxes,
+        taxes: Math.round(taxes * 100) / 100,
+        operational_taxes: Math.round(operationalTaxes * 100) / 100,
+        cogs: Math.round(cogs * 100) / 100,
         roi: Math.round(roi * 100) / 100,
         cpa: Math.round(cpa * 100) / 100,
         refund_rate: 0.0,

@@ -225,6 +225,12 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false })
       .limit(2000);
 
+    // Busca regras de impostos e taxas configuradas pelo usuário para esta loja
+    const { data: storeTaxesAndDuties } = await supabase
+      .from("taxes_and_duties")
+      .select("*")
+      .eq("store_id", storeId);
+
     // Estrutura normalizada de eventos com UTMs extraídas em cascata
     interface ParsedEvent {
       id: string;
@@ -248,12 +254,14 @@ export async function GET(request: NextRequest) {
     const parsedICs: ParsedEvent[] = [];
 
     (dbEvents || []).forEach((ev) => {
-      const isPurchase = ev.event_name === "Purchase";
-      const isIC = ev.event_name === "InitiateCheckout";
       const metaResp = ev.meta_response || {};
       const orderDetails = metaResp.order_details || {};
       const customData = metaResp.custom_data || {};
       const tracking = orderDetails.tracking_params || {};
+
+      const isPurchase = ev.event_name === "Purchase";
+      const isIC = ev.event_name === "InitiateCheckout";
+      
       const method = String(
         orderDetails.payment_method ||
         customData.payment_method ||
@@ -264,12 +272,37 @@ export async function GET(request: NextRequest) {
       ).toLowerCase();
       
       const isCard = method.includes("card") || method.includes("cartao") || method.includes("credit") || method.includes("visa") || method.includes("master");
+      const isPix = method.includes("pix") || method === "";
+      const isBoleto = method.includes("boleto");
 
       const val = Number(customData.value || orderDetails.value || 0);
       let fee = 0;
       if (val > 0 && isPurchase) {
-        // Taxa média de gateway alinhada com Pix (cerca de 9.9% a 10% puro sem tarifa fixa extra)
-        fee = isCard ? (val * 0.15) : (val * 0.099);
+        const hasCustomRules = (storeTaxesAndDuties || []).length > 0;
+        if (hasCustomRules) {
+          // 1. Impostos
+          (storeTaxesAndDuties || []).filter((t: any) => t.type === "tax").forEach((t: any) => {
+            fee += val * (Number(t.value || 0) / 100);
+          });
+          // 2. Taxas de Gateway por Forma de Pagamento
+          (storeTaxesAndDuties || []).filter((t: any) => t.type === "duty").forEach((t: any) => {
+            const matchMethod = t.payment_method === "all" ||
+              (isPix && t.payment_method === "pix") ||
+              (isCard && t.payment_method === "credit_card") ||
+              (isBoleto && t.payment_method === "boleto");
+
+            if (matchMethod) {
+              if (t.value_type === "percentage") {
+                fee += val * (Number(t.value || 0) / 100);
+              } else {
+                fee += Number(t.value || 0);
+              }
+            }
+          });
+        } else {
+          // Fallback seguro alinhado com Pix ~9.9%
+          fee = isCard ? (val * 0.15) : (val * 0.099);
+        }
       }
 
       const rawCampaign = String(customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || "").trim();
