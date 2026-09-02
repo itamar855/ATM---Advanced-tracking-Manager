@@ -174,11 +174,24 @@ export async function GET(request: NextRequest) {
     } catch {}
 
     const configuredAccountIds: string[] = integration?.config?.ad_account_ids || [];
+    const requestedAccountId = searchParams.get("account_id");
 
-    // Se o usuário selecionou contas nas integrações, usa SOMENTE elas. Caso contrário, usa as da Meta.
-    const accountIdsToProcess = configuredAccountIds.length > 0 
-      ? configuredAccountIds.map((id: string) => (id.startsWith("act_") ? id : `act_${id}`))
-      : metaAccountsRaw.map((a: any) => a.id);
+    // Se account_id foi pedido na URL, filtra apenas ele.
+    // Se há contas configuradas, usa elas (com teto seguro de 5 contas simultâneas para evitar timeout no Vercel).
+    // Se não há configuradas, seleciona as 3 contas mais relevantes (com maior gasto) em vez de varrer 19 de uma vez.
+    let accountIdsToProcess: string[] = [];
+
+    if (requestedAccountId) {
+      accountIdsToProcess = [requestedAccountId.startsWith("act_") ? requestedAccountId : `act_${requestedAccountId}`];
+    } else if (configuredAccountIds.length > 0) {
+      accountIdsToProcess = configuredAccountIds
+        .map((id: string) => (id.startsWith("act_") ? id : `act_${id}`))
+        .slice(0, 5); // Teto de segurança para tempo de resposta < 3s no Vercel
+    } else {
+      // Ordena por gasto histórico decrescente e pega as top 3
+      const sortedBySpend = [...metaAccountsRaw].sort((a, b) => Number(b.amount_spent || 0) - Number(a.amount_spent || 0));
+      accountIdsToProcess = sortedBySpend.slice(0, 3).map((a: any) => a.id);
+    }
 
     if (accountIdsToProcess.length === 0) {
       return NextResponse.json({
@@ -291,9 +304,7 @@ export async function GET(request: NextRequest) {
       else if (isIC) parsedICs.push(parsed);
     });
 
-    const trackedPurchaseIds = new Set<string>();
-
-    // 5. Coleta dados de todas as contas, campanhas, adsets e ads primeiro
+    // 5. Coleta dados das contas selecionadas com timeout seguro (6s)
     const accountRawResults: Array<{
       accId: string;
       accData: any;
@@ -322,28 +333,38 @@ export async function GET(request: NextRequest) {
       const adsetUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id&access_token=${token}&limit=200`;
       const adUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id&access_token=${token}&limit=200`;
 
-      // ── Fetch 5-8: Insights em lote por nível (evita erros de sintaxe nos nós) ──
+      // ── Fetch 5-8: Insights em lote por nível ──
       const campInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=campaign&date_preset=${metaDatePreset}&fields=campaign_id,spend,impressions,clicks,actions&access_token=${token}&limit=500`;
       const adsetInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=adset&date_preset=${metaDatePreset}&fields=adset_id,spend,impressions,clicks,actions&access_token=${token}&limit=500`;
       const adInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=ad&date_preset=${metaDatePreset}&fields=ad_id,spend,impressions,clicks,actions&access_token=${token}&limit=500`;
       const accInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=account&date_preset=${metaDatePreset}&fields=spend,impressions,clicks,actions&access_token=${token}`;
 
       const [accRes, campRes, adsetRes, adRes, cInsRes, asInsRes, aInsRes, acInsRes] = await Promise.all([
-        fetch(accUrl, { cache: "no-store" }),
-        fetch(campUrl, { cache: "no-store" }),
-        fetch(adsetUrl, { cache: "no-store" }),
-        fetch(adUrl, { cache: "no-store" }),
-        fetch(campInsightsUrl, { cache: "no-store" }).catch(() => null),
-        fetch(adsetInsightsUrl, { cache: "no-store" }).catch(() => null),
-        fetch(adInsightsUrl, { cache: "no-store" }).catch(() => null),
-        fetch(accInsightsUrl, { cache: "no-store" }).catch(() => null),
+        fetch(accUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch(campUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch(adsetUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch(adUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch(campInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch(adsetInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch(adInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch(accInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
       ]);
 
       let accData: any = {};
       try {
-        const raw = await accRes.json();
-        if (accRes.ok && !raw.error) {
-          accData = raw;
+        if (accRes && accRes.ok) {
+          const raw = await accRes.json();
+          if (!raw.error) {
+            accData = raw;
+          } else {
+            accData = {
+              name: rawAcc.name || `Conta ${cleanAccId.replace("act_", "")}`,
+              account_status: rawAcc.account_status || 1,
+              balance: rawAcc.balance || 0,
+              amount_spent: rawAcc.amount_spent || 0,
+              currency: rawAcc.currency || "BRL",
+            };
+          }
         } else {
           accData = {
             name: rawAcc.name || `Conta ${cleanAccId.replace("act_", "")}`,
@@ -368,22 +389,28 @@ export async function GET(request: NextRequest) {
       let rawAds: any[] = [];
 
       try {
-        const campData = campRes.ok ? await campRes.json() : {};
-        if (campData.error) {
-          accountErrors.push({ id: cleanAccId, error: campData.error.message || "Erro ao buscar campanhas" });
-        } else {
-          rawCampaigns = Array.isArray(campData.data) ? campData.data : [];
+        if (campRes && campRes.ok) {
+          const campData = await campRes.json();
+          if (campData.error) {
+            accountErrors.push({ id: cleanAccId, error: campData.error.message || "Erro ao buscar campanhas" });
+          } else {
+            rawCampaigns = Array.isArray(campData.data) ? campData.data : [];
+          }
         }
       } catch {}
 
       try {
-        const adsetData = adsetRes.ok ? await adsetRes.json() : {};
-        rawAdsets = Array.isArray(adsetData.data) ? adsetData.data : [];
+        if (adsetRes && adsetRes.ok) {
+          const adsetData = await adsetRes.json();
+          rawAdsets = Array.isArray(adsetData.data) ? adsetData.data : [];
+        }
       } catch {}
 
       try {
-        const adData = adRes.ok ? await adRes.json() : {};
-        rawAds = Array.isArray(adData.data) ? adData.data : [];
+        if (adRes && adRes.ok) {
+          const adData = await adRes.json();
+          rawAds = Array.isArray(adData.data) ? adData.data : [];
+        }
       } catch {}
 
       // Mapeamento de Insights

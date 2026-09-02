@@ -150,43 +150,33 @@ function IntegrationsContent() {
 
   const handleAddProfileViaToken = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProfileName || !newProfileToken) return;
+    const token = newProfileToken.trim();
+    if (!token) return;
     setAddingProfileLoading(true);
     setAddProfileError("");
     try {
-      const res = await fetch(
-        `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,name,currency,account_status,amount_spent&access_token=${newProfileToken}`
-      );
+      const targetStoreId = activeStore?.id || storeId || (typeof window !== "undefined" ? localStorage.getItem("atm_active_store_id") : null) || "dckb5g-7d";
+      const res = await fetch("/api/v1/meta/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          store_id: targetStoreId,
+          platform: "meta",
+          access_token: token,
+          profile_name: newProfileName ? newProfileName.trim() : undefined,
+        }),
+      });
       const data = await res.json();
-      if (data.error) {
-        setAddProfileError("Token inválido ou sem permissão ads_read: " + data.error.message);
+      if (!res.ok || !data.ok) {
+        setAddProfileError(data.error || "Token rejeitado ou sem permissões necessárias.");
         return;
       }
-      const rawAccounts = Array.isArray(data.data) ? data.data : [];
-      const formattedAccs: AdAccount[] = rawAccounts.map((a: any) => ({
-        id: a.id,
-        accountId: a.id,
-        name: a.name || a.id,
-        status: a.account_status === 1 ? "ACTIVE" : "DISABLED",
-        currency: a.currency || "USD",
-        amountSpent: Number(a.amount_spent || 0) / 100,
-      }));
-
-      const newProf: ProfileItem = {
-        id: `prof-${Date.now()}`,
-        name: newProfileName,
-        accountsCount: formattedAccs.length || 1,
-        accounts: formattedAccs.length > 0 ? formattedAccs : [
-          { id: `act_${Date.now()}`, accountId: `act_${Date.now()}`, name: `${newProfileName} - Principal`, status: "ACTIVE", currency: "USD", amountSpent: 0 }
-        ],
-      };
-
-      setProfiles((prev) => [...prev, newProf]);
       setIsAddProfileModalOpen(false);
       setNewProfileName("");
       setNewProfileToken("");
-      setSaveSuccessMsg(`Perfil "${newProfileName}" conectado com sucesso!`);
-      setTimeout(() => setSaveSuccessMsg(""), 4000);
+      setSaveSuccessMsg(`Perfil "${data.profile_name || 'Meta Ads'}" conectado e sincronizado com sucesso!`);
+      await loadMetaCredentials();
+      setTimeout(() => setSaveSuccessMsg(""), 5000);
     } catch (err: any) {
       setAddProfileError("Erro na conexão: " + err.message);
     } finally {
@@ -470,6 +460,38 @@ function IntegrationsContent() {
     );
   };
 
+  const [savingPixel, setSavingPixel] = useState(false);
+
+  const handleSavePixelCapi = async () => {
+    setSavingPixel(true);
+    setSaveSuccessMsg("");
+    const targetStoreId = activeStore?.id || storeId || (typeof window !== "undefined" ? localStorage.getItem("atm_active_store_id") : null) || "dckb5g-7d";
+    try {
+      const res = await fetch("/api/v1/meta/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          store_id: targetStoreId,
+          platform: "meta",
+          pixel_id: pixelId ? pixelId.trim() : undefined,
+          access_token: accessToken && accessToken.trim() ? accessToken.trim() : undefined,
+          test_event_code: testEventCode ? testEventCode.trim() : undefined,
+        }),
+      });
+      if (res.ok) {
+        setSaveSuccessMsg("Configurações do Pixel CAPI salvas com sucesso!");
+        setTimeout(() => setSaveSuccessMsg(""), 4000);
+      } else {
+        const d = await res.json();
+        alert("Erro ao salvar: " + (d.error || "Tente novamente"));
+      }
+    } catch (e: any) {
+      alert("Erro ao conectar: " + e.message);
+    } finally {
+      setSavingPixel(false);
+    }
+  };
+
   const handleSaveMeta = async () => {
     setLoading(true);
     setSaveSuccessMsg("");
@@ -481,16 +503,12 @@ function IntegrationsContent() {
         body: JSON.stringify({
           store_id: targetStoreId,
           platform: "meta",
-          pixel_id: pixelId,
-          access_token: accessToken.trim() ? accessToken.trim() : undefined,
           ad_account_ids: selectedAccounts,
-          test_event_code: testEventCode ? testEventCode.trim() : undefined,
-          profile_name: profiles[0]?.name || "Itamar Almeida (Meta Ads)",
         }),
       });
 
       if (res.ok) {
-        setSaveSuccessMsg("Integração e contas de anúncio salvas com sucesso!");
+        setSaveSuccessMsg(`Contas de anúncio salvas com sucesso! (${selectedAccounts.length} selecionadas)`);
         await loadMetaCredentials();
         setTimeout(() => setSaveSuccessMsg(""), 4000);
       } else {
@@ -831,63 +849,24 @@ function IntegrationsContent() {
                   )}
                 </div>
 
-                {/* 3. Pixel CAPI & Token de Acesso */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-zinc-800/80">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-                      <Code2 size={14} className="text-blue-400" />
-                      Pixel ID Meta (Dataset)
-                    </label>
-                    <input
-                      type="text"
-                      value={pixelId}
-                      onChange={(e) => setPixelId(e.target.value)}
-                      placeholder="Ex: 1104875232197441"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-zinc-300 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <ShieldCheck size={14} className="text-emerald-400" />
-                        Token de Acesso (CAPI)
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowToken(!showToken)}
-                        className="text-[10px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
-                      >
-                        {showToken ? <EyeOff size={12} /> : <Eye size={12} />}
-                        {showToken ? "Ocultar" : "Exibir"}
-                      </button>
-                    </label>
-                    <input
-                      type={showToken ? "text" : "password"}
-                      value={accessToken}
-                      onChange={(e) => setAccessToken(e.target.value)}
-                      placeholder={hasSavedTokenInDb ? "•••••••••••••••••••••••••••••••••••• (Salvo no Banco)" : "Cole seu token EAAB..."}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* Botão de Salvar Configurações */}
-                <div className="flex items-center justify-between pt-2">
-                  <div>
-                    {saveSuccessMsg && (
-                      <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                {/* Botão e Barra de Salvar Contas Selecionadas */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-zinc-800/80">
+                  <div className="text-xs text-zinc-400">
+                    {saveSuccessMsg ? (
+                      <span className="font-bold text-emerald-400 flex items-center gap-1.5">
                         <CheckCircle2 size={14} /> {saveSuccessMsg}
                       </span>
+                    ) : (
+                      <span>💡 <b>Dica:</b> As contas marcadas acima serão carregadas no módulo de <b>Campanhas</b>.</span>
                     )}
                   </div>
                   <button
                     onClick={handleSaveMeta}
                     disabled={loading}
-                    className="px-6 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all flex items-center gap-2 disabled:opacity-50"
+                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {loading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                    Salvar Integração de Campanhas
+                    Salvar Contas Selecionadas ({selectedAccounts.length})
                   </button>
                 </div>
               </div>
@@ -1268,7 +1247,79 @@ function IntegrationsContent() {
 
       {/* ── ABA 3: PIXEL & SCRIPT ───────────────────────────────────────── */}
       {activeTab === "pixel" && (
-        <div className="space-y-4 animate-fade-in">
+        <div className="space-y-6 animate-fade-in">
+          {/* Card 1: Configurações do Pixel & CAPI */}
+          <div className="rounded-2xl border border-blue-500/30 bg-[#0F131D] shadow-2xl p-6 space-y-5">
+            <div>
+              <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+                <Code2 size={16} className="text-blue-400" />
+                Configurações do Meta Pixel & Conversions API (CAPI)
+              </h3>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Defina o Dataset / Pixel ID e o Token da CAPI para disparo dos eventos de rastreamento server-side.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
+                  <Code2 size={14} className="text-blue-400" />
+                  Pixel ID Meta (Dataset)
+                </label>
+                <input
+                  type="text"
+                  value={pixelId}
+                  onChange={(e) => setPixelId(e.target.value)}
+                  placeholder="Ex: 1104875232197441"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-300 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <ShieldCheck size={14} className="text-emerald-400" />
+                    Token de Acesso (CAPI)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowToken(!showToken)}
+                    className="text-[10px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
+                  >
+                    {showToken ? <EyeOff size={12} /> : <Eye size={12} />}
+                    {showToken ? "Ocultar" : "Exibir"}
+                  </button>
+                </label>
+                <input
+                  type={showToken ? "text" : "password"}
+                  value={accessToken}
+                  onChange={(e) => setAccessToken(e.target.value)}
+                  placeholder={hasSavedTokenInDb ? "•••••••••••••••••••••••••••••••••••• (Salvo no Banco)" : "Cole seu token EAAB..."}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80">
+              <div className="text-xs">
+                {saveSuccessMsg && (
+                  <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 size={14} /> {saveSuccessMsg}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={handleSavePixelCapi}
+                disabled={savingPixel}
+                className="px-6 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {savingPixel ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                Salvar Configurações do Pixel CAPI
+              </button>
+            </div>
+          </div>
+
+          {/* Card 2: Script Universal */}
           <div className="rounded-2xl border border-blue-500/30 bg-[#0F131D] shadow-2xl p-6 space-y-5">
             <div className="flex items-center justify-between">
               <div>

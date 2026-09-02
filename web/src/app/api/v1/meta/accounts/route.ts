@@ -191,8 +191,31 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Se um novo token foi digitado, valida na Graph API e captura o nome real
+    let resolvedProfileName = profile_name ? profile_name.trim() : (existing?.config?.profile_name || "Perfil Meta Ads");
+    if (access_token && access_token.trim()) {
+      try {
+        const meRes = await fetch(`https://graph.facebook.com/v23.0/me?fields=id,name&access_token=${finalToken}`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(6000),
+        });
+        const meData = await meRes.json();
+        if (meData.error) {
+          return NextResponse.json({
+            ok: false,
+            error: `Token rejeitado pelo Facebook: ${meData.error.message}`,
+          }, { status: 400 });
+        }
+        if (meData.name) {
+          resolvedProfileName = meData.name;
+        }
+      } catch (err: any) {
+        console.warn("[POST accounts] Falha ao consultar /me na validação:", err.message);
+      }
+    }
+
     // 2. Normaliza lista de contas de anúncio selecionadas
-    const rawList = Array.isArray(ad_account_ids) ? ad_account_ids : [ad_account_ids];
+    const rawList = Array.isArray(ad_account_ids) ? ad_account_ids : (ad_account_ids ? [ad_account_ids] : []);
     const normalizedAccounts = rawList
       .filter(Boolean)
       .map((id: string) => normalizeAdAccountId(id));
@@ -205,7 +228,7 @@ export async function POST(request: NextRequest) {
       status: "active",
       config: {
         ...(existing?.config || {}),
-        profile_name: profile_name ? profile_name.trim() : (existing?.config?.profile_name || "Perfil Principal"),
+        profile_name: resolvedProfileName,
         ad_account_ids: normalizedAccounts,
         test_event_code: test_event_code ? test_event_code.trim() : undefined,
         updated_at: new Date().toISOString(),
@@ -232,6 +255,7 @@ export async function POST(request: NextRequest) {
       message: `Configurações salvas com sucesso! ${normalizedAccounts.length} conta(s) selecionada(s).`,
       savedAccountCount: normalizedAccounts.length,
       ad_account_ids: normalizedAccounts,
+      profile_name: resolvedProfileName,
     });
   } catch (error: any) {
     console.error("[POST /api/v1/meta/accounts Error]:", error);
