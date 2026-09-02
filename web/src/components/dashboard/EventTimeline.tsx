@@ -66,17 +66,42 @@ interface EventTimelineProps {
 export function EventTimeline({ events }: EventTimelineProps) {
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
   const [activeFilter, setActiveFilter] = useState<string>("all");
+  const [dateFilter, setDateFilter] = useState<string>("today");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [copiedJson, setCopiedJson] = useState(false);
 
-  const purchaseCount = events.filter((e) => e.eventName === "Purchase").length;
-  const checkoutCount = events.filter((e) => e.eventName === "InitiateCheckout").length;
-  const cartCount = events.filter((e) => e.eventName === "AddToCart").length;
-  const leadCount = events.filter((e) => e.eventName === "Lead").length;
-  const pageviewCount = events.filter((e) => e.eventName === "PageView").length;
+  // Filtragem inicial por data para as contagens
+  const dateFilteredEvents = useMemo(() => {
+    const now = new Date();
+    const brTodayStr = now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+
+    return events.filter((ev) => {
+      if (dateFilter === "all" || !ev.createdAt) return true;
+      const evDate = new Date(ev.createdAt);
+      const brEvDateStr = evDate.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+
+      if (dateFilter === "today") {
+        return brEvDateStr === brTodayStr;
+      } else if (dateFilter === "yesterday") {
+        const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const brYesterdayStr = yesterday.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+        return brEvDateStr === brYesterdayStr;
+      } else if (dateFilter === "7d") {
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return evDate >= sevenDaysAgo;
+      }
+      return true;
+    });
+  }, [events, dateFilter]);
+
+  const purchaseCount = dateFilteredEvents.filter((e) => e.eventName === "Purchase").length;
+  const checkoutCount = dateFilteredEvents.filter((e) => e.eventName === "InitiateCheckout").length;
+  const cartCount = dateFilteredEvents.filter((e) => e.eventName === "AddToCart").length;
+  const leadCount = dateFilteredEvents.filter((e) => e.eventName === "Lead").length;
+  const pageviewCount = dateFilteredEvents.filter((e) => e.eventName === "PageView").length;
 
   const filteredEvents = useMemo(() => {
-    return events.filter((ev) => {
+    return dateFilteredEvents.filter((ev) => {
       // Filtro por tipo de evento
       if (activeFilter !== "all" && ev.eventName.toLowerCase() !== activeFilter.toLowerCase()) {
         return false;
@@ -94,7 +119,7 @@ export function EventTimeline({ events }: EventTimelineProps) {
       }
       return true;
     });
-  }, [events, activeFilter, searchQuery]);
+  }, [dateFilteredEvents, activeFilter, searchQuery]);
 
   const handleCopyJson = (obj: any) => {
     navigator.clipboard.writeText(JSON.stringify(obj, null, 2));
@@ -123,16 +148,29 @@ export function EventTimeline({ events }: EventTimelineProps) {
               </p>
             </div>
 
-            {/* Barra de Busca Rápida */}
-            <div className="relative min-w-[260px]">
-              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar pedido, cliente, UTM..."
-                className="w-full pl-9 pr-3.5 py-2 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none transition-colors"
-              />
+            {/* Controles: Período + Barra de Busca Rápida */}
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              <select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="bg-[#141824] border border-zinc-800 text-xs text-zinc-200 rounded-xl px-3 py-2 focus:border-blue-500 focus:outline-none transition-colors shrink-0"
+              >
+                <option value="today">Hoje</option>
+                <option value="yesterday">Ontem</option>
+                <option value="7d">Últimos 7 dias</option>
+                <option value="all">Todos os eventos</option>
+              </select>
+
+              <div className="relative min-w-[220px] flex-1">
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar pedido, cliente, UTM..."
+                  className="w-full pl-9 pr-3.5 py-2 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none transition-colors"
+                />
+              </div>
             </div>
           </div>
 

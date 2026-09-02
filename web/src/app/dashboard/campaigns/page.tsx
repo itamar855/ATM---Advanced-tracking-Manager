@@ -23,7 +23,7 @@ function CampaignsContent() {
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
   const [adsets, setAdsets] = useState<AdsetItem[]>([]);
   const [ads, setAds] = useState<AdItem[]>([]);
-  const [untrackedSalesCount, setUntrackedSalesCount] = useState(23);
+  const [untrackedSalesCount, setUntrackedSalesCount] = useState(0);
   const [apiError, setApiError] = useState<string | null>(null);
 
   const loadData = async (silent = false) => {

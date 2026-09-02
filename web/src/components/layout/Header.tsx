@@ -14,7 +14,7 @@ const dateRanges = [
 ];
 
 export default function Header() {
-  const [dateRange, setDateRange] = useState("7d");
+  const [dateRange, setDateRange] = useState("today");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 

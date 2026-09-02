@@ -138,7 +138,7 @@ export function UtmifyCampaignManager({
   campaigns = [],
   adsets = [],
   ads = [],
-  untrackedSalesCount = 23,
+  untrackedSalesCount = 0,
   datePreset,
   setDatePreset,
   onRefresh,

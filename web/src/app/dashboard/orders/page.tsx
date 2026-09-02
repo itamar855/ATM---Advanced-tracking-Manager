@@ -139,19 +139,20 @@ export default function OrdersPage() {
     if (dateFilter !== "all" && o.createdAt) {
       const orderDate = new Date(o.createdAt);
       const now = new Date();
+      const brTodayStr = now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      const brOrderDateStr = orderDate.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+
       if (dateFilter === "today") {
-        matchDate = orderDate.toDateString() === now.toDateString();
+        matchDate = brOrderDateStr === brTodayStr;
       } else if (dateFilter === "yesterday") {
-        const yesterday = new Date(now);
-        yesterday.setDate(yesterday.getDate() - 1);
-        matchDate = orderDate.toDateString() === yesterday.toDateString();
+        const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const brYesterdayStr = yesterday.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+        matchDate = brOrderDateStr === brYesterdayStr;
       } else if (dateFilter === "7d") {
-        const sevenDaysAgo = new Date(now);
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
         matchDate = orderDate >= sevenDaysAgo;
       } else if (dateFilter === "30d") {
-        const thirtyDaysAgo = new Date(now);
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
         matchDate = orderDate >= thirtyDaysAgo;
       }
     }

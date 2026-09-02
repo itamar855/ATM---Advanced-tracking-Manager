@@ -65,36 +65,36 @@ export default function DashboardResumoPage() {
   const { activeStore } = useStore();
 
   const [metrics, setMetrics] = useState<DashboardMetrics>({
-    net_revenue: 3342.47,
-    ad_spend: 2608.72,
-    ad_spend_original: 505.3,
-    profit: 733.75,
-    roas: 1.28,
-    pending_sales_value: 6129.16,
-    margin: 22.0,
-    taxes: 0.0,
-    roi: 1.28,
-    cpa: 79.05,
+    net_revenue: 0,
+    ad_spend: 0,
+    ad_spend_original: 0,
+    profit: 0,
+    roas: 0,
+    pending_sales_value: 0,
+    margin: 0,
+    taxes: 0,
+    roi: 0,
+    cpa: 0,
     refund_rate: 0.0,
-    arpu: 101.29,
+    arpu: 0,
     chargeback_rate: 0.0,
-    approval_rate: 100.0,
-    impressions: 48883,
-    clicks: 3784,
-    total_orders: 33,
+    approval_rate: 0.0,
+    impressions: 0,
+    clicks: 0,
+    total_orders: 0,
   });
 
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethods>({
-    total: 33,
-    pix: { count: 23, percent: 69 },
-    card: { count: 10, percent: 30 },
-    boleto: { count: 0, percent: 1 },
+    total: 0,
+    pix: { count: 0, percent: 0 },
+    card: { count: 0, percent: 0 },
+    boleto: { count: 0, percent: 0 },
   });
 
   const [trafficSources, setTrafficSources] = useState<TrafficSource[]>([
-    { name: "MetaAds", count: 18, percent: 54.5 },
-    { name: "iq", count: 7, percent: 21.2 },
-    { name: "N/A", count: 6, percent: 18.2 },
+    { name: "MetaAds", count: 0, percent: 0 },
+    { name: "iq", count: 0, percent: 0 },
+    { name: "N/A", count: 0, percent: 0 },
   ]);
 
   const [availableAccounts, setAvailableAccounts] = useState<Array<{ id: string; name: string }>>([]);
