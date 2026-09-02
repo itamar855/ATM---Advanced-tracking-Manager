@@ -839,11 +839,21 @@ export async function GET(request: NextRequest) {
 
     const untrackedSalesCount = Math.max(parsedPurchases.length - matchedPurchaseIds.size, 0);
 
-    // Ordenação por gasto decrescente
-    formattedAccounts.sort((a, b) => b.spend - a.spend);
-    allCampaigns.sort((a, b) => b.spend - a.spend);
-    allAdsets.sort((a, b) => b.spend - a.spend);
-    allAds.sort((a, b) => b.spend - a.spend);
+    // Ordenação estrita: Ativas > Com Lucro (maior lucro) > Desativadas
+    const sortByActiveProfit = (a: any, b: any) => {
+      const aActive = a.status === "active" || a.status === "Ativo" ? 1 : 0;
+      const bActive = b.status === "active" || b.status === "Ativo" ? 1 : 0;
+      if (aActive !== bActive) return bActive - aActive;
+      const aProfit = Number(a.profit || 0);
+      const bProfit = Number(b.profit || 0);
+      if (bProfit !== aProfit) return bProfit - aProfit;
+      return Number(b.spend || 0) - Number(a.spend || 0);
+    };
+
+    formattedAccounts.sort(sortByActiveProfit);
+    allCampaigns.sort(sortByActiveProfit);
+    allAdsets.sort(sortByActiveProfit);
+    allAds.sort(sortByActiveProfit);
 
     // Se nenhuma conta retornou dados e houve erros, expõe o aviso para a UI sem derrubar a tela
     if (formattedAccounts.length === 0 && accountErrors.length > 0) {

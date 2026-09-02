@@ -507,58 +507,87 @@ export function UtmifyCampaignManager({
     }
   };
 
-  // ── Filtragem dos Dados da Aba Atual ─────────────────────────────────────
+  // ── Filtragem e Ordenação dos Dados da Aba Atual ─────────────────────────
 
   const filteredData = useMemo(() => {
     const term = searchTerm.toLowerCase();
 
+    // Ordenação estrita solicitada: Ativas > Com Lucro (maior lucro) > Desativadas
+    const sortByActiveProfit = (a: any, b: any) => {
+      const aActive = a.status === "active" || a.status === "Ativo" ? 1 : 0;
+      const bActive = b.status === "active" || b.status === "Ativo" ? 1 : 0;
+
+      // 1. Prioridade absoluta: Ativas (1) antes de Desativadas (0)
+      if (aActive !== bActive) {
+        return bActive - aActive;
+      }
+
+      // 2. Entre o mesmo grupo de status: maior lucro líquido primeiro
+      const aProfit = Number(a.profit || 0);
+      const bProfit = Number(b.profit || 0);
+      if (bProfit !== aProfit) {
+        return bProfit - aProfit;
+      }
+
+      // 3. Desempate por maior gasto (spend)
+      return Number(b.spend || 0) - Number(a.spend || 0);
+    };
+
     if (activeTab === "accounts") {
-      return accounts.filter((acc) => {
-        const accName = String(acc.name || "").toLowerCase();
-        const accId = String(acc.id || "").toLowerCase();
-        const matchName = accName.includes(term) || accId.includes(term);
-        const matchStatus = statusFilter === "all" || (statusFilter === "active" ? acc.status === "Ativo" : acc.status !== "Ativo");
-        return matchName && matchStatus;
-      });
+      return accounts
+        .filter((acc) => {
+          const accName = String(acc.name || "").toLowerCase();
+          const accId = String(acc.id || "").toLowerCase();
+          const matchName = accName.includes(term) || accId.includes(term);
+          const matchStatus = statusFilter === "all" || (statusFilter === "active" ? acc.status === "Ativo" : acc.status !== "Ativo");
+          return matchName && matchStatus;
+        })
+        .sort(sortByActiveProfit);
     }
 
     if (activeTab === "campaigns") {
-      return campaigns.filter((camp) => {
-        const campName = String(camp.name || "").toLowerCase();
-        const campId = String(camp.id || "").toLowerCase();
-        const matchAcc = !selectedAccountId || camp.account_id === selectedAccountId;
-        const matchAccSelect = filterAccountSelect === "all" || camp.account_id === filterAccountSelect;
-        const matchName = campName.includes(term) || campId.includes(term);
-        const matchStatus = statusFilter === "all" || camp.status === statusFilter;
-        return matchAcc && matchAccSelect && matchName && matchStatus;
-      });
+      return campaigns
+        .filter((camp) => {
+          const campName = String(camp.name || "").toLowerCase();
+          const campId = String(camp.id || "").toLowerCase();
+          const matchAcc = !selectedAccountId || camp.account_id === selectedAccountId;
+          const matchAccSelect = filterAccountSelect === "all" || camp.account_id === filterAccountSelect;
+          const matchName = campName.includes(term) || campId.includes(term);
+          const matchStatus = statusFilter === "all" || camp.status === statusFilter;
+          return matchAcc && matchAccSelect && matchName && matchStatus;
+        })
+        .sort(sortByActiveProfit);
     }
 
     if (activeTab === "adsets") {
-      return adsets.filter((as) => {
-        const asName = String(as.name || "").toLowerCase();
-        const asId = String(as.id || "").toLowerCase();
-        const matchCamp = !selectedCampaignId || as.campaign_id === selectedCampaignId;
-        const matchAcc = !selectedAccountId || as.account_id === selectedAccountId;
-        const matchAccSelect = filterAccountSelect === "all" || as.account_id === filterAccountSelect;
-        const matchName = asName.includes(term) || asId.includes(term);
-        const matchStatus = statusFilter === "all" || as.status === statusFilter;
-        return matchCamp && matchAcc && matchAccSelect && matchName && matchStatus;
-      });
+      return adsets
+        .filter((as) => {
+          const asName = String(as.name || "").toLowerCase();
+          const asId = String(as.id || "").toLowerCase();
+          const matchCamp = !selectedCampaignId || as.campaign_id === selectedCampaignId;
+          const matchAcc = !selectedAccountId || as.account_id === selectedAccountId;
+          const matchAccSelect = filterAccountSelect === "all" || as.account_id === filterAccountSelect;
+          const matchName = asName.includes(term) || asId.includes(term);
+          const matchStatus = statusFilter === "all" || as.status === statusFilter;
+          return matchCamp && matchAcc && matchAccSelect && matchName && matchStatus;
+        })
+        .sort(sortByActiveProfit);
     }
 
     if (activeTab === "ads") {
-      return ads.filter((ad) => {
-        const adName = String(ad.name || "").toLowerCase();
-        const adId = String(ad.id || "").toLowerCase();
-        const matchAdset = !selectedAdsetId || ad.adset_id === selectedAdsetId;
-        const matchCamp = !selectedCampaignId || ad.campaign_id === selectedCampaignId;
-        const matchAcc = !selectedAccountId || ad.account_id === selectedAccountId;
-        const matchAccSelect = filterAccountSelect === "all" || ad.account_id === filterAccountSelect;
-        const matchName = adName.includes(term) || adId.includes(term);
-        const matchStatus = statusFilter === "all" || ad.status === statusFilter;
-        return matchAdset && matchCamp && matchAcc && matchAccSelect && matchName && matchStatus;
-      });
+      return ads
+        .filter((ad) => {
+          const adName = String(ad.name || "").toLowerCase();
+          const adId = String(ad.id || "").toLowerCase();
+          const matchAdset = !selectedAdsetId || ad.adset_id === selectedAdsetId;
+          const matchCamp = !selectedCampaignId || ad.campaign_id === selectedCampaignId;
+          const matchAcc = !selectedAccountId || ad.account_id === selectedAccountId;
+          const matchAccSelect = filterAccountSelect === "all" || ad.account_id === filterAccountSelect;
+          const matchName = adName.includes(term) || adId.includes(term);
+          const matchStatus = statusFilter === "all" || ad.status === statusFilter;
+          return matchAdset && matchCamp && matchAcc && matchAccSelect && matchName && matchStatus;
+        })
+        .sort(sortByActiveProfit);
     }
 
     return [];
