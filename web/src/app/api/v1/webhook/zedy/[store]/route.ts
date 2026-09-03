@@ -376,6 +376,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       console.error("Erro ao buscar store para Telegram (Zedy):", e);
     }
 
+    // 8.1 Disparo de Notificação Web Push Nativa (iPhone / Android / PC)
+    try {
+      const { sendStorePushNotification } = await import("@/lib/notifications/web-push");
+      const pushType = status === "approved" ? "approved" : "pending";
+      sendStorePushNotification(storeId, pushType, {
+        orderId,
+        value: orderValue,
+        customerName: customer.name || payload.customer?.name,
+        paymentMethod: paymentMethod,
+        itemsSummary: payload.items?.[0]?.title,
+      }).catch((pushErr) => console.warn("[Web Push Zedy Error]:", pushErr));
+    } catch {}
+
     return NextResponse.json({ ok: true, metaResponse, emq_score: emqScore, signals_sent: userDataKeys });
 
   } catch (error: any) {

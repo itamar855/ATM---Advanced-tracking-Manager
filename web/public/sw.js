@@ -97,3 +97,57 @@ self.addEventListener('fetch', (event) => {
       })
   );
 });
+
+// ── 4. Recepção de Notificações Web Push (iOS 16.4+, Android e PC) ──
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+
+  try {
+    const data = event.data.json();
+    const title = data.title || 'Nova Notificação — ATM PRO';
+    const options = {
+      body: data.body || '',
+      icon: data.icon || '/icons/icon-192x192.png',
+      badge: data.badge || '/icons/favicon-32x32.png',
+      data: data.data || { url: '/dashboard/orders' },
+      vibrate: [200, 100, 200, 100, 300], // Vibração característica de venda
+      tag: 'atm-order-' + (data.data?.orderId || Date.now()),
+      renotify: true,
+      requireInteraction: true,
+    };
+
+    event.waitUntil(
+      self.registration.showNotification(title, options)
+    );
+  } catch (err) {
+    const text = event.data.text();
+    event.waitUntil(
+      self.registration.showNotification('ATM PRO', {
+        body: text,
+        icon: '/icons/icon-192x192.png',
+      })
+    );
+  }
+});
+
+// ── 5. Clique na Notificação: Abre ou foca a tela de Pedidos no iPhone/PC ──
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const urlToOpen = event.notification.data?.url || '/dashboard/orders';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // Se já houver uma janela do ATM PRO aberta, foca nela e navega
+      for (const client of windowClients) {
+        if ('focus' in client) {
+          if ('navigate' in client) client.navigate(urlToOpen);
+          return client.focus();
+        }
+      }
+      // Se não houver, abre uma nova janela
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen);
+      }
+    })
+  );
+});

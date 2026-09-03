@@ -1,0 +1,245 @@
+import webPush from "web-push";
+import { createAdminClient } from "@/lib/supabase/server";
+import { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT } from "./vapid-keys";
+
+webPush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+
+export interface PushSubscriptionItem {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+  device_name?: string;
+  device_type?: "ios" | "android" | "desktop";
+  created_at?: string;
+}
+
+export interface NotificationConfig {
+  enabled: boolean;
+  notify_approved: boolean;
+  notify_pending: boolean;
+  notify_abandoned: boolean;
+  min_value: number;
+  sound: "chaching" | "coin" | "subtle" | "default" | "silent";
+  template_approved_title: string;
+  template_approved_body: string;
+  template_pending_title: string;
+  template_pending_body: string;
+  template_abandoned_title: string;
+  template_abandoned_body: string;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+}
+
+export const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
+  enabled: true,
+  notify_approved: true,
+  notify_pending: true,
+  notify_abandoned: false,
+  min_value: 0,
+  sound: "chaching",
+  template_approved_title: "💰 Venda Aprovada! ({loja})",
+  template_approved_body: "{cliente_nome} comprou {valor} via {metodo_pagamento}",
+  template_pending_title: "⏳ Pedido Pendente ({loja})",
+  template_pending_body: "Novo {metodo_pagamento} de {valor} gerado para {cliente_nome}",
+  template_abandoned_title: "🛒 Checkout Abandonado ({loja})",
+  template_abandoned_body: "{cliente_nome} iniciou compra de {valor}",
+  quiet_hours_enabled: false,
+  quiet_hours_start: "23:00",
+  quiet_hours_end: "07:00",
+};
+
+/**
+ * Substitui variáveis dinâmicas no template
+ */
+export function formatTemplate(template: string, vars: Record<string, string>): string {
+  let result = template;
+  for (const [key, value] of Object.entries(vars)) {
+    const regex = new RegExp(`\\{${key}\\}`, "gi");
+    result = result.replace(regex, value || "");
+  }
+  return result;
+}
+
+/**
+ * Verifica se o momento atual está dentro do Modo Não Perturbe (Horário de Brasília)
+ */
+export function isInQuietHours(startTime: string, endTime: string): boolean {
+  try {
+    const now = new Date();
+    // Fuso de Brasília UTC-3
+    const utcHours = now.getUTCHours() - 3;
+    const brHours = (utcHours + 24) % 24;
+    const brMinutes = now.getUTCMinutes();
+    const currentMinutes = brHours * 60 + brMinutes;
+
+    const [startH, startM] = startTime.split(":").map(Number);
+    const [endH, endM] = endTime.split(":").map(Number);
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+
+    if (startMinutes <= endMinutes) {
+      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    } else {
+      // Cruzando meia-noite (ex: 23:00 às 07:00)
+      return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+    }
+  } catch {
+    return false;
+  }
+}
+
+export type OrderNotificationType = "approved" | "pending" | "abandoned";
+
+export interface OrderNotificationPayload {
+  orderId?: string;
+  value: number;
+  customerName?: string;
+  paymentMethod?: string;
+  itemsSummary?: string;
+}
+
+/**
+ * Dispara notificação push para todos os aparelhos conectados da loja
+ */
+export async function sendStorePushNotification(
+  storeId: string,
+  type: OrderNotificationType,
+  data: OrderNotificationPayload
+) {
+  try {
+    const supabase = createAdminClient();
+    const { data: store } = await supabase
+      .from("stores")
+      .select("id, name, settings")
+      .eq("id", storeId)
+      .maybeSingle();
+
+    if (!store) return { ok: false, error: "Loja não encontrada" };
+
+    const settings = store.settings || {};
+    const config: NotificationConfig = {
+      ...DEFAULT_NOTIFICATION_CONFIG,
+      ...(settings.notifications || {}),
+    };
+
+    if (!config.enabled) return { ok: false, message: "Notificações desativadas para esta loja" };
+
+    // Filtro por tipo de evento
+    if (type === "approved" && !config.notify_approved) return { ok: false, message: "Alertas de venda desativados" };
+    if (type === "pending" && !config.notify_pending) return { ok: false, message: "Alertas de pendente desativados" };
+    if (type === "abandoned" && !config.notify_abandoned) return { ok: false, message: "Alertas de abandono desativados" };
+
+    // Filtro por valor mínimo
+    if (config.min_value > 0 && data.value < config.min_value) {
+      return { ok: false, message: `Valor R$ ${data.value} inferior ao mínimo de R$ ${config.min_value}` };
+    }
+
+    // Filtro Não Perturbe
+    if (config.quiet_hours_enabled && isInQuietHours(config.quiet_hours_start, config.quiet_hours_end)) {
+      return { ok: false, message: "Horário silencioso ativo (Não Perturbe)" };
+    }
+
+    const subscriptions: PushSubscriptionItem[] = Array.isArray(settings.push_subscriptions)
+      ? settings.push_subscriptions
+      : [];
+
+    if (subscriptions.length === 0) {
+      return { ok: false, message: "Nenhum dispositivo cadastrado para receber notificações" };
+    }
+
+    // Monta as variáveis dinâmicas
+    const formattedValue = `R$ ${data.value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+    const firstName = (data.customerName || "Cliente").trim().split(" ")[0];
+    const variables = {
+      valor: formattedValue,
+      cliente_nome: data.customerName || "Cliente",
+      cliente_primeiro_nome: firstName,
+      metodo_pagamento: (data.paymentMethod || "PIX").toUpperCase(),
+      loja: store.name || "ATM PRO",
+      pedido_id: data.orderId ? `#${data.orderId.replace(/\D/g, "").slice(-4) || data.orderId.slice(-4)}` : "#1001",
+      produtos: data.itemsSummary || "Produto",
+    };
+
+    let titleTemplate = config.template_approved_title;
+    let bodyTemplate = config.template_approved_body;
+
+    if (type === "pending") {
+      titleTemplate = config.template_pending_title;
+      bodyTemplate = config.template_pending_body;
+    } else if (type === "abandoned") {
+      titleTemplate = config.template_abandoned_title;
+      bodyTemplate = config.template_abandoned_body;
+    }
+
+    const title = formatTemplate(titleTemplate, variables);
+    const body = formatTemplate(bodyTemplate, variables);
+
+    const payload = JSON.stringify({
+      title,
+      body,
+      icon: "/icons/icon-192x192.png",
+      badge: "/icons/favicon-32x32.png",
+      sound: config.sound,
+      data: {
+        url: "/dashboard/orders",
+        orderId: data.orderId,
+        storeId,
+        timestamp: Date.now(),
+      },
+    });
+
+    const deadSubscriptions: string[] = [];
+
+    const results = await Promise.allSettled(
+      subscriptions.map(async (sub) => {
+        try {
+          await webPush.sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: sub.keys,
+            },
+            payload,
+            {
+              TTL: 86400, // 24 horas de retenção
+              urgency: "high",
+            }
+          );
+        } catch (err: any) {
+          // Status 410 (Gone) ou 404 significa que o usuário desinstalou ou revogou a permissão
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            deadSubscriptions.push(sub.endpoint);
+          }
+          throw err;
+        }
+      })
+    );
+
+    // Limpa tokens mortos da base para manter a loja limpa
+    if (deadSubscriptions.length > 0) {
+      const activeSubs = subscriptions.filter((s) => !deadSubscriptions.includes(s.endpoint));
+      await supabase
+        .from("stores")
+        .update({
+          settings: {
+            ...settings,
+            push_subscriptions: activeSubs,
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", storeId);
+    }
+
+    const succeeded = results.filter((r) => r.status === "fulfilled").length;
+    console.log(
+      `[Web Push] Disparado para loja ${store.name} | Sucesso: ${succeeded}/${subscriptions.length} | Tipo: ${type}`
+    );
+
+    return { ok: true, sent: succeeded, total: subscriptions.length };
+  } catch (err: any) {
+    console.error("[Web Push Error]:", err.message);
+    return { ok: false, error: err.message };
+  }
+}

@@ -412,6 +412,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       console.error("Erro ao buscar store para Telegram (Vega):", e);
     }
 
+    // Disparo de Notificação Web Push Nativa (iPhone / Android / PC)
+    try {
+      const { sendStorePushNotification } = await import("@/lib/notifications/web-push");
+      const pushType = (payload.status === "pending" || eventType === "ORDER_CREATED") ? "pending" : "approved";
+      const customerName = `${normalizedOrder.customer.firstName || ""} ${normalizedOrder.customer.lastName || ""}`.trim() || "Cliente";
+      sendStorePushNotification(storeId, pushType, {
+        orderId,
+        value: orderValue,
+        customerName,
+        paymentMethod: payload.payment_method || "Cartão/PIX",
+        itemsSummary: products?.[0]?.title,
+      }).catch((pushErr) => console.warn("[Web Push Vega Error]:", pushErr));
+    } catch {}
+
     return NextResponse.json({
       ok: metaResponse.ok,
       event_name: metaEventName,
