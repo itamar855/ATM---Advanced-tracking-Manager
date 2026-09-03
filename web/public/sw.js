@@ -1,13 +1,16 @@
 // ATM PRO - Service Worker v1.0.0
 // Caching inteligente para PWA com proteção estrita de APIs em tempo real
 
-const CACHE_NAME = 'atm-pro-cache-v1';
+const CACHE_NAME = 'atm-pro-cache-v2';
 const PRECACHE_ASSETS = [
   '/manifest.json',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
   '/icons/apple-touch-icon.png',
   '/icons/favicon-32x32.png',
+  '/sounds/chaching.wav',
+  '/sounds/safe-coins.wav',
+  '/sounds/bell.wav',
 ];
 
 // Instalação do Service Worker e pré-cache de assets essenciais
@@ -105,16 +108,35 @@ self.addEventListener('push', (event) => {
   try {
     const data = event.data.json();
     const title = data.title || 'Nova Notificação — ATM PRO';
+    const isSilent = data.silent === true || data.sound === 'silent';
+    const soundUrl = data.sound && data.sound !== 'silent' ? data.sound : undefined;
+
     const options = {
       body: data.body || '',
       icon: data.icon || '/icons/icon-192x192.png',
       badge: data.badge || '/icons/favicon-32x32.png',
       data: data.data || { url: '/dashboard/orders' },
-      vibrate: [200, 100, 200, 100, 300], // Vibração característica de venda
+      vibrate: isSilent ? [] : [200, 100, 200, 100, 300], // Vibração característica de venda
       tag: 'atm-order-' + (data.data?.orderId || Date.now()),
       renotify: true,
       requireInteraction: true,
+      silent: isSilent,
     };
+
+    if (soundUrl) {
+      options.sound = soundUrl;
+    }
+
+    // Notifica também os clientes abertos (se houver aba aberta do ATM PRO, reproduz áudio in-app)
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      windowClients.forEach((client) => {
+        client.postMessage({
+          type: 'ATM_PUSH_RECEIVED',
+          payload: data,
+          sound: soundUrl,
+        });
+      });
+    }).catch(() => {});
 
     event.waitUntil(
       self.registration.showNotification(title, options)

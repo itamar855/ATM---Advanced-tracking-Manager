@@ -21,7 +21,9 @@ export interface NotificationConfig {
   notify_pending: boolean;
   notify_abandoned: boolean;
   min_value: number;
-  sound: "chaching" | "coin" | "subtle" | "default" | "silent";
+  sound: "chaching" | "coin" | "safe_coins" | "bell" | "subtle" | "custom" | "default" | "silent";
+  custom_sound_url?: string;
+  custom_sound_name?: string;
   template_approved_title: string;
   template_approved_body: string;
   template_pending_title: string;

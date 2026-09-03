@@ -105,17 +105,33 @@ export async function sendStorePushNotification(
     const title = formatTemplate(titleTemplate, variables);
     const body = formatTemplate(bodyTemplate, variables);
 
+    const isSilent = config.sound === "silent";
+    let soundUrl: string | null = null;
+    if (!isSilent) {
+      if (config.sound === "custom" && config.custom_sound_url) {
+        soundUrl = config.custom_sound_url;
+      } else if (config.sound === "safe_coins" || config.sound === "coin") {
+        soundUrl = "/sounds/safe-coins.wav";
+      } else if (config.sound === "bell" || config.sound === "subtle") {
+        soundUrl = "/sounds/bell.wav";
+      } else {
+        soundUrl = "/sounds/chaching.wav";
+      }
+    }
+
     const payload = JSON.stringify({
       title,
       body,
       icon: "/icons/icon-192x192.png",
       badge: "/icons/favicon-32x32.png",
-      sound: config.sound,
+      sound: soundUrl,
+      silent: isSilent,
       data: {
         url: "/dashboard/orders",
         orderId: data.orderId,
         storeId,
         timestamp: Date.now(),
+        sound: soundUrl,
       },
     });
 
@@ -133,6 +149,11 @@ export async function sendStorePushNotification(
             {
               TTL: 86400, // 24 horas de retenção
               urgency: "high",
+              headers: {
+                "apns-push-type": "alert",
+                "apns-priority": "10",
+                "apns-expiration": "0",
+              },
             }
           );
         } catch (err: any) {

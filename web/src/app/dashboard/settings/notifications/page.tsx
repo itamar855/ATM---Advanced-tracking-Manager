@@ -20,6 +20,9 @@ import {
   Check,
   Play,
   RotateCcw,
+  Upload,
+  Music,
+  Trash2,
 } from "lucide-react";
 import { playNotificationSound } from "@/lib/notifications/sound-effects";
 import { NotificationConfig, DEFAULT_NOTIFICATION_CONFIG } from "@/lib/notifications/types";
@@ -56,7 +59,42 @@ export default function NotificationSettingsPage() {
   // Refs para inserção de variáveis nos inputs
   const titleInputRef = useRef<HTMLInputElement>(null);
   const bodyInputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [lastFocusedField, setLastFocusedField] = useState<"title" | "body">("body");
+  const [uploadingSound, setUploadingSound] = useState(false);
+
+  function handleSoundFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Limite de 2MB para efeito sonoro
+    if (file.size > 2 * 1024 * 1024) {
+      setFeedbackMsg({ type: "error", text: "O arquivo de áudio deve ter no máximo 2MB." });
+      return;
+    }
+
+    setUploadingSound(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64Url = event.target?.result as string;
+      if (base64Url) {
+        setConfig((p) => ({
+          ...p,
+          sound: "custom",
+          custom_sound_url: base64Url,
+          custom_sound_name: file.name,
+        }));
+        playNotificationSound("custom", base64Url);
+        setFeedbackMsg({ type: "success", text: `Som "${file.name}" carregado com sucesso!` });
+      }
+      setUploadingSound(false);
+    };
+    reader.onerror = () => {
+      setFeedbackMsg({ type: "error", text: "Erro ao ler o arquivo de áudio." });
+      setUploadingSound(false);
+    };
+    reader.readAsDataURL(file);
+  }
 
   // Carrega configurações da loja e verifica inscrição local
   useEffect(() => {
@@ -669,28 +707,37 @@ export default function NotificationSettingsPage() {
         </div>
       </div>
 
-      {/* CARD 4: Seletor de Sons & Feedback */}
-      <div className="bg-[#11141E] border border-zinc-800/80 rounded-2xl p-5 shadow-xl space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <Volume2 size={18} className="text-amber-400" />
-            <span>Som da Notificação de Venda</span>
-          </h3>
-          <span className="text-xs text-zinc-400">Toque em "Ouvir" para escutar cada som</span>
+      {/* CARD 4: Seletor de Sons, Upload Customizado & Feedback */}
+      <div className="bg-[#11141E] border border-zinc-800/80 rounded-2xl p-5 shadow-xl space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-800 pb-3 gap-2">
+          <div>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Volume2 size={18} className="text-amber-400" />
+              <span>Som da Notificação de Venda</span>
+            </h3>
+            <p className="text-xs text-zinc-400 mt-0.5">Escolha um dos sons premium ou faça upload do seu próprio áudio</p>
+          </div>
+          <span className="text-xs text-zinc-500">Toque em "Ouvir" para testar no seu aparelho</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+        {/* Grade de Opções de Som */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {[
-            { id: "chaching", label: "Caixa Registradora", icon: "💰", desc: "Clássico som de venda aprovada" },
-            { id: "coin", label: "Moedas Metálicas", icon: "🪙", desc: "Som de moedas caindo" },
-            { id: "subtle", label: "Sino Suave", icon: "🔔", desc: "Alerta discreto e agradável" },
-            { id: "silent", label: "Silencioso", icon: "🔕", desc: "Apenas vibração e banner" },
+            { id: "chaching", label: "Caixa Registradora", icon: "💰", desc: "Sino metálico e gaveta de dinheiro abrindo" },
+            { id: "safe_coins", label: "Moedas no Cofre", icon: "🪙", desc: "Moedas encorpadas caindo em cofre de aço" },
+            { id: "bell", label: "Sino de Ouro", icon: "🔔", desc: "Chime suave e refinado de balcão" },
+            { id: "custom", label: config.custom_sound_name ? config.custom_sound_name.slice(0, 16) : "Meu Som", icon: "🎵", desc: config.custom_sound_url ? "Áudio personalizado carregado" : "Faça upload do seu próprio áudio" },
+            { id: "silent", label: "Silencioso", icon: "🔕", desc: "Apenas vibração e banner na tela" },
           ].map((s) => (
             <div
               key={s.id}
               onClick={() => {
+                if (s.id === "custom" && !config.custom_sound_url) {
+                  fileInputRef.current?.click();
+                  return;
+                }
                 setConfig((p) => ({ ...p, sound: s.id as any }));
-                playNotificationSound(s.id);
+                playNotificationSound(s.id, config.custom_sound_url);
               }}
               className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
                 config.sound === s.id
@@ -703,23 +750,129 @@ export default function NotificationSettingsPage() {
                   <span className="text-xl">{s.icon}</span>
                   {config.sound === s.id && <Check size={16} className="text-amber-400" />}
                 </div>
-                <div className="text-xs font-bold">{s.label}</div>
-                <div className="text-[10px] text-zinc-400 mt-1">{s.desc}</div>
+                <div className="text-xs font-bold truncate">{s.label}</div>
+                <div className="text-[10px] text-zinc-400 mt-1 leading-tight">{s.desc}</div>
               </div>
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  playNotificationSound(s.id);
-                }}
-                className="mt-3 py-1 px-2 rounded bg-zinc-800/80 hover:bg-zinc-700 text-[10px] text-zinc-300 flex items-center justify-center gap-1 transition-colors"
-              >
-                <Play size={10} />
-                <span>Ouvir som</span>
-              </button>
+              <div className="mt-3 flex items-center gap-1.5">
+                {s.id !== "silent" && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (s.id === "custom" && !config.custom_sound_url) {
+                        fileInputRef.current?.click();
+                      } else {
+                        playNotificationSound(s.id, config.custom_sound_url);
+                      }
+                    }}
+                    className="flex-1 py-1.5 px-2 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-[10px] text-zinc-300 flex items-center justify-center gap-1 transition-colors"
+                  >
+                    <Play size={10} />
+                    <span>{s.id === "custom" && !config.custom_sound_url ? "Carregar" : "Ouvir"}</span>
+                  </button>
+                )}
+                {s.id === "custom" && config.custom_sound_url && (
+                  <button
+                    type="button"
+                    title="Substituir áudio"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
+                    className="p-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
+                  >
+                    <Upload size={12} />
+                  </button>
+                )}
+              </div>
             </div>
           ))}
+        </div>
+
+        {/* Área de Upload de Som Customizado */}
+        <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+              <Music size={18} />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-white flex items-center gap-2">
+                <span>Upload de Som Personalizado</span>
+                {config.custom_sound_url && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono">Ativo</span>
+                )}
+              </div>
+              <p className="text-[11px] text-zinc-400 mt-0.5">
+                {config.custom_sound_url
+                  ? `Arquivo ativo: ${config.custom_sound_name || "som-personalizado.mp3"}`
+                  : "Envie qualquer arquivo de áudio (.mp3, .wav, .m4a) de até 2MB para tocar nas suas vendas"}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*"
+              className="hidden"
+              onChange={handleSoundFileUpload}
+            />
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingSound}
+              className="btn-secondary py-2 px-3 text-xs gap-1.5 flex-1 sm:flex-none justify-center"
+            >
+              <Upload size={14} className="text-amber-400" />
+              <span>{uploadingSound ? "Carregando..." : config.custom_sound_url ? "Trocar Arquivo" : "Enviar Meu Áudio"}</span>
+            </button>
+
+            {config.custom_sound_url && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => playNotificationSound("custom", config.custom_sound_url)}
+                  className="btn-primary py-2 px-3 text-xs gap-1.5 flex-1 sm:flex-none justify-center"
+                >
+                  <Play size={12} />
+                  <span>Ouvir</span>
+                </button>
+                <button
+                  type="button"
+                  title="Remover som personalizado"
+                  onClick={() => {
+                    setConfig((p) => ({
+                      ...p,
+                      sound: "chaching",
+                      custom_sound_url: undefined,
+                      custom_sound_name: undefined,
+                    }));
+                  }}
+                  className="p-2 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Lembrete Apple iPhone: Chave de Silêncio e Modo Foco */}
+        <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-start gap-3">
+          <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400 shrink-0 mt-0.5">
+            <Smartphone size={16} />
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs font-bold text-blue-200 flex items-center gap-1.5">
+              <span>🍎 Dica para Usuários de iPhone (iOS):</span>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Para que o som toque com o celular bloqueado no bolso, certifique-se de que a <strong className="text-zinc-200">chave física lateral do iPhone (modo silencioso)</strong> não esteja com a tarjinha laranja aparente e que o modo <strong className="text-zinc-200">Foco / Não Perturbe</strong> esteja desativado.
+            </p>
+          </div>
         </div>
       </div>
 
