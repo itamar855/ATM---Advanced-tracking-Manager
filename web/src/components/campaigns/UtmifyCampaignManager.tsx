@@ -214,6 +214,7 @@ export function UtmifyCampaignManager({
   const [isBulkActionRunning, setIsBulkActionRunning] = useState(false);
   const [bulkBudgetModalOpen, setBulkBudgetModalOpen] = useState(false);
   const [bulkBudgetValue, setBulkBudgetValue] = useState("");
+  const [mobileViewMode, setMobileViewMode] = useState<"cards" | "table">("cards");
 
   // ── Navegação & Drill-Down ───────────────────────────────────────────────
 
@@ -648,8 +649,35 @@ export function UtmifyCampaignManager({
 
   return (
     <div className="space-y-4 text-zinc-200 fade-in select-none">
+      {/* ── Mobile KPI Summary Bar (Topo) ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:hidden">
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-2.5 shadow-sm">
+          <span className="text-[10px] text-zinc-400 font-medium block">Gasto Total</span>
+          <span className="text-xs font-bold text-white font-mono mt-0.5 block">{fmtBrl(totals.spend)}</span>
+        </div>
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-2.5 shadow-sm">
+          <span className="text-[10px] text-zinc-400 font-medium block">Faturamento</span>
+          <span className="text-xs font-bold text-emerald-400 font-mono mt-0.5 block">{fmtBrl(totals.revenue)}</span>
+        </div>
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-2.5 shadow-sm">
+          <span className="text-[10px] text-zinc-400 font-medium block">Lucro Líquido</span>
+          <span className={cn(
+            "text-xs font-bold font-mono mt-0.5 block",
+            totals.profit >= 0 ? "text-emerald-400" : "text-red-400"
+          )}>
+            {fmtBrl(totals.profit)}
+          </span>
+        </div>
+        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-2.5 shadow-sm">
+          <span className="text-[10px] text-zinc-400 font-medium block">ROAS / Vendas</span>
+          <span className="text-xs font-bold text-blue-400 font-mono mt-0.5 block">
+            {totals.roas.toFixed(2)}x <span className="text-zinc-500 font-normal">({totals.sales}v)</span>
+          </span>
+        </div>
+      </div>
+
       {/* ── 1. Top Tabs Bar (Estilo UTMify PRO) ────────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-[var(--color-border-subtle)] pb-2">
+      <div className="flex items-center gap-2 border-b border-[var(--color-border-subtle)] pb-2 overflow-x-auto scrollbar-none flex-nowrap">
         {/* Tab 1: Contas */}
         <button
           onClick={() => {
@@ -774,6 +802,30 @@ export function UtmifyCampaignManager({
         <div className="flex items-center justify-between flex-wrap gap-3">
           {/* Ações Rápidas da Esquerda */}
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Alternador Mobile Cards vs Tabela */}
+            <div className="flex sm:hidden items-center bg-zinc-900 border border-zinc-800 rounded-lg p-0.5">
+              <button
+                type="button"
+                onClick={() => setMobileViewMode("cards")}
+                className={cn(
+                  "px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer",
+                  mobileViewMode === "cards" ? "bg-blue-600 text-white shadow" : "text-zinc-400"
+                )}
+              >
+                Cards
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileViewMode("table")}
+                className={cn(
+                  "px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer",
+                  mobileViewMode === "table" ? "bg-blue-600 text-white shadow" : "text-zinc-400"
+                )}
+              >
+                Tabela
+              </button>
+            </div>
+
             <button className="p-2 rounded-lg bg-zinc-800/60 hover:bg-zinc-700/60 text-zinc-400 hover:text-white transition-colors" title="Colunas">
               <SlidersHorizontal size={14} />
             </button>
@@ -930,8 +982,219 @@ export function UtmifyCampaignManager({
         </div>
       </div>
 
+      {/* ── 2.5 Visão de Cards Mobile para iPhone/Android ── */}
+      <div className={cn("space-y-3", mobileViewMode === "table" ? "hidden" : "block sm:hidden")}>
+        {filteredData.length > 0 ? (
+          filteredData.map((row: any) => {
+            const isChecked = selectedRowIds.includes(row.id);
+            const isPositiveProfit = Number(row.profit || 0) >= 0;
+            const isPositiveRoas = Number(row.roas || 0) >= 1.0;
+            const isEditingBudget = editingBudgetId === row.id;
+
+            return (
+              <div
+                key={row.id}
+                className={cn(
+                  "bg-[#11141E] border border-zinc-800/80 rounded-2xl p-4 shadow-lg transition-all",
+                  isChecked && "border-blue-500/50 bg-blue-500/[0.03]"
+                )}
+              >
+                {/* Linha Superior: Checkbox + Switch iOS + Nome + ROAS */}
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => {
+                        setSelectedRowIds((prev) =>
+                          prev.includes(row.id) ? prev.filter((i) => i !== row.id) : [...prev, row.id]
+                        );
+                      }}
+                      className="rounded border-zinc-700 bg-zinc-800 text-blue-500 focus:ring-0 cursor-pointer shrink-0"
+                    />
+
+                    {activeTab === "accounts" ? (
+                      <span
+                        className={cn(
+                          "px-2 py-0.5 rounded text-[10px] font-semibold uppercase shrink-0",
+                          row.status === "Ativo"
+                            ? "bg-emerald-500/10 text-emerald-400"
+                            : "bg-zinc-500/10 text-zinc-400"
+                        )}
+                      >
+                        {row.status}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleToggleStatus(
+                            row.id,
+                            row.status,
+                            activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad"
+                          )
+                        }
+                        disabled={actionLoadingId === row.id}
+                        className={cn(
+                          "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none cursor-pointer shrink-0",
+                          row.status === "active" ? "bg-emerald-500" : "bg-zinc-700",
+                          actionLoadingId === row.id && "opacity-50 animate-pulse"
+                        )}
+                        title={row.status === "active" ? "Pausar" : "Ativar"}
+                      >
+                        <span
+                          className={cn(
+                            "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+                            row.status === "active" ? "translate-x-4.5" : "translate-x-0.5"
+                          )}
+                        />
+                      </button>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                      <div
+                        onClick={() => {
+                          if (activeTab === "accounts") handleSelectAccount(row.id);
+                          else if (activeTab === "campaigns") handleSelectCampaign(row.id);
+                          else if (activeTab === "adsets") handleSelectAdset(row.id);
+                        }}
+                        className="font-bold text-xs text-white hover:text-blue-400 transition-colors line-clamp-1 cursor-pointer"
+                        title={row.name}
+                      >
+                        {row.name}
+                      </div>
+                      {row.account_name && activeTab !== "accounts" && (
+                        <span className="text-[10px] text-zinc-500 block truncate">
+                          {row.account_name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Badge de ROAS */}
+                  <div className="shrink-0">
+                    <span
+                      className={cn(
+                        "px-2 py-0.5 rounded-full text-[10px] font-bold font-mono border block",
+                        isPositiveRoas
+                          ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                          : "bg-red-500/15 text-red-400 border-red-500/30"
+                      )}
+                    >
+                      {Number(row.roas || 0).toFixed(2)}x ROAS
+                    </span>
+                  </div>
+                </div>
+
+                {/* Grid 2x2 com 4 Métricas Chave */}
+                <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-zinc-800/60 text-xs">
+                  <div className="bg-[#141824] rounded-xl p-2.5 border border-zinc-800/60">
+                    <span className="text-[10px] text-zinc-400 block">Gasto:</span>
+                    <span className="font-bold font-mono text-zinc-200 mt-0.5 block">{fmtBrl(row.spend)}</span>
+                  </div>
+                  <div className="bg-[#141824] rounded-xl p-2.5 border border-zinc-800/60">
+                    <span className="text-[10px] text-zinc-400 block">Faturamento:</span>
+                    <span className="font-bold font-mono text-emerald-400 mt-0.5 block">{fmtBrl(row.revenue)}</span>
+                  </div>
+                  <div className="bg-[#141824] rounded-xl p-2.5 border border-zinc-800/60">
+                    <span className="text-[10px] text-zinc-400 block">Lucro Líquido:</span>
+                    <span
+                      className={cn(
+                        "font-bold font-mono mt-0.5 block",
+                        isPositiveProfit ? "text-emerald-400" : "text-red-400"
+                      )}
+                    >
+                      {fmtBrl(row.profit)}
+                    </span>
+                  </div>
+                  <div className="bg-[#141824] rounded-xl p-2.5 border border-zinc-800/60">
+                    <span className="text-[10px] text-zinc-400 block">Vendas / CPA:</span>
+                    <span className="font-bold font-mono text-white mt-0.5 block">
+                      {row.sales || 0} <span className="text-[10px] text-zinc-400 font-normal">({fmtBrl(row.cpa)})</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Rodapé do Card: Orçamento + Ações Rápidas */}
+                <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-zinc-800/60 text-xs text-zinc-400">
+                  {activeTab !== "accounts" && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-zinc-500">Orçamento:</span>
+                      {isEditingBudget ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            value={editBudgetValue}
+                            onChange={(e) => setEditBudgetValue(e.target.value)}
+                            className="w-16 px-1.5 py-0.5 bg-zinc-800 text-white text-[11px] font-mono rounded border border-blue-500 focus:outline-none"
+                          />
+                          <button
+                            onClick={() =>
+                              handleSaveBudget(
+                                row.id,
+                                activeTab === "campaigns" ? "campaign" : "adset"
+                              )
+                            }
+                            className="p-1 rounded bg-emerald-500 text-black hover:bg-emerald-400"
+                          >
+                            <Check size={10} />
+                          </button>
+                          <button
+                            onClick={() => setEditingBudgetId(null)}
+                            className="p-1 rounded bg-zinc-700 text-white hover:bg-zinc-600"
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setEditingBudgetId(row.id);
+                            setEditBudgetValue(String(row.budget || ""));
+                          }}
+                          className="font-mono text-zinc-300 font-bold hover:text-blue-400 flex items-center gap-1 text-[11px] cursor-pointer"
+                        >
+                          <span>{row.budget ? fmtBrl(row.budget) : "N/D"}</span>
+                          <Edit2 size={10} className="text-zinc-500" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Ação de Navegação para o próximo nível */}
+                  {activeTab !== "ads" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeTab === "accounts") handleSelectAccount(row.id);
+                        else if (activeTab === "campaigns") handleSelectCampaign(row.id);
+                        else if (activeTab === "adsets") handleSelectAdset(row.id);
+                      }}
+                      className="ml-auto text-[11px] text-blue-400 font-bold flex items-center gap-1 hover:text-blue-300 cursor-pointer"
+                    >
+                      <span>
+                        {activeTab === "accounts"
+                          ? "Ver Campanhas"
+                          : activeTab === "campaigns"
+                          ? "Ver Conjuntos"
+                          : "Ver Anúncios"}
+                      </span>
+                      <ChevronRight size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="p-8 text-center bg-[#11141E] border border-zinc-800/80 rounded-2xl text-zinc-400 text-xs">
+            Nenhum item encontrado com os filtros atuais.
+          </div>
+        )}
+      </div>
+
       {/* ── 3. Tabela Master de Alta Densidade ────────── */}
-      <div className="bg-[var(--color-bg-surface)] border border-[var(--color-border-subtle)] rounded-xl overflow-hidden">
+      <div className={cn("bg-[var(--color-bg-surface)] border border-[var(--color-border-subtle)] rounded-xl overflow-hidden", mobileViewMode === "cards" ? "hidden sm:block" : "block")}>
         <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
           <table className="w-full text-left border-collapse text-[11.5px]">
             <thead className="bg-zinc-800/20 text-zinc-400 font-semibold sticky top-0 z-20 border-b border-[var(--color-border-subtle)] uppercase text-[10px] tracking-wider">

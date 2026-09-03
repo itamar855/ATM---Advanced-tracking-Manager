@@ -396,7 +396,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         
         const emoji = isPending ? "🟡" : "💰";
         const statusText = isPending ? "Venda Pendente/Pix" : "Venda Aprovada";
-        const message = `${emoji} *${statusText}!*\n\n*Valor:* ${formattedValue}\n*Gateway:* Gateway7\n*Produto:* ${products?.[0]?.title || 'Não informado'}\n*Cliente:* ${customerName}`;
+        const message = `${emoji} *${statusText}!*\n\n*Valor:* ${formattedValue}\n*Gateway:* Gateway de Pagamento\n*Produto:* ${products?.[0]?.title || 'Não informado'}\n*Cliente:* ${customerName}`;
 
         fetch(`https://api.telegram.org/bot${storeData.telegram_bot_token}/sendMessage`, {
           method: "POST",
