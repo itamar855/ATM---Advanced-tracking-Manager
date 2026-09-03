@@ -22,7 +22,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { playNotificationSound } from "@/lib/notifications/sound-effects";
-import { NotificationConfig, DEFAULT_NOTIFICATION_CONFIG } from "@/lib/notifications/web-push";
+import { NotificationConfig, DEFAULT_NOTIFICATION_CONFIG } from "@/lib/notifications/types";
 
 const AVAILABLE_TAGS = [
   { tag: "{valor}", label: "Valor (ex: R$ 197,90)", desc: "Valor total do pedido" },
