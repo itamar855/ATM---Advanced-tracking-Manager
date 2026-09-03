@@ -4,6 +4,12 @@ import { buildBrowserEvent, getUserDataKeys, BrowserEventName, BrowserUserData, 
 import { sendMetaCAPIEvent } from "@/lib/meta/capi";
 import { reserveEvent, updateEventResult } from "@/lib/tracking/dedup-engine";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
+import {
+  stitchVisitorIdentity,
+  getVisitorIdentity,
+  enrichAndFlushBufferedEvents,
+  retroactivelyEnrichCompletedEvents,
+} from "@/lib/tracking/identity-stitcher";
 
 export const dynamic = "force-dynamic";
 
@@ -41,11 +47,10 @@ function calculateEmq(userDataKeys: string[]): number {
  * AddToCart, InitiateCheckout, AddPaymentInfo, Purchase, etc.) e os encaminha
  * à Meta Conversions API com todos os sinais disponíveis.
  *
- * v3.1.0 - Fixes:
- *   - Fallback de sessão por fbp (não só por track_id)
- *   - Para Purchase: enriquecimento reverso buscando PII em InitiateCheckout da mesma sessão/fbp
- *   - Cálculo real de EMQ (% de sinais PII presentes) — gravado em health_score
- *   - event_id do Purchase padronizado para aceitar prefixo "order_" para deduplicação correta com webhook
+ * v5.2.0 - Features:
+ *   - Identity Stitcher: cruzamento progressivo de PII entre eventos (PageView, ATC, IC, Lead, Purchase)
+ *   - Buffer Inteligente de 2 Minutos para PageView: retém envio para captura de Telefone e E-mail
+ *   - Liberação antecipada (Flush) de eventos em buffer assim que o visitante preenche dados no carrinho/checkout
  */
 function jsonWithCors(data: any, status = 200, origin = "*") {
   const res = NextResponse.json(data, { status });
@@ -113,6 +118,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── 0. Cruzamento de Identidade & Retroalimentação Imediata ──
+    // Se o evento trouxe telefone ou e-mail (Lead, AddToCart, InitiateCheckout, Purchase):
+    if (rawUserData?.phone || rawUserData?.email) {
+      await stitchVisitorIdentity(store_id, track_id, rawUserData.fbp, {
+        phone: rawUserData.phone,
+        email: rawUserData.email,
+        firstName: rawUserData.firstName,
+        lastName: rawUserData.lastName,
+        city: rawUserData.city,
+        state: rawUserData.state,
+        zip: rawUserData.zip,
+        country: rawUserData.country,
+        fbp: rawUserData.fbp,
+        fbc: rawUserData.fbc,
+      });
+
+      // Libera antecipadamente qualquer evento retido no buffer (PageView) com esses novos dados
+      enrichAndFlushBufferedEvents(store_id, track_id, rawUserData.fbp, rawUserData).catch((e) => {
+        console.warn("[Browser Event] Erro ao liberar buffer:", e.message);
+      });
+      retroactivelyEnrichCompletedEvents(store_id, track_id, rawUserData.fbp, rawUserData).catch(() => {});
+    }
+
     const supabase = createAdminClient();
 
     // ── 1. Buscar integração Meta ativa ──
@@ -161,7 +189,6 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 3. Recuperar sessão para enriquecer com fbp, fbc, IP e UA ──
-    // Estratégia em cascata: track_id → fbp → cabeçalho HTTP
     let sessionData: {
       fbp?: string | null;
       fbc?: string | null;
@@ -186,7 +213,7 @@ export async function POST(request: NextRequest) {
       if (session) sessionData = session;
     }
 
-    // 3.2 Fallback: busca por fbp (cookie first-party) se track_id não achou sessão
+    // 3.2 Fallback: busca por fbp se track_id não achou sessão
     if (!sessionData.client_ip && rawUserData?.fbp) {
       const { data: sessionByFbp } = await supabase
         .from("sessions")
@@ -211,51 +238,94 @@ export async function POST(request: NextRequest) {
       sessionData.client_user_agent = request.headers.get("user-agent") || undefined;
     }
 
-    // ── 4. Construir dados de usuário com enriquecimento máximo ──
+    // ── 4. Construir dados de usuário com enriquecimento cruzado máximo ──
     const enrichedUserData: BrowserUserData = {
       ...(rawUserData || {}),
       externalId: (rawUserData && rawUserData.externalId) || track_id || undefined,
     };
 
-    // Garante fbp/fbc da sessão se não vieram no payload
     if (!enrichedUserData.fbp && sessionData.fbp) enrichedUserData.fbp = sessionData.fbp;
     if (!enrichedUserData.fbc && sessionData.fbc) enrichedUserData.fbc = sessionData.fbc;
 
-    // 4.1 Enriquecimento reverso de PII para TODOS os eventos
-    // Busca email/telefone/nome em eventos anteriores da mesma sessão (IC, ATC)
-    // para aumentar a qualidade de correspondência (EMQ) em eventos de topo de funil (PageView)
+    // 4.1 Busca PII consolidado no Motor de Identidade (Stitcher)
+    const stitched = await getVisitorIdentity(store_id, track_id, rawUserData?.fbp || sessionData.fbp);
+    if (!enrichedUserData.email && stitched.email) enrichedUserData.email = stitched.email;
+    if (!enrichedUserData.phone && stitched.phone) enrichedUserData.phone = stitched.phone;
+    if (!enrichedUserData.firstName && stitched.firstName) enrichedUserData.firstName = stitched.firstName;
+    if (!enrichedUserData.lastName && stitched.lastName) enrichedUserData.lastName = stitched.lastName;
+    if (!enrichedUserData.city && stitched.city) enrichedUserData.city = stitched.city;
+    if (!enrichedUserData.state && stitched.state) enrichedUserData.state = stitched.state;
+    if (!enrichedUserData.zip && stitched.zip) enrichedUserData.zip = stitched.zip;
 
-    if (!enrichedUserData.email || !enrichedUserData.phone) {
-      try {
-        // Busca em ICs anteriores desta sessão/fbp com dados de contato
-        let prevQuery = supabase
-          .from("events")
-          .select("meta_response")
-          .eq("store_id", store_id)
-          .in("event_name", ["InitiateCheckout", "AddPaymentInfo"])
-          .eq("status", "accepted")
-          .not("meta_response->order_details->customer_email", "is", null)
-          .order("created_at", { ascending: false })
-          .limit(5);
+    if (!enrichedUserData.country) enrichedUserData.country = "BR";
 
-        const { data: prevEvents } = await prevQuery;
+    // ── 4.2 BUFFER INTELIGENTE DE 2 MINUTOS PARA PAGEVIEW ──
+    // Se for PageView e o visitante AINDA NÃO tiver telefone ou e-mail conhecidos:
+    // Retém o evento no buffer por 120 segundos para aguardar o preenchimento no carrinho/checkout.
+    const isPageView = event_name === "PageView";
+    const hasFullContact = Boolean(enrichedUserData.phone && enrichedUserData.email);
 
-        for (const prevEv of prevEvents || []) {
-          const od = prevEv.meta_response?.order_details || {};
-          if (od.customer_email && !enrichedUserData.email) {
-            enrichedUserData.email = od.customer_email;
-          }
-          if (od.customer_phone && !enrichedUserData.phone) {
-            enrichedUserData.phone = od.customer_phone;
-          }
-          if (od.customer_name && !enrichedUserData.firstName) {
-            const parts = od.customer_name.split(" ");
-            enrichedUserData.firstName = parts[0];
-            enrichedUserData.lastName = parts.slice(1).join(" ") || undefined;
-          }
-          if (enrichedUserData.email && enrichedUserData.phone) break;
-        }
-      } catch {}
+    if (isPageView && !hasFullContact) {
+      const userDataKeys = getUserDataKeys(enrichedUserData as any);
+      const emqScore = calculateEmq(userDataKeys);
+      const utmSource = (body.utms?.utm_source || body.custom_data?.utm_source || sessionData.utm_source || "").trim() || undefined;
+      const utmCampaign = (body.utms?.utm_campaign || body.custom_data?.utm_campaign || sessionData.utm_campaign || "").trim() || undefined;
+      const utmMedium = (body.utms?.utm_medium || body.custom_data?.utm_medium || sessionData.utm_medium || "").trim() || undefined;
+      const utmContent = (body.utms?.utm_content || body.custom_data?.utm_content || sessionData.utm_content || "").trim() || undefined;
+      const utmTerm = (body.utms?.utm_term || body.custom_data?.utm_term || sessionData.utm_term || "").trim() || undefined;
+
+      await updateEventResult(
+        store_id || "dckb5g-7d",
+        event_id,
+        "browser",
+        "buffered",
+        {
+          buffered: true,
+          scheduled_for: Date.now() + 120_000,
+          track_id,
+          fbp: enrichedUserData.fbp,
+          fbc: enrichedUserData.fbc,
+          client_ip: sessionData.client_ip,
+          client_user_agent: sessionData.client_user_agent,
+          event_source_url: event_source_url || "",
+          custom_data: {
+            ...(rawCustomData || {}),
+            utm_source: utmSource,
+            utm_campaign: utmCampaign,
+            utm_medium: utmMedium,
+            utm_content: utmContent,
+            utm_term: utmTerm,
+          },
+          order_details: {
+            customer_name: `${enrichedUserData.firstName || ""} ${enrichedUserData.lastName || ""}`.trim() || undefined,
+            customer_email: enrichedUserData.email || undefined,
+            customer_phone: enrichedUserData.phone || undefined,
+            utm_source: utmSource,
+            utm_campaign: utmCampaign,
+          },
+        },
+        0,
+        userDataKeys,
+        event_name,
+        undefined,
+        emqScore
+      );
+
+      console.log(
+        `[Browser Event] PageView (${event_id.slice(-8)}) retido no buffer inteligente (120s) para enriquecimento de Telefone/E-mail | Sinais iniciais: [${userDataKeys.join(", ")}]`
+      );
+
+      return jsonWithCors({
+        ok: true,
+        event_name,
+        event_id,
+        status: "buffered",
+        buffered: true,
+        buffer_seconds: 120,
+        message: "PageView retido no buffer inteligente para enriquecimento cruzado de PII (PH/EM)",
+        signals_sent: userDataKeys,
+        emq_score: emqScore,
+      }, 200, origin);
     }
 
     // Padrão de país BR

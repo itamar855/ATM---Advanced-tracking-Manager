@@ -28,6 +28,12 @@ export async function POST(request: NextRequest) {
       utm_campaign,
       utm_content,
       utm_term,
+      phone: rawPhone,
+      email: rawEmail,
+      firstName: rawFirstName,
+      lastName: rawLastName,
+      customer: rawCustomer,
+      user_data: rawUserData,
     } = body;
 
     if (!track_id || !/^[A-Za-z0-9_-]{16,80}$/.test(track_id)) {
@@ -44,6 +50,29 @@ export async function POST(request: NextRequest) {
       ? forwarded.split(",")[0].trim()
       : request.headers.get("x-real-ip") || "127.0.0.1";
     const client_user_agent = request.headers.get("user-agent") || "";
+
+    const phone = rawPhone || rawCustomer?.phone || rawUserData?.phone || null;
+    const email = rawEmail || rawCustomer?.email || rawUserData?.email || null;
+    const firstName = rawFirstName || rawCustomer?.firstName || rawUserData?.firstName || null;
+    const lastName = rawLastName || rawCustomer?.lastName || rawUserData?.lastName || null;
+
+    // Se capturou telefone ou e-mail, atualiza o grafo de identidade e libera o buffer de eventos
+    if (phone || email) {
+      const { stitchVisitorIdentity, enrichAndFlushBufferedEvents, retroactivelyEnrichCompletedEvents } = await import("@/lib/tracking/identity-stitcher");
+      await stitchVisitorIdentity(store_id, track_id, fbp, {
+        phone,
+        email,
+        firstName,
+        lastName,
+        client_ip,
+        client_user_agent,
+        fbp,
+        fbc,
+      });
+
+      enrichAndFlushBufferedEvents(store_id, track_id, fbp, { phone, email, firstName, lastName }).catch(() => {});
+      retroactivelyEnrichCompletedEvents(store_id, track_id, fbp, { phone, email, firstName, lastName }).catch(() => {});
+    }
 
     const sessionData = {
       store_id,
@@ -77,7 +106,7 @@ export async function POST(request: NextRequest) {
       console.error(`[Capture API] Erro ao persistir sessão (${track_id.slice(-8)}):`, upsertError.message);
     } else {
       console.log(
-        `[Capture API] Sessão persistida: ${track_id.slice(-8)} | IP: ${client_ip} | fbp: ${fbp ? "✓" : "✗"} | fbc: ${fbc ? "✓" : "✗"}`
+        `[Capture API] Sessão persistida: ${track_id.slice(-8)} | IP: ${client_ip} | fbp: ${fbp ? "✓" : "✗"} | fbc: ${fbc ? "✓" : "✗"} | PII: [${phone ? "PH" : ""}${email ? " EM" : ""}]`
       );
     }
 

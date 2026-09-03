@@ -1,6 +1,7 @@
 import { createAdminClient } from "../supabase/server";
 import { sendMetaCAPIEvent, MetaEvent } from "../meta/capi";
 import { decrypt, hashEmail, hashPhone, sha256Hash } from "../encryption";
+import { getVisitorIdentity, normalizeEmail, normalizePhone } from "./identity-stitcher";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rridxhzbkitgcodzyctu.supabase.co";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzcxNTUzMCwiZXhwIjoyMTAzMjkxNTMwfQ.gGxjPtKXABAYM4r6RsHcebVwwHsdpMD-RyRnxJn3QxE";
@@ -50,7 +51,7 @@ async function getMetaCredentials(): Promise<{ pixelId: string; accessToken: str
 }
 
 /**
- * Processa a fila de eventos pendentes ou falhos com retentativa e backoff exponencial.
+ * Processa a fila de eventos pendentes, falhos e eventos retidos no buffer (2 minutos).
  */
 export async function processEventQueue(maxEvents = 100): Promise<QueueProcessResult> {
   const result: QueueProcessResult = {
@@ -68,21 +69,33 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
   }
 
   const supabase = createAdminClient();
+  const twoMinutesAgoIso = new Date(Date.now() - 120 * 1000).toISOString();
 
-  // Busca eventos que precisam de envio ou retry (pending, processing, failed com < 5 tentativas)
-  const { data: pendingEvents, error: fetchErr } = await supabase
-    .from("events")
-    .select("*")
-    .in("status", ["pending", "failed", "processing"])
-    .lt("attempt_count", 5)
-    .order("created_at", { ascending: true })
-    .limit(maxEvents);
+  // 1. Busca eventos pendentes/falhos e eventos em buffer que já completaram 2 minutos
+  const [{ data: pendingEvents }, { data: bufferedEvents }] = await Promise.all([
+    supabase
+      .from("events")
+      .select("*")
+      .in("status", ["pending", "failed", "processing"])
+      .lt("attempt_count", 5)
+      .order("created_at", { ascending: true })
+      .limit(Math.floor(maxEvents / 2)),
+    supabase
+      .from("events")
+      .select("*")
+      .eq("status", "buffered")
+      .lte("created_at", twoMinutesAgoIso)
+      .order("created_at", { ascending: true })
+      .limit(Math.floor(maxEvents / 2)),
+  ]);
 
-  if (fetchErr || !pendingEvents || pendingEvents.length === 0) {
+  const allEvents = [...(bufferedEvents || []), ...(pendingEvents || [])].slice(0, maxEvents);
+
+  if (allEvents.length === 0) {
     return result;
   }
 
-  for (const ev of pendingEvents) {
+  for (const ev of allEvents) {
     result.totalProcessed++;
     const currentAttempt = (ev.attempt_count || 0) + 1;
     const startTime = Date.now();
@@ -92,9 +105,24 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
     const orderDetails = metaResp.order_details || {};
     const customData = metaResp.custom_data || {};
 
-    const rawEmail = orderDetails.customer_email || customData.customer_email;
-    const rawPhone = orderDetails.customer_phone || customData.customer_phone;
-    const rawName = orderDetails.customer_name || customData.customer_name || "";
+    let rawEmail = normalizeEmail(orderDetails.customer_email || customData.customer_email);
+    let rawPhone = normalizePhone(orderDetails.customer_phone || customData.customer_phone);
+    let rawName = orderDetails.customer_name || customData.customer_name || "";
+
+    // Para eventos em buffer (PageView), faz uma busca final de identidade por track_id / fbp
+    if ((!rawEmail || !rawPhone) && (metaResp.track_id || metaResp.fbp)) {
+      try {
+        const identity = await getVisitorIdentity(ev.store_id, metaResp.track_id, metaResp.fbp);
+        if (!rawEmail && identity.email) rawEmail = identity.email;
+        if (!rawPhone && identity.phone) rawPhone = identity.phone;
+        if (!rawName && identity.firstName) {
+          rawName = `${identity.firstName} ${identity.lastName || ""}`.trim();
+        }
+        if (!orderDetails.customer_city && identity.city) orderDetails.customer_city = identity.city;
+        if (!orderDetails.customer_state && identity.state) orderDetails.customer_state = identity.state;
+        if (!orderDetails.customer_zip && identity.zip) orderDetails.customer_zip = identity.zip;
+      } catch {}
+    }
 
     const user_data: MetaEvent["user_data"] = {
       fbp: metaResp.fbp || customData.fbp || undefined,
@@ -189,6 +217,12 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
 
       if (isAccepted) {
         result.succeeded++;
+        const keys = ["fbp", "fbc", "ip", "ua", "addr"];
+        if (rawEmail) keys.push("em");
+        if (rawPhone) keys.push("ph");
+        if (user_data.external_id) keys.push("external_id");
+        const emq = Math.min(100, Math.round((keys.length / 8) * 100));
+
         await supabase
           .from("events")
           .update({
@@ -196,10 +230,18 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
             sent_at: new Date().toISOString(),
             latency_ms: latencyMs,
             attempt_count: currentAttempt,
+            user_data_keys: keys,
+            health_score: emq,
             meta_response: {
               ...(ev.meta_response || {}),
               ...(capiResult.response || {}),
               fbtrace_id: capiResult.response?.fbtrace_id || ev.meta_response?.fbtrace_id || null,
+              order_details: {
+                ...(ev.meta_response?.order_details || {}),
+                customer_email: rawEmail || ev.meta_response?.order_details?.customer_email,
+                customer_phone: rawPhone || ev.meta_response?.order_details?.customer_phone,
+                customer_name: rawName || ev.meta_response?.order_details?.customer_name,
+              },
             },
             updated_at: new Date().toISOString(),
           })

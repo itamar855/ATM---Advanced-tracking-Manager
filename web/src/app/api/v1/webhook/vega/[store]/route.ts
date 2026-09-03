@@ -277,6 +277,35 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       } catch {}
     }
 
+    // Cruzamento de Identidade & Retroalimentação de Eventos (Identity Stitching)
+    if (normalizedOrder.customer.email || normalizedOrder.customer.phone) {
+      try {
+        const { stitchVisitorIdentity, enrichAndFlushBufferedEvents, retroactivelyEnrichCompletedEvents } = await import("@/lib/tracking/identity-stitcher");
+        stitchVisitorIdentity(storeId, trackId, sessionData.fbp, {
+          phone: normalizedOrder.customer.phone,
+          email: normalizedOrder.customer.email,
+          firstName: normalizedOrder.customer.firstName,
+          lastName: normalizedOrder.customer.lastName,
+          fbp: sessionData.fbp,
+          fbc: sessionData.fbc,
+          client_ip: sessionData.client_ip,
+          client_user_agent: sessionData.client_user_agent,
+        }).catch(() => {});
+
+        enrichAndFlushBufferedEvents(storeId, trackId, sessionData.fbp, {
+          phone: normalizedOrder.customer.phone,
+          email: normalizedOrder.customer.email,
+          firstName: normalizedOrder.customer.firstName,
+          lastName: normalizedOrder.customer.lastName,
+        }).catch(() => {});
+
+        retroactivelyEnrichCompletedEvents(storeId, trackId, sessionData.fbp, {
+          phone: normalizedOrder.customer.phone,
+          email: normalizedOrder.customer.email,
+        }).catch(() => {});
+      } catch {}
+    }
+
     // Fallbacks de IP e User-Agent vindos do checkout ou headers da requisição
     if (!sessionData.client_ip) {
       const forwarded = request.headers.get("x-forwarded-for");

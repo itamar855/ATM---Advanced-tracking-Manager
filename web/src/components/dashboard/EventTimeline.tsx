@@ -229,19 +229,20 @@ export function EventTimeline({ events }: EventTimelineProps) {
                 >
                   <div className="flex items-center gap-3.5 min-w-0">
                     {/* Ícone de Status CAPI do Evento */}
-                    <div
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                        event.status === "accepted"
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${
+                        event.status === "accepted" || event.status === "deduped"
                           ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                          : event.status === "buffered"
+                          ? "bg-cyan-500/15 border-cyan-500/30 text-cyan-400"
                           : event.status === "pending" || event.status === "processing"
                           ? "bg-amber-500/15 border-amber-500/30 text-amber-400"
-                          : event.status === "deduped"
-                          ? "bg-blue-500/15 border-blue-500/30 text-blue-400"
                           : "bg-red-500/15 border-red-500/30 text-red-400"
                       }`}
                     >
                       {event.status === "accepted" ? (
                         <CheckCircle2 size={16} />
+                      ) : event.status === "buffered" ? (
+                        <Clock size={16} className="animate-pulse text-cyan-400" />
                       ) : event.status === "pending" || event.status === "processing" ? (
                         <Clock size={16} className="animate-pulse" />
                       ) : event.status === "deduped" ? (
@@ -293,6 +294,11 @@ export function EventTimeline({ events }: EventTimelineProps) {
                         {event.status === "accepted" && event.fbtraceId ? (
                           <span className="text-[9px] px-2 py-0.5 rounded-full font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                             ✓ Meta CAPI: {event.fbtraceId.slice(0, 10)}...
+                          </span>
+                        ) : event.status === "buffered" ? (
+                          <span className="text-[9px] px-2 py-0.5 rounded-full font-mono bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
+                            ⏳ Buffer (Aguardando PII Checkout)
                           </span>
                         ) : event.status === "pending" || event.status === "processing" ? (
                           <span className="text-[9px] px-2 py-0.5 rounded-full font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">

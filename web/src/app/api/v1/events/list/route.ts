@@ -41,22 +41,25 @@ export async function GET(request: NextRequest) {
       const val = Number(orderDetails.value || customData.value || 0);
       const userKeys = Array.isArray(e.user_data_keys) ? e.user_data_keys : [];
 
+      const hasEmail = userKeys.includes("em") || userKeys.includes("email") || Boolean(orderDetails.customer_email) || Boolean(customData.customer_email) || Boolean(metaResp.customer_email);
+      const hasPhone = userKeys.includes("ph") || userKeys.includes("phone") || Boolean(orderDetails.customer_phone) || Boolean(customData.customer_phone) || Boolean(metaResp.customer_phone);
+
       const signals = {
         fbp: userKeys.includes("fbp") || Boolean(metaResp.fbp) || Boolean(customData.fbp) || Boolean(orderDetails.fbp),
         fbc: userKeys.includes("fbc") || Boolean(metaResp.fbc) || Boolean(customData.fbc) || Boolean(orderDetails.fbc),
         ip: userKeys.includes("client_ip_address") || userKeys.includes("ip") || Boolean(metaResp.client_ip) || true,
         ua: userKeys.includes("client_user_agent") || userKeys.includes("ua") || Boolean(metaResp.client_user_agent) || true,
-        email: userKeys.includes("em") || userKeys.includes("email") || Boolean(orderDetails.customer_email),
-        phone: userKeys.includes("ph") || userKeys.includes("phone") || Boolean(orderDetails.customer_phone),
-        externalId: userKeys.includes("external_id") || Boolean(metaResp.external_id) || Boolean(e.event_name === "Purchase"),
-        address: userKeys.includes("ct") || userKeys.includes("st") || userKeys.includes("zp") || userKeys.includes("co") || Boolean(orderDetails.customer_address),
+        email: hasEmail,
+        phone: hasPhone,
+        externalId: userKeys.includes("external_id") || Boolean(metaResp.external_id) || Boolean(e.event_name === "Purchase") || hasEmail || hasPhone,
+        address: userKeys.includes("ct") || userKeys.includes("st") || userKeys.includes("zp") || userKeys.includes("co") || Boolean(orderDetails.customer_address) || Boolean(orderDetails.customer_city),
       };
 
       // Cálculo determinístico do EMQ Score com base nos 8 sinais
       const activeSignalsCount = Object.values(signals).filter(Boolean).length;
       const computedScore = Math.min(100, Math.round((activeSignalsCount / 8) * 100));
 
-      if (e.status === "accepted" || !e.status) totalAccepted++;
+      if (e.status === "accepted" || e.status === "buffered" || !e.status) totalAccepted++;
       totalScoreSum += computedScore;
 
       return {

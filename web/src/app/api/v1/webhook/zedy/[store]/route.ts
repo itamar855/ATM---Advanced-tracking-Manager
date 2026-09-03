@@ -216,6 +216,35 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
+    // 4.3.1 Cruzamento de Identidade & Retroalimentação de Eventos (Identity Stitching)
+    if (customer.email || customer.phone) {
+      try {
+        const { stitchVisitorIdentity, enrichAndFlushBufferedEvents, retroactivelyEnrichCompletedEvents } = await import("@/lib/tracking/identity-stitcher");
+        stitchVisitorIdentity(storeId, trackId, sessionData.fbp, {
+          phone: customer.phone,
+          email: customer.email,
+          firstName: customer.name?.split(" ")[0],
+          lastName: customer.name?.split(" ").slice(1).join(" "),
+          fbp: sessionData.fbp,
+          fbc: sessionData.fbc,
+          client_ip: sessionData.client_ip,
+          client_user_agent: sessionData.client_user_agent,
+        }).catch(() => {});
+
+        enrichAndFlushBufferedEvents(storeId, trackId, sessionData.fbp, {
+          phone: customer.phone,
+          email: customer.email,
+          firstName: customer.name?.split(" ")[0],
+          lastName: customer.name?.split(" ").slice(1).join(" "),
+        }).catch(() => {});
+
+        retroactivelyEnrichCompletedEvents(storeId, trackId, sessionData.fbp, {
+          phone: customer.phone,
+          email: customer.email,
+        }).catch(() => {});
+      } catch {}
+    }
+
     // 4.4 Fallback de IP e User-Agent a partir dos cabeçalhos HTTP
     if (!sessionData.client_ip) {
       const forwarded = request.headers.get("x-forwarded-for");
