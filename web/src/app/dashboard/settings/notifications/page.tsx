@@ -67,9 +67,10 @@ export default function NotificationSettingsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Limite de 2MB para efeito sonoro
-    if (file.size > 2 * 1024 * 1024) {
-      setFeedbackMsg({ type: "error", text: "O arquivo de áudio deve ter no máximo 2MB." });
+    // Limite de 2.5MB para efeito sonoro
+    if (file.size > 2.5 * 1024 * 1024) {
+      setFeedbackMsg({ type: "error", text: "O arquivo de áudio deve ter no máximo 2.5MB." });
+      e.target.value = "";
       return;
     }
 
@@ -85,13 +86,15 @@ export default function NotificationSettingsPage() {
           custom_sound_name: file.name,
         }));
         playNotificationSound("custom", base64Url);
-        setFeedbackMsg({ type: "success", text: `Som "${file.name}" carregado com sucesso!` });
+        setFeedbackMsg({ type: "success", text: `Som "${file.name}" carregado e ativado com sucesso!` });
       }
       setUploadingSound(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     };
     reader.onerror = () => {
       setFeedbackMsg({ type: "error", text: "Erro ao ler o arquivo de áudio." });
       setUploadingSound(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     };
     reader.readAsDataURL(file);
   }
@@ -813,22 +816,23 @@ export default function NotificationSettingsPage() {
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <input
+              id="custom-audio-upload"
               ref={fileInputRef}
               type="file"
-              accept="audio/*"
-              className="hidden"
+              accept="audio/*,audio/mpeg,audio/mp3,audio/wav,audio/x-m4a,audio/aac,.mp3,.wav,.m4a,.aac"
+              className="sr-only"
               onChange={handleSoundFileUpload}
             />
 
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingSound}
-              className="btn-secondary py-2 px-3 text-xs gap-1.5 flex-1 sm:flex-none justify-center"
+            <label
+              htmlFor="custom-audio-upload"
+              className={`btn-secondary py-2 px-3.5 text-xs gap-1.5 flex-1 sm:flex-none justify-center cursor-pointer select-none transition-all ${
+                uploadingSound ? "opacity-50 pointer-events-none" : "hover:bg-zinc-800"
+              }`}
             >
               <Upload size={14} className="text-amber-400" />
-              <span>{uploadingSound ? "Carregando..." : config.custom_sound_url ? "Trocar Arquivo" : "Enviar Meu Áudio"}</span>
-            </button>
+              <span>{uploadingSound ? "Carregando..." : config.custom_sound_url ? "Trocar Arquivo (.MP3)" : "Selecionar Meu Áudio (.MP3)"}</span>
+            </label>
 
             {config.custom_sound_url && (
               <>
