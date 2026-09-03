@@ -26,7 +26,7 @@ import {
   Plus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useStore } from "@/contexts/StoreContext";
 
 interface NavItem {
@@ -53,8 +53,26 @@ const dashboardItems: NavItem[] = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const { stores, activeStore, setActiveStore } = useStore();
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
+
+  // Listener para evento customizado de toggle mobile vindo do Header
+  useEffect(() => {
+    const handleToggle = () => setMobileOpen((prev) => !prev);
+    const handleClose = () => setMobileOpen(false);
+    window.addEventListener("atm:toggle-sidebar", handleToggle);
+    window.addEventListener("atm:close-sidebar", handleClose);
+    return () => {
+      window.removeEventListener("atm:toggle-sidebar", handleToggle);
+      window.removeEventListener("atm:close-sidebar", handleClose);
+    };
+  }, []);
+
+  // Fecha o drawer mobile automaticamente ao trocar de rota
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   const handleLogout = async () => {
     try {
@@ -68,36 +86,62 @@ export default function Sidebar() {
   };
 
   return (
-    <aside
-      className={cn(
-        "fixed left-0 top-0 h-screen flex flex-col border-r border-[#1E2330] bg-[#0E1118] z-40 transition-all duration-300 select-none",
-        collapsed ? "w-[68px]" : "w-[240px]"
+    <>
+      {/* Backdrop semi-transparente para mobile */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-xs z-40 md:hidden transition-opacity"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
       )}
-    >
-      {/* Logo ATM Tracking */}
-      <div className="flex items-center justify-between h-16 px-4 border-b border-[#1E2330]">
-        <Link href="/dashboard" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Zap size={16} className="text-white" />
-          </div>
-          {!collapsed && (
-            <div className="flex flex-col">
-              <span className="text-sm font-black tracking-tight text-white flex items-center gap-1">
-                ATM <span className="text-[10px] px-1 py-0.2 rounded bg-blue-500/20 text-blue-400 font-mono">PRO</span>
-              </span>
-              <span className="text-[9px] text-zinc-500 uppercase tracking-wider leading-none">
-                Tracking Manager
-              </span>
+
+      <aside
+        className={cn(
+          "fixed left-0 top-0 h-screen flex flex-col border-r border-[#1E2330] bg-[#0E1118] z-50 transition-all duration-300 select-none",
+          // Desktop: recolhível (68px / 240px)
+          collapsed ? "md:w-[68px]" : "md:w-[240px]",
+          // Mobile: gaveta deslizante (260px)
+          mobileOpen ? "translate-x-0 w-[260px] shadow-2xl" : "-translate-x-full md:translate-x-0 w-[240px]"
+        )}
+      >
+        {/* Logo ATM Tracking */}
+        <div className="flex items-center justify-between h-16 px-4 border-b border-[#1E2330]">
+          <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+              <Zap size={16} className="text-white" />
             </div>
-          )}
-        </Link>
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="p-1 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors"
-        >
-          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </button>
-      </div>
+            {(!collapsed || mobileOpen) && (
+              <div className="flex flex-col">
+                <span className="text-sm font-black tracking-tight text-white flex items-center gap-1">
+                  ATM <span className="text-[10px] px-1 py-0.2 rounded bg-blue-500/20 text-blue-400 font-mono">PRO</span>
+                </span>
+                <span className="text-[9px] text-zinc-500 uppercase tracking-wider leading-none">
+                  Tracking Manager
+                </span>
+              </div>
+            )}
+          </Link>
+
+          <div className="flex items-center gap-1">
+            {/* Botão de fechar (Aparece no Mobile) */}
+            <button
+              onClick={() => setMobileOpen(false)}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/60 md:hidden transition-colors"
+              aria-label="Fechar menu"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            {/* Botão recolher (Aparece no Desktop) */}
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              className="p-1 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors hidden md:block"
+            >
+              {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            </button>
+          </div>
+        </div>
 
       {/* Seletor de Lojas / Dashboards */}
       {!collapsed && (
@@ -230,5 +274,6 @@ export default function Sidebar() {
         </div>
       </div>
     </aside>
+    </>
   );
 }

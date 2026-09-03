@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Search, Calendar, ChevronDown } from "lucide-react";
+import { Bell, Search, Calendar, ChevronDown, Menu } from "lucide-react";
 import { useState } from "react";
 
 const dateRanges = [
@@ -21,9 +21,17 @@ export default function Header() {
   const selectedRange = dateRanges.find((r) => r.value === dateRange);
 
   return (
-    <header className="h-16 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-30">
-      {/* Left: Search */}
-      <div className="flex items-center gap-4 flex-1 max-w-md">
+    <header className="h-16 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-md flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
+      {/* Left: Mobile Menu Trigger + Search */}
+      <div className="flex items-center gap-2 md:gap-4 flex-1 max-w-md">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent("atm:toggle-sidebar"))}
+          aria-label="Abrir menu lateral"
+          className="p-2 -ml-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/60 md:hidden flex items-center justify-center shrink-0"
+        >
+          <Menu size={20} />
+        </button>
         <div className="relative flex-1">
           <Search
             size={16}

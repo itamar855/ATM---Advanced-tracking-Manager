@@ -1,0 +1,60 @@
+{
+  "name": "ATM PRO — Advanced Tracking Manager",
+  "short_name": "ATM PRO",
+  "description": "Plataforma avançada de tracking e rastreamento de campanhas Meta Ads com CAPI server-side.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0B0E14",
+  "theme_color": "#0B0E14",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["business", "finance", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Campanhas",
+      "short_name": "Campanhas",
+      "description": "Visualizar desempenho das campanhas",
+      "url": "/dashboard/campaigns",
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Eventos CAPI",
+      "short_name": "Eventos",
+      "description": "Auditoria de eventos CAPI em tempo real",
+      "url": "/dashboard/events",
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Integrações",
+      "short_name": "Integrações",
+      "description": "Conectar Meta, Shopify e Webhooks",
+      "url": "/dashboard/settings/integrations",
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+    }
+  ]
+}

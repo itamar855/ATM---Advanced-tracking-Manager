@@ -8,11 +8,11 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-[#0B0E14]">
       <Sidebar />
-      <div className="flex-1 ml-[var(--sidebar-width)] transition-all duration-300">
+      <div className="flex-1 ml-0 md:ml-[var(--sidebar-width)] transition-all duration-300 min-w-0">
         <Header />
-        <main className="p-6 bg-glow min-h-[calc(100vh-4rem)]">
+        <main className="p-3 md:p-6 bg-glow min-h-[calc(100vh-4rem)]">
           <StoreGuard>
             {children}
           </StoreGuard>
