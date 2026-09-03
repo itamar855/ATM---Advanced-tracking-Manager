@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { buildBrowserEvent, getUserDataKeys, BrowserEventName, BrowserUserData, BrowserEventCustomData } from "@/lib/tracking/event-builder";
 import { sendMetaCAPIEvent } from "@/lib/meta/capi";
 import { reserveEvent, updateEventResult } from "@/lib/tracking/dedup-engine";
-import { decrypt } from "@/lib/encryption";
+import { resolveMetaAccessToken } from "@/lib/meta/token";
 
 export const dynamic = "force-dynamic";
 
@@ -132,12 +132,7 @@ export async function POST(request: NextRequest) {
 
       if (integration) {
         pixelId = integration.pixel_id;
-        const raw = integration.access_token_enc.toString();
-        if (raw.startsWith("EAA")) {
-          accessToken = raw;
-        } else {
-          try { accessToken = decrypt(raw); } catch { accessToken = raw; }
-        }
+        accessToken = resolveMetaAccessToken(integration.access_token_enc) || "";
         testEventCode = integration.config?.test_event_code || testEventCode;
       }
     } catch {

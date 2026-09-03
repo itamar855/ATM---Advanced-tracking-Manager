@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { decrypt } from "@/lib/encryption";
+import { resolveMetaAccessToken } from "@/lib/meta/token";
 import { getUsdBrlRate, convertToBrl } from "@/lib/currency";
 
 export const dynamic = "force-dynamic";
@@ -60,12 +60,7 @@ export async function GET(request: NextRequest) {
       integration = fallbackInt;
     }
 
-    let token = integration?.access_token_enc || process.env.META_ACCESS_TOKEN || "";
-    if (token && !token.startsWith("EAA")) {
-      try {
-        token = decrypt(token);
-      } catch {}
-    }
+    let token = resolveMetaAccessToken(integration?.access_token_enc) || resolveMetaAccessToken(process.env.META_ACCESS_TOKEN) || "";
 
     if (!token) {
       return NextResponse.json({
@@ -195,7 +190,7 @@ export async function GET(request: NextRequest) {
     } else if (configuredAccountIds.length > 0) {
       accountIdsToProcess = configuredAccountIds
         .map((id: string) => (id.startsWith("act_") ? id : `act_${id}`))
-        .slice(0, 5); // Teto de segurança para tempo de resposta < 3s no Vercel
+        .slice(0, 10); // Teto seguro de até 10 contas selecionadas
     } else {
       // Ordena por gasto histórico decrescente e pega as top 3
       const sortedBySpend = [...metaAccountsRaw].sort((a, b) => Number(b.amount_spent || 0) - Number(a.amount_spent || 0));

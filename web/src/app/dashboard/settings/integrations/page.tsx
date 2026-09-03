@@ -95,6 +95,11 @@ function IntegrationsContent() {
     "prof-2": false,
   });
 
+  // Estados de seleção individual e minimização de BMs
+  const [selectedBms, setSelectedBms] = useState<string[]>([]);
+  const [expandedBms, setExpandedBms] = useState<Record<string, boolean>>({});
+  const [bmSearchTerm, setBmSearchTerm] = useState("");
+
   // Campos do Perfil Meta
   const [profileName, setProfileName] = useState("Oferta BR - Meta Master");
   const [pixelId, setPixelId] = useState("1104875232197441");
@@ -140,7 +145,7 @@ function IntegrationsContent() {
     const height = 700;
     const left = window.screen.width / 2 - width / 2;
     const top = window.screen.height / 2 - height / 2;
-    const currentStoreId = activeStore?.id || storeId || "";
+    const currentStoreId = activeStore?.id || storeId || (typeof window !== "undefined" ? localStorage.getItem("atm_active_store_id") : null) || "dckb5g-7d";
     window.open(
       `/api/auth/facebook?store_id=${encodeURIComponent(currentStoreId)}`,
       "facebook_oauth",
@@ -412,11 +417,16 @@ function IntegrationsContent() {
           };
 
           setProfiles([realProfile]);
-          // Preserva exatamente as contas salvas no banco
+
+          // Preserva seleção de BMs e contas salvas no banco
+          const savedBmIds: string[] = Array.isArray(accData.selectedBmIds) ? accData.selectedBmIds : [];
+          setSelectedBms(savedBmIds);
+
           if (savedAccountIds.length > 0) {
             setSelectedAccounts(savedAccountIds);
-          } else if (realAccounts.length > 0) {
-            setSelectedAccounts(realAccounts.map((a) => a.id));
+          } else {
+            // Não força marcar todas as 19 contas de todas as 13 BMs por padrão
+            setSelectedAccounts([]);
           }
         }
       }
@@ -454,10 +464,52 @@ function IntegrationsContent() {
     return () => window.removeEventListener("message", handleMessage);
   }, [activeStore?.id, storeId]);
 
-  const toggleAccountSelection = (accId: string) => {
-    setSelectedAccounts((prev) =>
-      prev.includes(accId) ? prev.filter((id) => id !== accId) : [...prev, accId]
-    );
+  // Controles de minimização e expansão de BMs (iniciam minimizadas por padrão)
+  const toggleBmExpanded = (bmId: string) => {
+    setExpandedBms((prev) => ({ ...prev, [bmId]: !prev[bmId] }));
+  };
+
+  const expandAllBms = (bms: BusinessManagerItem[]) => {
+    const next: Record<string, boolean> = {};
+    bms.forEach((b) => { next[b.id] = true; });
+    setExpandedBms(next);
+  };
+
+  const collapseAllBms = () => {
+    setExpandedBms({});
+  };
+
+  // Seleção direta a nível de Business Manager
+  const toggleBmSelection = (bm: BusinessManagerItem) => {
+    const bmAccountIds = bm.accounts.map((a) => a.id);
+    const isCurrentlyActive = selectedBms.includes(bm.id) || bm.accounts.some((a) => selectedAccounts.includes(a.id));
+
+    if (isCurrentlyActive) {
+      // Remove BM e desmarca todas as suas contas
+      setSelectedBms((prev) => prev.filter((id) => id !== bm.id));
+      setSelectedAccounts((prev) => prev.filter((id) => !bmAccountIds.includes(id)));
+    } else {
+      // Ativa BM e seleciona todas as suas contas
+      setSelectedBms((prev) => (prev.includes(bm.id) ? prev : [...prev, bm.id]));
+      setSelectedAccounts((prev) => Array.from(new Set([...prev, ...bmAccountIds])));
+    }
+  };
+
+  // Seleção individual de conta de anúncio
+  const toggleAccountSelection = (accId: string, bmId?: string) => {
+    setSelectedAccounts((prev) => {
+      const exists = prev.includes(accId);
+      const next = exists ? prev.filter((id) => id !== accId) : [...prev, accId];
+      if (!exists && bmId) {
+        setSelectedBms((bms) => (bms.includes(bmId) ? bms : [...bms, bmId]));
+      }
+      return next;
+    });
+  };
+
+  const deselectAllBmsAndAccounts = () => {
+    setSelectedBms([]);
+    setSelectedAccounts([]);
   };
 
   const [savingPixel, setSavingPixel] = useState(false);
@@ -503,12 +555,13 @@ function IntegrationsContent() {
         body: JSON.stringify({
           store_id: targetStoreId,
           platform: "meta",
+          selected_bm_ids: selectedBms,
           ad_account_ids: selectedAccounts,
         }),
       });
 
       if (res.ok) {
-        setSaveSuccessMsg(`Contas de anúncio salvas com sucesso! (${selectedAccounts.length} selecionadas)`);
+        setSaveSuccessMsg(`Configurações salvas! (${selectedBms.length} BM(s) ativas e ${selectedAccounts.length} conta(s) selecionadas)`);
         await loadMetaCredentials();
         setTimeout(() => setSaveSuccessMsg(""), 4000);
       } else {
@@ -715,7 +768,7 @@ function IntegrationsContent() {
                   )}
                 </div>
 
-                {/* 2. Seletor de Contas de Anúncio com Accordion */}
+                {/* 2. Seletor de Business Managers e Contas de Anúncio */}
                 <div className="space-y-3 pt-2">
                   <div
                     onClick={() => setAccountsExpanded(!accountsExpanded)}
@@ -723,13 +776,13 @@ function IntegrationsContent() {
                   >
                     <div className="flex items-center gap-2">
                       <Radio size={15} className="text-blue-400" />
-                      <span className="text-xs font-bold text-white">Contas de Anúncio (Meta)</span>
+                      <span className="text-xs font-bold text-white">Business Managers & Contas de Anúncio (Meta)</span>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-mono">
-                        {selectedAccounts.length} selecionadas
+                        {selectedBms.length} BM(s) ativas • {selectedAccounts.length} conta(s) selecionadas
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-zinc-400 font-medium">
-                      <span>{accountsExpanded ? "Recolher" : "Expandir tudo"}</span>
+                      <span>{accountsExpanded ? "Recolher Seletor" : "Expandir Seletor"}</span>
                       {accountsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </div>
                   </div>
@@ -738,112 +791,237 @@ function IntegrationsContent() {
                     <div className="space-y-4 pl-1">
                       {profiles.length === 0 ? (
                         <div className="p-4 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-500 text-center">
-                          Conecte um perfil acima para visualizar e selecionar suas contas de anúncio.
+                          Conecte um perfil acima para visualizar e selecionar suas Business Managers e contas.
                         </div>
                       ) : (
-                        profiles.map((prof) => (
-                          <div key={prof.id} className="space-y-3 p-3 rounded-2xl bg-[#0B0E14] border border-zinc-800/80">
-                            {/* Header do Perfil */}
-                            <div className="flex items-center justify-between text-xs font-bold text-zinc-200 px-1">
-                              <div className="flex items-center gap-2">
-                                <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-[10px] text-white font-bold">
-                                  {prof.name.slice(0, 2).toUpperCase()}
-                                </div>
-                                <span>{prof.name}</span>
-                              </div>
-                              <span className="text-[11px] text-zinc-400 font-mono">
-                                {prof.accounts.filter((a) => selectedAccounts.includes(a.id)).length} de {prof.accounts.length} contas selecionadas
-                              </span>
-                            </div>
+                        profiles.map((prof) => {
+                          const bms = prof.businesses && prof.businesses.length > 0
+                            ? prof.businesses
+                            : [{ id: "bm_main", name: "Business Manager Principal", accounts: prof.accounts }];
 
-                            {/* Agrupamento por Business Manager */}
-                            {(prof.businesses && prof.businesses.length > 0
-                              ? prof.businesses
-                              : [{ id: "1279546367377201", name: "Business Manager Principal", accounts: prof.accounts }]
-                            ).map((bm) => {
-                              const allBmSelected = bm.accounts.length > 0 && bm.accounts.every((a) => selectedAccounts.includes(a.id));
-                              const toggleAllBm = () => {
-                                if (allBmSelected) {
-                                  const bmIds = new Set(bm.accounts.map((a) => a.id));
-                                  setSelectedAccounts((prev) => prev.filter((id) => !bmIds.has(id)));
-                                } else {
-                                  const toAdd = bm.accounts.map((a) => a.id).filter((id) => !selectedAccounts.includes(id));
-                                  setSelectedAccounts((prev) => [...prev, ...toAdd]);
-                                }
-                              };
+                          const filteredBms = bms.filter((bm) => {
+                            if (!bmSearchTerm.trim()) return true;
+                            const term = bmSearchTerm.toLowerCase();
+                            return bm.name.toLowerCase().includes(term) || bm.id.toLowerCase().includes(term);
+                          });
 
-                              return (
-                                <div key={bm.id} className="rounded-xl border border-blue-500/20 bg-[#121622] p-3.5 space-y-3">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2.5">
-                                      <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400">
-                                        <Building2 size={15} />
-                                      </div>
-                                      <div>
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-xs font-bold text-white">{bm.name}</span>
-                                          <span className="text-[10px] px-2 py-0.2 rounded-full bg-blue-500/20 text-blue-400 font-mono">
-                                            ID: {bm.id}
-                                          </span>
-                                        </div>
-                                        <p className="text-[10px] text-zinc-400 mt-0.5">
-                                          {bm.accounts.length} contas de anúncio disponíveis
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={toggleAllBm}
-                                      className="text-[11px] px-2.5 py-1 rounded-lg bg-[#181D2A] hover:bg-[#1E2435] border border-zinc-700 text-zinc-300 font-semibold transition-colors"
-                                    >
-                                      {allBmSelected ? "Desmarcar Todas" : "Selecionar Todas"}
-                                    </button>
+                          return (
+                            <div key={prof.id} className="space-y-3 p-3.5 rounded-2xl bg-[#0B0E14] border border-zinc-800/80">
+                              {/* Header do Perfil Conectado */}
+                              <div className="flex items-center justify-between text-xs font-bold text-zinc-200 px-1">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-[10px] text-white font-bold">
+                                    {prof.name.slice(0, 2).toUpperCase()}
                                   </div>
+                                  <span>{prof.name}</span>
+                                </div>
+                                <span className="text-[11px] text-zinc-400 font-mono">
+                                  {selectedBms.length} de {bms.length} BMs ativas • {selectedAccounts.length} contas selecionadas
+                                </span>
+                              </div>
 
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
-                                    {bm.accounts.map((acc) => {
-                                      const isSelected = selectedAccounts.includes(acc.id);
-                                      return (
+                              {/* Barra de Ferramentas / Busca & Controles Rápidos */}
+                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-[#141824] border border-zinc-800/80">
+                                <div className="relative flex-1">
+                                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                                  <input
+                                    type="text"
+                                    value={bmSearchTerm}
+                                    onChange={(e) => setBmSearchTerm(e.target.value)}
+                                    placeholder={`Filtrar entre ${bms.length} Business Managers por nome ou ID...`}
+                                    className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[#0E1118] border border-zinc-800 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-blue-500/50"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => expandAllBms(bms)}
+                                    className="px-2.5 py-1 rounded-lg bg-[#181D2A] hover:bg-[#1E2435] text-[11px] font-semibold text-zinc-300 border border-zinc-700 transition-colors"
+                                  >
+                                    Expandir Todas
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={collapseAllBms}
+                                    className="px-2.5 py-1 rounded-lg bg-[#181D2A] hover:bg-[#1E2435] text-[11px] font-semibold text-zinc-300 border border-zinc-700 transition-colors"
+                                  >
+                                    Minimizar Todas
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={deselectAllBmsAndAccounts}
+                                    className="px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-[11px] font-semibold text-red-400 border border-red-500/20 transition-colors"
+                                  >
+                                    Desmarcar Todas
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Lista de Business Managers (Minimizadas por padrão) */}
+                              <div className="space-y-2 pt-1">
+                                {filteredBms.length === 0 ? (
+                                  <div className="p-4 rounded-xl bg-[#141824] border border-zinc-800 text-center text-xs text-zinc-500">
+                                    Nenhuma Business Manager encontrada para "{bmSearchTerm}".
+                                  </div>
+                                ) : (
+                                  filteredBms.map((bm) => {
+                                    const isBmExpanded = !!expandedBms[bm.id];
+                                    const selectedInBm = bm.accounts.filter((a) => selectedAccounts.includes(a.id));
+                                    const isBmActive = selectedBms.includes(bm.id) || selectedInBm.length > 0;
+                                    const allBmAccountsSelected = bm.accounts.length > 0 && selectedInBm.length === bm.accounts.length;
+
+                                    return (
+                                      <div
+                                        key={bm.id}
+                                        className={`rounded-xl border transition-all ${
+                                          isBmActive
+                                            ? "border-blue-500/40 bg-[#121622] shadow-sm shadow-blue-500/5"
+                                            : "border-zinc-800/80 bg-[#0E1118] hover:border-zinc-700"
+                                        }`}
+                                      >
+                                        {/* Cabeçalho da BM com Toggle e Informações */}
                                         <div
-                                          key={acc.id}
-                                          onClick={() => toggleAccountSelection(acc.id)}
-                                          className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                                            isSelected
-                                              ? "bg-blue-600/15 border-blue-500/60 shadow-md shadow-blue-500/10"
-                                              : "bg-[#0E1118] border-zinc-800/60 opacity-60 hover:opacity-100 hover:border-zinc-700"
-                                          }`}
+                                          onClick={() => toggleBmExpanded(bm.id)}
+                                          className="p-3 flex items-center justify-between cursor-pointer select-none"
                                         >
                                           <div className="flex items-center gap-3 min-w-0">
+                                            {/* Checkbox de Ativação da BM */}
                                             <div
-                                              className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all ${
-                                                isSelected
-                                                  ? "bg-blue-600 border-blue-500 text-white"
-                                                  : "border-zinc-600 bg-zinc-800/50"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleBmSelection(bm);
+                                              }}
+                                              title={isBmActive ? "Desativar esta BM e desmarcar suas contas" : "Adicionar esta BM e suas contas à plataforma"}
+                                              className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all cursor-pointer shrink-0 ${
+                                                isBmActive
+                                                  ? "bg-blue-600 border-blue-500 text-white shadow-sm shadow-blue-500/30"
+                                                  : "border-zinc-600 bg-zinc-800/60 hover:border-zinc-400"
                                               }`}
                                             >
-                                              {isSelected && <Check size={12} strokeWidth={3} />}
+                                              {isBmActive && <Check size={13} strokeWidth={3} />}
                                             </div>
-                                            <div className="truncate">
-                                              <p className="text-xs font-bold text-white truncate">{acc.name}</p>
-                                              <p className="text-[10px] text-zinc-400 font-mono">{acc.id}</p>
+
+                                            {/* Ícone da BM */}
+                                            <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
+                                              <Building2 size={16} />
+                                            </div>
+
+                                            <div className="min-w-0">
+                                              <div className="flex items-center gap-2 flex-wrap">
+                                                <span className={`text-xs font-bold truncate ${isBmActive ? "text-white" : "text-zinc-300"}`}>
+                                                  {bm.name}
+                                                </span>
+                                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 font-mono">
+                                                  ID: {bm.id}
+                                                </span>
+                                                {isBmActive ? (
+                                                  <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30 flex items-center gap-1">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                                    BM Adicionada
+                                                  </span>
+                                                ) : (
+                                                  <span className="text-[10px] px-2 py-0.2 rounded-full bg-zinc-800/60 text-zinc-500 font-medium border border-zinc-700/50">
+                                                    Não Adicionada
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <p className="text-[10px] text-zinc-400 mt-0.5">
+                                                {selectedInBm.length > 0 ? (
+                                                  <span className="text-blue-400 font-semibold">{selectedInBm.length} de {bm.accounts.length} contas ativas</span>
+                                                ) : (
+                                                  <span>{bm.accounts.length} conta(s) disponível(is)</span>
+                                                )}
+                                              </p>
                                             </div>
                                           </div>
-                                          <div className="text-right shrink-0">
-                                            <span className="text-xs font-bold text-emerald-400 font-mono">
-                                              {acc.amountSpent > 0
-                                                ? `R$ ${acc.amountSpent.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
-                                                : "R$ 0,00"}
-                                            </span>
+
+                                          {/* Controles da Direita */}
+                                          <div className="flex items-center gap-2 shrink-0">
+                                            {isBmExpanded && bm.accounts.length > 0 && (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  if (allBmAccountsSelected) {
+                                                    setSelectedAccounts((prev) => prev.filter((id) => !bm.accounts.some((a) => a.id === id)));
+                                                  } else {
+                                                    const toAdd = bm.accounts.map((a) => a.id).filter((id) => !selectedAccounts.includes(id));
+                                                    setSelectedAccounts((prev) => [...prev, ...toAdd]);
+                                                    if (!selectedBms.includes(bm.id)) setSelectedBms((prev) => [...prev, bm.id]);
+                                                  }
+                                                }}
+                                                className="text-[11px] px-2.5 py-1 rounded-lg bg-[#181D2A] hover:bg-[#1E2435] border border-zinc-700 text-zinc-300 font-semibold transition-colors"
+                                              >
+                                                {allBmAccountsSelected ? "Desmarcar Todas" : "Selecionar Todas"}
+                                              </button>
+                                            )}
+
+                                            <button
+                                              type="button"
+                                              className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg bg-zinc-800/60 hover:bg-zinc-800 text-zinc-300 font-medium transition-colors"
+                                            >
+                                              <span>{isBmExpanded ? "Recolher" : "Ver Contas"}</span>
+                                              {isBmExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                            </button>
                                           </div>
                                         </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ))
+
+                                        {/* Grid de Contas (Minimizado por padrão, renderiza apenas se expandido) */}
+                                        {isBmExpanded && (
+                                          <div className="p-3 border-t border-zinc-800/80 bg-[#0B0E14]/80 space-y-2">
+                                            {bm.accounts.length === 0 ? (
+                                              <p className="text-xs text-zinc-500 italic py-2 text-center">Nenhuma conta de anúncio encontrada nesta Business Manager.</p>
+                                            ) : (
+                                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                {bm.accounts.map((acc) => {
+                                                  const isSelected = selectedAccounts.includes(acc.id);
+                                                  return (
+                                                    <div
+                                                      key={acc.id}
+                                                      onClick={() => toggleAccountSelection(acc.id, bm.id)}
+                                                      className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
+                                                        isSelected
+                                                          ? "bg-blue-600/15 border-blue-500/60 shadow-sm shadow-blue-500/10"
+                                                          : "bg-[#121622] border-zinc-800/80 opacity-60 hover:opacity-100 hover:border-zinc-700"
+                                                      }`}
+                                                    >
+                                                      <div className="flex items-center gap-2.5 min-w-0">
+                                                        <div
+                                                          className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all ${
+                                                            isSelected
+                                                              ? "bg-blue-600 border-blue-500 text-white"
+                                                              : "border-zinc-600 bg-zinc-800/50"
+                                                          }`}
+                                                        >
+                                                          {isSelected && <Check size={11} strokeWidth={3} />}
+                                                        </div>
+                                                        <div className="truncate">
+                                                          <p className="text-xs font-bold text-white truncate">{acc.name}</p>
+                                                          <p className="text-[10px] text-zinc-400 font-mono">{acc.id}</p>
+                                                        </div>
+                                                      </div>
+                                                      <div className="text-right shrink-0 ml-2">
+                                                        <span className="text-xs font-bold text-emerald-400 font-mono">
+                                                          {acc.amountSpent > 0
+                                                            ? `R$ ${acc.amountSpent.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                                                            : "R$ 0,00"}
+                                                        </span>
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
                       )}
                     </div>
                   )}
@@ -857,7 +1035,7 @@ function IntegrationsContent() {
                         <CheckCircle2 size={14} /> {saveSuccessMsg}
                       </span>
                     ) : (
-                      <span>💡 <b>Dica:</b> As contas marcadas acima serão carregadas no módulo de <b>Campanhas</b>.</span>
+                      <span>💡 <b>Dica:</b> {selectedBms.length} BM(s) ativas e {selectedAccounts.length} conta(s) de anúncio selecionadas para sincronização com as <b>Campanhas</b>.</span>
                     )}
                   </div>
                   <button
@@ -866,7 +1044,7 @@ function IntegrationsContent() {
                     className="w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {loading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                    Salvar Contas Selecionadas ({selectedAccounts.length})
+                    Salvar Configurações ({selectedAccounts.length} contas em {selectedBms.length} BMs)
                   </button>
                 </div>
               </div>

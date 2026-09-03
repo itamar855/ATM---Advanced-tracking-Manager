@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { decrypt } from "@/lib/encryption";
+import { resolveMetaAccessToken } from "@/lib/meta/token";
 import { getUsdBrlRate } from "@/lib/currency";
 
 export const dynamic = "force-dynamic";
@@ -32,8 +32,8 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient();
 
-    // 1. Busca token da Meta da loja selecionada
-    const { data: integration } = await supabase
+    // 1. Busca token da Meta da loja selecionada com fallback
+    let { data: integration } = await supabase
       .from("integrations")
       .select("*")
       .eq("store_id", store_id)
@@ -42,12 +42,19 @@ export async function POST(request: NextRequest) {
       .limit(1)
       .maybeSingle();
 
-    let token = integration?.access_token_enc || process.env.META_ACCESS_TOKEN || "";
-    if (token && !token.startsWith("EAA")) {
-      try {
-        token = decrypt(token);
-      } catch {}
+    if (!integration) {
+      const { data: fallbackInt } = await supabase
+        .from("integrations")
+        .select("*")
+        .eq("platform", "meta")
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      integration = fallbackInt;
     }
+
+    let token = resolveMetaAccessToken(integration?.access_token_enc) || resolveMetaAccessToken(process.env.META_ACCESS_TOKEN) || "";
 
     if (!token) {
       return NextResponse.json({ ok: false, error: "Token da Meta não encontrado" }, { status: 400 });

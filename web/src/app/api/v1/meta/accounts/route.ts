@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { decrypt } from "@/lib/encryption";
+import { resolveMetaAccessToken } from "@/lib/meta/token";
 import {
   discoverFullMetaHierarchy,
   fetchTokenPermissions,
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "store_id is required" }, { status: 400 });
     }
 
-    let accessToken = rawToken ? rawToken.trim() : "";
+    let accessToken = rawToken ? (resolveMetaAccessToken(rawToken) || rawToken.trim()) : "";
     let isFromDatabase = false;
 
     const supabase = createAdminClient();
@@ -58,19 +58,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. Descriptografa o token salvo caso nenhum token novo tenha sido enviado
+    // 3. Descriptografa e normaliza o token salvo caso nenhum token novo tenha sido enviado
     if (!accessToken && currentIntegration?.access_token_enc) {
       isFromDatabase = true;
-      const raw = currentIntegration.access_token_enc.toString();
-      if (raw.startsWith("EAA")) {
-        accessToken = raw;
-      } else {
-        try {
-          accessToken = decrypt(raw);
-        } catch {
-          accessToken = raw;
-        }
-      }
+      accessToken = resolveMetaAccessToken(currentIntegration.access_token_enc) || "";
     }
 
     if (!accessToken) {
@@ -100,13 +91,12 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    // 6. Recupera seleção de contas salvas no banco
+    // 6. Recupera seleção de contas e BMs salvas no banco
     const savedSelected = currentIntegration?.config?.ad_account_ids;
-    const selectedAccountIds: string[] = Array.isArray(savedSelected)
-      ? savedSelected
-      : allAccounts.length > 0
-      ? allAccounts.map((a) => a.id)
-      : [];
+    const selectedAccountIds: string[] = Array.isArray(savedSelected) ? savedSelected : [];
+
+    const savedBmIds = currentIntegration?.config?.selected_bm_ids;
+    const selectedBmIds: string[] = Array.isArray(savedBmIds) ? savedBmIds : [];
 
     return NextResponse.json({
       ok: true,
@@ -118,6 +108,7 @@ export async function GET(request: NextRequest) {
       businesses: profile.businesses,
       accounts: allAccounts,
       selectedAccountIds,
+      selectedBmIds,
       diagnostics: {
         userName: profile.name,
         permissions,
@@ -142,6 +133,7 @@ export async function POST(request: NextRequest) {
       access_token,
       profile_name,
       ad_account_ids,
+      selected_bm_ids,
       pixel_id,
       test_event_code,
     } = await request.json();
@@ -184,6 +176,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Normaliza e limpa o token de qualquer formatação corrompida (hex, json, etc)
+    const cleanedToken = resolveMetaAccessToken(finalToken);
+    if (cleanedToken) {
+      finalToken = cleanedToken;
+    }
+
     if (!finalToken) {
       return NextResponse.json({
         ok: false,
@@ -220,6 +218,11 @@ export async function POST(request: NextRequest) {
       .filter(Boolean)
       .map((id: string) => normalizeAdAccountId(id));
 
+    // Normaliza BMs selecionadas
+    const normalizedBmIds = Array.isArray(selected_bm_ids)
+      ? selected_bm_ids.filter(Boolean)
+      : (existing?.config?.selected_bm_ids || []);
+
     const integrationPayload = {
       store_id: store_id,
       platform: "meta",
@@ -229,6 +232,7 @@ export async function POST(request: NextRequest) {
       config: {
         ...(existing?.config || {}),
         profile_name: resolvedProfileName,
+        selected_bm_ids: normalizedBmIds,
         ad_account_ids: normalizedAccounts,
         test_event_code: test_event_code ? test_event_code.trim() : undefined,
         updated_at: new Date().toISOString(),
@@ -255,6 +259,7 @@ export async function POST(request: NextRequest) {
       message: `Configurações salvas com sucesso! ${normalizedAccounts.length} conta(s) selecionada(s).`,
       savedAccountCount: normalizedAccounts.length,
       ad_account_ids: normalizedAccounts,
+      selected_bm_ids: normalizedBmIds,
       profile_name: resolvedProfileName,
     });
   } catch (error: any) {

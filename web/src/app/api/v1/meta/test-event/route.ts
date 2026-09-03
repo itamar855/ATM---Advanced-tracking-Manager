@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { sendMetaCAPIEvent } from "@/lib/meta/capi";
-import { decrypt } from "@/lib/encryption";
+import { resolveMetaAccessToken } from "@/lib/meta/token";
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,14 +43,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Integração Meta não configurada ou inativa" }, { status: 400 });
     }
 
-    const rawToken = integration.access_token_enc.toString();
-    let decryptedMetaToken = rawToken;
-    if (!rawToken.startsWith("EAA")) {
-      try {
-        decryptedMetaToken = decrypt(rawToken);
-      } catch {
-        decryptedMetaToken = rawToken;
-      }
+    const decryptedMetaToken = resolveMetaAccessToken(integration.access_token_enc) || "";
+
+    if (!decryptedMetaToken) {
+      return NextResponse.json({ error: "Token de acesso da Meta inválido ou não decodificável" }, { status: 400 });
     }
 
     // Gerar payload fake baseado no evento

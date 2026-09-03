@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { decrypt } from "@/lib/encryption";
+import { resolveMetaAccessToken } from "@/lib/meta/token";
 
 export const dynamic = "force-dynamic";
 
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     },
   };
 
-  let token = directToken ? directToken.trim() : "";
+  let token = directToken ? (resolveMetaAccessToken(directToken) || directToken.trim()) : "";
 
   // 1. Consulta no Banco de Dados
   if (!token && storeId) {
@@ -92,17 +92,12 @@ export async function GET(request: NextRequest) {
 
       if (storeInt?.access_token_enc) {
         debugLog.database.found_in_store = true;
-        const raw = storeInt.access_token_enc.toString();
-        if (raw.startsWith("EAA")) {
-          token = raw;
+        const resolved = resolveMetaAccessToken(storeInt.access_token_enc);
+        if (resolved) {
+          token = resolved;
           debugLog.database.decrypted_successfully = true;
         } else {
-          try {
-            token = decrypt(raw);
-            debugLog.database.decrypted_successfully = true;
-          } catch {
-            token = raw;
-          }
+          token = storeInt.access_token_enc.toString();
         }
       } else {
         // Fallback global
@@ -117,17 +112,12 @@ export async function GET(request: NextRequest) {
 
         if (fallbackInt?.access_token_enc) {
           debugLog.database.found_in_fallback = true;
-          const raw = fallbackInt.access_token_enc.toString();
-          if (raw.startsWith("EAA")) {
-            token = raw;
+          const resolved = resolveMetaAccessToken(fallbackInt.access_token_enc);
+          if (resolved) {
+            token = resolved;
             debugLog.database.decrypted_successfully = true;
           } else {
-            try {
-              token = decrypt(raw);
-              debugLog.database.decrypted_successfully = true;
-            } catch {
-              token = raw;
-            }
+            token = fallbackInt.access_token_enc.toString();
           }
         }
       }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { fetchMetaSpendInsights, persistCampaignCosts } from "@/lib/meta/marketing-api";
-import { decrypt } from "@/lib/encryption";
+import { resolveMetaAccessToken } from "@/lib/meta/token";
 
 /**
  * Rota de trigger para sincronização de custos.
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     // Default para o dia anterior se não for fornecido, para capturar o gasto consolidado completo
     const targetDate = dateParam || new Date(Date.now() - 86400000).toISOString().split("T")[0];
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // 1. Busca todas as integrações da Meta que estão ativas e possuem ad_account_id configurado
     const { data: integrations, error: intError } = await supabase
@@ -53,7 +53,8 @@ export async function GET(request: NextRequest) {
       }
 
       try {
-        const decryptedToken = decrypt(integration.access_token_enc.toString());
+        const decryptedToken = resolveMetaAccessToken(integration.access_token_enc);
+        if (!decryptedToken) continue;
         
         // 3. Faz o fetch na Graph API
         const apiResult = await fetchMetaSpendInsights(

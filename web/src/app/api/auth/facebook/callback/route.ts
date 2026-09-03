@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { discoverFullMetaHierarchy } from "@/lib/meta/graph-service";
+import { resolveMetaAccessToken } from "@/lib/meta/token";
 
 export const dynamic = "force-dynamic";
 
@@ -62,59 +63,60 @@ export async function GET(request: NextRequest) {
       finalToken = longData.access_token || shortLivedToken;
     }
 
-    // 3. Descoberta completa da árvore de BMs e Contas
-    const profile = await discoverFullMetaHierarchy(finalToken);
-    const discoveredAccountIds: string[] = [];
-    profile.businesses.forEach((bm) => {
-      bm.accounts.forEach((acc) => {
-        if (!discoveredAccountIds.includes(acc.id)) {
-          discoveredAccountIds.push(acc.id);
-        }
-      });
-    });
+    // Normaliza token
+    const cleanedToken = resolveMetaAccessToken(finalToken) || finalToken;
 
-    // 4. Salva no banco de dados do Supabase
+    // 3. Descoberta completa da árvore de BMs e Contas
+    const profile = await discoverFullMetaHierarchy(cleanedToken);
+
+    // 4. Salva no banco de dados do Supabase com propagação multi-lojas
     const supabase = createAdminClient();
 
-    // Se targetStoreId não foi recebido via state, busca a loja ativa mais recente
-    if (!targetStoreId) {
-      const { data: storeRow } = await supabase
-        .from("stores")
-        .select("id")
-        .order("created_at", { ascending: false })
+    // Busca todas as lojas existentes para garantir sincronização
+    const { data: allStores } = await supabase
+      .from("stores")
+      .select("id")
+      .order("created_at", { ascending: false });
+
+    const storeIdsToSync = new Set<string>();
+    if (targetStoreId) storeIdsToSync.add(targetStoreId);
+    (allStores || []).forEach((s: any) => storeIdsToSync.add(s.id));
+    if (storeIdsToSync.size === 0) storeIdsToSync.add("dckb5g-7d");
+
+    for (const sid of Array.from(storeIdsToSync)) {
+      const { data: existing } = await supabase
+        .from("integrations")
+        .select("id, pixel_id, config")
+        .eq("store_id", sid)
+        .eq("platform", "meta")
+        .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      targetStoreId = storeRow?.id || "dckb5g-7d";
-    }
 
-    const { data: existing } = await supabase
-      .from("integrations")
-      .select("id, pixel_id, config")
-      .eq("store_id", targetStoreId)
-      .eq("platform", "meta")
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      const preservedAccountIds = existing?.config?.ad_account_ids || [];
+      const preservedBmIds = existing?.config?.selected_bm_ids || [];
 
-    const payload = {
-      store_id: targetStoreId,
-      platform: "meta",
-      pixel_id: existing?.pixel_id || "1104875232197441",
-      access_token_enc: finalToken,
-      status: "active",
-      config: {
-        ...(existing?.config || {}),
-        profile_name: profile.name,
-        ad_account_ids: discoveredAccountIds.length > 0 ? discoveredAccountIds : (existing?.config?.ad_account_ids || []),
-        oauth_connected: true,
-        updated_at: new Date().toISOString(),
-      },
-    };
+      const payload = {
+        store_id: sid,
+        platform: "meta",
+        pixel_id: existing?.pixel_id || "1104875232197441",
+        access_token_enc: cleanedToken,
+        status: "active",
+        config: {
+          ...(existing?.config || {}),
+          profile_name: profile.name,
+          selected_bm_ids: preservedBmIds,
+          ad_account_ids: preservedAccountIds,
+          oauth_connected: true,
+          updated_at: new Date().toISOString(),
+        },
+      };
 
-    if (existing) {
-      await supabase.from("integrations").update(payload).eq("id", existing.id);
-    } else {
-      await supabase.from("integrations").insert(payload);
+      if (existing) {
+        await supabase.from("integrations").update(payload).eq("id", existing.id);
+      } else {
+        await supabase.from("integrations").insert(payload);
+      }
     }
 
     const html = `<!DOCTYPE html>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { decrypt } from "@/lib/encryption";
+import { resolveMetaAccessToken } from "@/lib/meta/token";
 import { getUsdBrlRate, convertToBrl } from "@/lib/currency";
 
 export const dynamic = "force-dynamic";
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
     const usdBrlRate = await getUsdBrlRate();
 
     // 1. Busca integração Meta ativa
-    const { data: integration } = await supabase
+    let { data: integration } = await supabase
       .from("integrations")
       .select("*")
       .eq("store_id", storeId)
@@ -107,12 +107,19 @@ export async function GET(request: NextRequest) {
       .limit(1)
       .maybeSingle();
 
-    let token = integration?.access_token_enc || process.env.META_ACCESS_TOKEN || "";
-    if (token && !token.startsWith("EAA")) {
-      try {
-        token = decrypt(token);
-      } catch {}
+    if (!integration) {
+      const { data: fallbackInt } = await supabase
+        .from("integrations")
+        .select("*")
+        .eq("platform", "meta")
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      integration = fallbackInt;
     }
+
+    let token = resolveMetaAccessToken(integration?.access_token_enc) || resolveMetaAccessToken(process.env.META_ACCESS_TOKEN) || "";
 
     const configuredAccountIds: string[] = integration?.config?.ad_account_ids || [];
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { decrypt } from "@/lib/encryption";
+import { resolveMetaAccessToken } from "@/lib/meta/token";
 
 export const dynamic = "force-dynamic";
 
@@ -148,18 +148,8 @@ export async function GET(request: NextRequest) {
       }, { status: 404 });
     }
 
-    // 2. Descriptografa token
-    let decryptedToken = "";
-    const rawToken = integration.access_token_enc?.toString() || "";
-    if (rawToken.startsWith("EAA")) {
-      decryptedToken = rawToken;
-    } else {
-      try {
-        decryptedToken = decrypt(rawToken);
-      } catch {
-        decryptedToken = rawToken;
-      }
-    }
+    // 2. Normaliza e resolve token
+    const decryptedToken = resolveMetaAccessToken(integration.access_token_enc) || "";
 
     if (!decryptedToken) {
       return NextResponse.json({
