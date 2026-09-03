@@ -21,7 +21,13 @@ export default function Header() {
   const selectedRange = dateRanges.find((r) => r.value === dateRange);
 
   return (
-    <header className="h-16 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-md flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
+    <header
+      className="min-h-16 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]/90 backdrop-blur-xl flex items-center justify-between px-4 md:px-6 sticky top-0 z-30 transition-all"
+      style={{
+        paddingTop: "max(env(safe-area-inset-top, 0px), 0px)",
+        minHeight: "calc(4rem + env(safe-area-inset-top, 0px))",
+      }}
+    >
       {/* Left: Mobile Menu Trigger + Search */}
       <div className="flex items-center gap-2 md:gap-4 flex-1 max-w-md">
         <button

@@ -105,6 +105,9 @@ export default function Sidebar() {
           // Mobile: gaveta deslizante (260px)
           mobileOpen ? "translate-x-0 w-[260px] shadow-2xl" : "-translate-x-full md:translate-x-0 w-[240px]"
         )}
+        style={{
+          paddingTop: "env(safe-area-inset-top, 0px)",
+        }}
       >
         {/* Logo ATM Tracking */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-[#1E2330]">

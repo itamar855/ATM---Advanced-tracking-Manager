@@ -16,7 +16,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const topicHeader = request.headers.get("x-shopify-topic");
     const rawBody = await request.text();
 
-    if (!hmacHeader || topicHeader !== "orders/paid") {
+    if (!hmacHeader || (topicHeader !== "orders/paid" && topicHeader !== "orders/create")) {
       return new NextResponse("Invalid topic or headers", { status: 400 });
     }
 
@@ -207,6 +207,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .eq("event_id", metaEvent.event_id)
         .eq("source", "server");
 
+      const isPending = payload.financial_status === "pending" || payload.financial_status === "authorized";
+
       // Disparo de Notificação Telegram
       try {
         const { data: storeData } = await supabase
@@ -215,7 +217,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           .eq("id", storeId)
           .maybeSingle();
 
-        const isPending = payload.financial_status === "pending";
         const shouldNotify = 
           (isPending && storeData?.telegram_notify_pending !== false) ||
           (!isPending && storeData?.telegram_notify_approved !== false);
@@ -241,6 +242,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       } catch (e) {
         console.error("Erro ao buscar store para Telegram (Shopify):", e);
       }
+
+      // Disparo de Notificação Web Push Nativa (iPhone / Android / PC)
+      try {
+        const { sendStorePushNotification } = await import("@/lib/notifications/web-push");
+        const pushType = isPending ? "pending" : "approved";
+        const customerName = `${normalizedOrder.customer.firstName || ""} ${normalizedOrder.customer.lastName || ""}`.trim() || "Cliente";
+        sendStorePushNotification(storeId, pushType, {
+          orderId,
+          value: Number(payload.total_price || 0),
+          customerName,
+          paymentMethod: (payload.payment_gateway_names?.[0] || "PIX/Boleto").toUpperCase(),
+          itemsSummary: payload.line_items?.[0]?.title,
+        }).catch((pushErr) => console.warn("[Web Push Shopify Error]:", pushErr));
+      } catch {}
 
       return NextResponse.json({
         ok: true,

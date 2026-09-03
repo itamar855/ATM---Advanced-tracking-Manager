@@ -415,7 +415,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // Disparo de Notificação Web Push Nativa (iPhone / Android / PC)
     try {
       const { sendStorePushNotification } = await import("@/lib/notifications/web-push");
-      const pushType = (payload.status === "pending" || eventType === "ORDER_CREATED") ? "pending" : "approved";
+      const isPending = (
+        metaEventName === "AddPaymentInfo" ||
+        payload.status === "pending" ||
+        payload.status === "waiting_payment" ||
+        eventType === "ORDER_CREATED" ||
+        eventStr.includes("waiting") ||
+        eventStr.includes("aguardando") ||
+        eventStr.includes("pix") ||
+        eventStr.includes("boleto")
+      );
+      const pushType = isPending ? "pending" : "approved";
       const customerName = `${normalizedOrder.customer.firstName || ""} ${normalizedOrder.customer.lastName || ""}`.trim() || "Cliente";
       sendStorePushNotification(storeId, pushType, {
         orderId,

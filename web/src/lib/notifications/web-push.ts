@@ -25,13 +25,27 @@ export async function sendStorePushNotification(
 ) {
   try {
     const supabase = createAdminClient();
-    const { data: store } = await supabase
+    // Busca resiliente da loja: por ID ou por shop_domain
+    let { data: store } = await supabase
       .from("stores")
-      .select("id, name, settings")
+      .select("id, name, settings, shop_domain")
       .eq("id", storeId)
       .maybeSingle();
 
-    if (!store) return { ok: false, error: "Loja não encontrada" };
+    if (!store) {
+      const cleanDomain = storeId.replace(/^https?:\/\//, "").replace(/\/$/, "");
+      const { data: storeByDomain } = await supabase
+        .from("stores")
+        .select("id, name, settings, shop_domain")
+        .ilike("shop_domain", `%${cleanDomain}%`)
+        .maybeSingle();
+      store = storeByDomain;
+    }
+
+    if (!store) {
+      console.warn(`[Web Push] Loja não encontrada para identificador: "${storeId}"`);
+      return { ok: false, error: "Loja não encontrada" };
+    }
 
     const settings = store.settings || {};
     const config: NotificationConfig = {

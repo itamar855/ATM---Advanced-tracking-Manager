@@ -17,11 +17,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const rawBody = await request.text();
     const payload = JSON.parse(rawBody);
 
-    // Zedy envia o evento de status. Vamos filtrar apenas transações aprovadas.
-    // Conforme a documentação: ORDER_PAID ou status === "approved" / "paid"
-    const eventType = payload.eventType;
-    if (eventType !== "ORDER_PAID" && payload.status !== "approved" && payload.status !== "paid") {
-      return NextResponse.json({ ok: true, message: "Ignorado (não é um evento de pedido pago)" }, { status: 200 });
+    // Zedy envia o evento de status: transações aprovadas e pendentes (PIX/Boleto gerado)
+    const eventType = (payload.eventType || payload.event || "").toUpperCase();
+    const status = (payload.status || payload.order_status || "").toLowerCase();
+    const isApproved = eventType === "ORDER_PAID" || status === "approved" || status === "paid";
+    const isPending = eventType === "ORDER_CREATED" || eventType === "ORDER_PENDING" || status === "pending" || status === "waiting_payment" || status === "aguardando_pagamento";
+
+    if (!isApproved && !isPending) {
+      return NextResponse.json({ ok: true, message: `Ignorado (evento ${eventType || status} não é venda ou pendente)` }, { status: 200 });
     }
 
     const orderId = String(payload.orderId || payload.id);
@@ -379,7 +382,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // 8.1 Disparo de Notificação Web Push Nativa (iPhone / Android / PC)
     try {
       const { sendStorePushNotification } = await import("@/lib/notifications/web-push");
-      const pushType = status === "approved" ? "approved" : "pending";
+      const pushType = (status === "approved" || status === "paid" || eventType === "ORDER_PAID") ? "approved" : "pending";
       sendStorePushNotification(storeId, pushType, {
         orderId,
         value: orderValue,
