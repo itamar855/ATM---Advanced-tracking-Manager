@@ -603,8 +603,12 @@ function IntegrationsContent() {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-white tracking-tight">Hub Central de Integrações</h2>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
-                CONFIGURAÇÃO COMPLETA
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
+                (metaConnected && profiles.length > 0)
+                  ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                  : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+              }`}>
+                {(metaConnected && profiles.length > 0) ? "CONFIGURAÇÃO COMPLETA" : "CONFIGURAÇÃO PENDENTE"}
               </span>
             </div>
             <p className="text-xs text-zinc-400 mt-0.5">
@@ -626,7 +630,7 @@ function IntegrationsContent() {
       {/* Navegação por Abas Estilo Apple / UTMify */}
       <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-[#0E1118] border border-[#1E2330] overflow-x-auto shadow-inner">
         {[
-          { key: "anuncios", label: "Campanhas", icon: Radio, count: "Ativo" },
+          { key: "anuncios", label: "Campanhas", icon: Radio, count: (metaConnected && profiles.length > 0) ? "Ativo" : "Inativo" },
           { key: "webhooks", label: "Webhooks & Checkouts", icon: Plug, count: "2" },
           { key: "utms", label: "UTMs", icon: Sliders },
           { key: "pixel", label: "Pixel", icon: Code2 },
@@ -680,10 +684,17 @@ function IntegrationsContent() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-base font-bold text-white tracking-tight">Campanhas (Meta Ads)</h3>
-                    <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                      Conectado
-                    </span>
+                    {metaConnected && profiles.length > 0 ? (
+                      <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        Conectado
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 font-semibold border border-zinc-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
+                        Não conectado
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-zinc-400 mt-0.5">
                     Rastreamento de contas de anúncio, campanhas, conjuntos, anúncios e conversões via CAPI v23.0
