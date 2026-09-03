@@ -454,6 +454,7 @@ export async function GET(request: NextRequest) {
       effective_start_date: effectiveStartDate,
       platform_connected_at: platformConnectedAt,
       metrics: {
+        gross_revenue: Math.round(grossRevenue * 100) / 100,
         net_revenue: Math.round(netRevenue * 100) / 100,
         ad_spend: Math.round(totalSpend * 100) / 100,
         ad_spend_original: Math.round(totalSpendOriginal * 100) / 100,

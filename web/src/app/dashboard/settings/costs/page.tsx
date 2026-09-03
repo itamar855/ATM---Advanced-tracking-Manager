@@ -16,6 +16,7 @@ import {
   Save,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useStore } from "@/contexts/StoreContext";
 
 interface TaxOrDuty {
   id?: string;
@@ -38,8 +39,11 @@ interface ProductCost {
 }
 
 export default function CostsPage() {
+  const { activeStore } = useStore();
+  const currentStoreId = activeStore?.id || "dckb5g-7d";
+
   const [loading, setLoading] = useState(true);
-  const [storeId, setStoreId] = useState<string | null>(null);
+  const [storeId, setStoreId] = useState<string>(currentStoreId);
   const [products, setProducts] = useState<ProductCost[]>([]);
   const [taxesAndDuties, setTaxesAndDuties] = useState<TaxOrDuty[]>([]);
   const [savedRowId, setSavedRowId] = useState<string | null>(null);
@@ -61,34 +65,32 @@ export default function CostsPage() {
   const [prodCost, setProdCost] = useState<number | string>("");
 
   useEffect(() => {
-    loadData();
-  }, []);
+    const targetId = activeStore?.id || currentStoreId;
+    setStoreId(targetId);
+    loadData(targetId);
+  }, [activeStore?.id]);
 
-  async function loadData() {
+  async function loadData(targetId: string) {
     setLoading(true);
     try {
       const supabase = createClient();
-      const { data: store } = await supabase.from("stores").select("id").order("created_at", { ascending: false }).limit(1).maybeSingle();
+      setStoreId(targetId);
 
-      if (store) {
-        setStoreId(store.id);
+      // 1. Busca custos de produtos da loja selecionada
+      const { data: costs } = await supabase
+        .from("product_costs")
+        .select("*")
+        .eq("store_id", targetId)
+        .order("created_at", { ascending: false });
+      if (costs) setProducts(costs);
 
-        // 1. Busca custos de produtos
-        const { data: costs } = await supabase
-          .from("product_costs")
-          .select("*")
-          .eq("store_id", store.id)
-          .order("created_at", { ascending: false });
-        if (costs) setProducts(costs);
-
-        // 2. Busca taxas e impostos do banco
-        const { data: taxes } = await supabase
-          .from("taxes_and_duties")
-          .select("*")
-          .eq("store_id", store.id)
-          .order("created_at", { ascending: true });
-        if (taxes) setTaxesAndDuties(taxes);
-      }
+      // 2. Busca taxas e impostos da loja selecionada
+      const { data: taxes } = await supabase
+        .from("taxes_and_duties")
+        .select("*")
+        .eq("store_id", targetId)
+        .order("created_at", { ascending: true });
+      if (taxes) setTaxesAndDuties(taxes);
     } catch (err) {
       console.error("[CostsPage Error]:", err);
     } finally {

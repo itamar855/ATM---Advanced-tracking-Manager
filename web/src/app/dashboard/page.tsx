@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 
 interface DashboardMetrics {
+  gross_revenue?: number;
   net_revenue: number;
   ad_spend: number;
   ad_spend_original: number;
@@ -280,15 +281,23 @@ export default function DashboardResumoPage() {
       {/* ── 4. Grid de Métricas Principais (Layout 4x3 Idêntico ao UTMify) ──── */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         {/* Linha 1 */}
-        {/* Card 1: Faturamento Líquido */}
+        {/* Card 1: Valor Vendido Pago */}
         <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg relative overflow-hidden group">
           <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span>Faturamento Líquido</span>
-            <Info size={13} className="text-zinc-600 group-hover:text-zinc-400" />
+            <span className="font-semibold text-zinc-200">Valor Vendido Pago</span>
+            <div className="group/tip relative">
+              <Info size={13} className="text-zinc-500 hover:text-zinc-300 cursor-pointer" />
+              <div className="absolute left-0 sm:right-0 sm:left-auto top-5 z-30 hidden group-hover/tip:block bg-zinc-900 border border-zinc-700 text-[11px] text-zinc-300 p-2.5 rounded-lg shadow-xl w-60">
+                Faturamento bruto recebido em pedidos aprovados (PIX, Cartão e Boleto pagos).
+              </div>
+            </div>
           </div>
           <div className="mt-3">
             <span className="text-2xl font-black text-white font-mono tracking-tight">
-              {fmt(metrics.net_revenue)}
+              {fmt(metrics.gross_revenue || (metrics.net_revenue + metrics.taxes))}
+            </span>
+            <span className="text-[11px] text-zinc-400 block mt-1">
+              Líquido pós-taxas: <strong className="text-zinc-200">{fmt(metrics.net_revenue)}</strong>
             </span>
           </div>
         </div>
@@ -322,17 +331,29 @@ export default function DashboardResumoPage() {
           </div>
         </div>
 
-        {/* Card 4: Lucro */}
+        {/* Card 4: Lucro Líquido */}
         <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg relative overflow-hidden group">
           <div className="flex items-center justify-between text-zinc-400 text-xs">
             <span className={metrics.profit >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
-              Lucro
+              Lucro Líquido
             </span>
-            <Info size={13} className="text-zinc-600" />
+            <div className="group/tip relative">
+              <Info size={13} className="text-zinc-500 hover:text-zinc-300 cursor-pointer" />
+              <div className="absolute right-0 top-5 z-30 hidden group-hover/tip:block bg-zinc-900 border border-zinc-700 text-[11px] text-zinc-300 p-2.5 rounded-lg shadow-xl w-64 leading-relaxed">
+                <span className="font-bold text-white block mb-1">Cálculo de Lucro Real:</span>
+                Vendido Pago ({fmt(metrics.gross_revenue || (metrics.net_revenue + metrics.taxes))}) <br />
+                − Gastos Ads ({fmt(metrics.ad_spend)}) <br />
+                − Taxas Gateway ({fmt(metrics.taxes)}) <br />
+                = <strong className={metrics.profit >= 0 ? "text-emerald-400" : "text-rose-400"}>{fmt(metrics.profit)}</strong>
+              </div>
+            </div>
           </div>
           <div className="mt-3">
             <span className={cn("text-2xl font-black font-mono tracking-tight", metrics.profit >= 0 ? "text-emerald-400" : "text-rose-400")}>
               {metrics.profit >= 0 ? `+${fmt(metrics.profit)}` : fmt(metrics.profit)}
+            </span>
+            <span className="text-[10px] text-zinc-500 block mt-1">
+              Margem: {metrics.margin.toFixed(1)}% | ROI: {metrics.roi.toFixed(2)}x
             </span>
           </div>
         </div>
@@ -427,8 +448,13 @@ export default function DashboardResumoPage() {
         {/* Card 8: Taxas */}
         <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
           <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span>Taxas</span>
-            <Info size={13} className="text-zinc-600" />
+            <span>Taxas Gateway</span>
+            <div className="group/tip relative">
+              <Info size={13} className="text-zinc-500 hover:text-zinc-300 cursor-pointer" />
+              <div className="absolute right-0 top-5 z-30 hidden group-hover/tip:block bg-zinc-900 border border-zinc-700 text-[11px] text-zinc-300 p-2.5 rounded-lg shadow-xl w-56 leading-normal">
+                Taxas configuradas para sua loja (6,99% + R$ 1,99 no PIX).
+              </div>
+            </div>
           </div>
           <div className="mt-2">
             <span className="text-xl font-bold text-white font-mono">
