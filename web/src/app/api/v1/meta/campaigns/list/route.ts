@@ -32,7 +32,11 @@ export async function GET(request: NextRequest) {
     const nowMs = Date.now();
     const cached = MEMORY_CACHE.get(cacheKey);
     if (cached && (nowMs - cached.timestamp < CACHE_TTL_MS)) {
-      return NextResponse.json(cached.data);
+      return NextResponse.json(cached.data, {
+        headers: {
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
+        },
+      });
     }
 
     const supabase = createAdminClient();
@@ -118,81 +122,65 @@ export async function GET(request: NextRequest) {
     // 3. Busca contas vinculadas ao token via /me/adaccounts e /me/businesses
     // Campos seguros: sem funding_source_details e spend_cap (campos privilegiados
     // que causam falha silenciosa ou erro em contas de parceiros/BMs de clientes)
-    let metaAccountsRaw: any[] = [];
-    try {
-      const accRes = await fetch(
-        `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,account_id,name,currency,account_status,balance,amount_spent&access_token=${token}&limit=200`,
-        { cache: "no-store" }
-      );
-      if (accRes.ok) {
-        const accData = await accRes.json();
-        if (Array.isArray(accData.data)) {
-          metaAccountsRaw = accData.data;
-        } else if (accData.error) {
-          console.error("[Campaigns] /me/adaccounts error:", accData.error.message);
-        }
-      }
-    } catch (e) {
-      console.error("[Campaigns] /me/adaccounts fetch error:", e);
-    }
-
-    // Complementa com contas das Business Managers
-    try {
-      const bmRes = await fetch(
-        `https://graph.facebook.com/v23.0/me/businesses?fields=id,name&access_token=${token}&limit=50`,
-        { cache: "no-store" }
-      );
-      if (bmRes.ok) {
-        const bmData = await bmRes.json();
-        if (Array.isArray(bmData.data)) {
-          for (const bm of bmData.data) {
-            try {
-              const [ownedRes, clientRes] = await Promise.all([
-                fetch(`https://graph.facebook.com/v23.0/${bm.id}/owned_ad_accounts?fields=id,account_id,name,currency,account_status,balance,amount_spent&access_token=${token}&limit=200`, { cache: "no-store" }),
-                fetch(`https://graph.facebook.com/v23.0/${bm.id}/client_ad_accounts?fields=id,account_id,name,currency,account_status,balance,amount_spent&access_token=${token}&limit=200`, { cache: "no-store" }),
-              ]);
-              if (ownedRes.ok) {
-                const owned = await ownedRes.json();
-                if (Array.isArray(owned.data)) {
-                  owned.data.forEach((acc: any) => {
-                    if (!metaAccountsRaw.some((ex: any) => ex.id === acc.id)) {
-                      metaAccountsRaw.push({ ...acc, _bm_name: bm.name });
-                    }
-                  });
-                }
-              }
-              if (clientRes.ok) {
-                const clients = await clientRes.json();
-                if (Array.isArray(clients.data)) {
-                  clients.data.forEach((acc: any) => {
-                    if (!metaAccountsRaw.some((ex: any) => ex.id === acc.id)) {
-                      metaAccountsRaw.push({ ...acc, _bm_name: bm.name });
-                    }
-                  });
-                }
-              }
-            } catch {}
-          }
-        }
-      }
-    } catch {}
-
+    // 3. Resolve contas a processar
     const configuredAccountIds: string[] = integration?.config?.ad_account_ids || [];
     const requestedAccountId = searchParams.get("account_id");
 
-    // Se account_id foi pedido na URL, filtra apenas ele.
-    // Se há contas configuradas, usa elas (com teto seguro de 5 contas simultâneas para evitar timeout no Vercel).
-    // Se não há configuradas, seleciona as 3 contas mais relevantes (com maior gasto) em vez de varrer 19 de uma vez.
     let accountIdsToProcess: string[] = [];
-
     if (requestedAccountId) {
       accountIdsToProcess = [requestedAccountId.startsWith("act_") ? requestedAccountId : `act_${requestedAccountId}`];
     } else if (configuredAccountIds.length > 0) {
       accountIdsToProcess = configuredAccountIds
         .map((id: string) => (id.startsWith("act_") ? id : `act_${id}`))
-        .slice(0, 10); // Teto seguro de até 10 contas selecionadas
-    } else {
-      // Ordena por gasto histórico decrescente e pega as top 3
+        .slice(0, 10);
+    }
+
+    let metaAccountsRaw: any[] = [];
+    // Pula completamente varredura pesada de BMs se as contas já estiverem selecionadas/configuradas
+    if (accountIdsToProcess.length === 0) {
+      try {
+        const accRes = await fetch(
+          `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,account_id,name,currency,account_status,balance,amount_spent&access_token=${token}&limit=100`,
+          { cache: "no-store", signal: AbortSignal.timeout(5000) }
+        );
+        if (accRes.ok) {
+          const accData = await accRes.json();
+          if (Array.isArray(accData.data)) {
+            metaAccountsRaw = accData.data;
+          }
+        }
+      } catch (e) {
+        console.error("[Campaigns] /me/adaccounts fetch error:", e);
+      }
+
+      if (metaAccountsRaw.length === 0) {
+        try {
+          const bmRes = await fetch(
+            `https://graph.facebook.com/v23.0/me/businesses?fields=id,name&access_token=${token}&limit=20`,
+            { cache: "no-store", signal: AbortSignal.timeout(5000) }
+          );
+          if (bmRes.ok) {
+            const bmData = await bmRes.json();
+            if (Array.isArray(bmData.data)) {
+              for (const bm of bmData.data.slice(0, 3)) {
+                try {
+                  const ownedRes = await fetch(
+                    `https://graph.facebook.com/v23.0/${bm.id}/owned_ad_accounts?fields=id,account_id,name,currency,account_status,balance,amount_spent&access_token=${token}&limit=50`,
+                    { cache: "no-store", signal: AbortSignal.timeout(4000) }
+                  );
+                  if (ownedRes.ok) {
+                    const owned = await ownedRes.json();
+                    if (Array.isArray(owned.data)) {
+                      metaAccountsRaw.push(...owned.data);
+                    }
+                  }
+                } catch {}
+              }
+            }
+          }
+        } catch {}
+      }
+
       const sortedBySpend = [...metaAccountsRaw].sort((a, b) => Number(b.amount_spent || 0) - Number(a.amount_spent || 0));
       accountIdsToProcess = sortedBySpend.slice(0, 3).map((a: any) => a.id);
     }
@@ -363,14 +351,16 @@ export async function GET(request: NextRequest) {
       const accUrl = `https://graph.facebook.com/v23.0/${cleanAccId}?fields=id,account_id,name,account_status,balance,amount_spent,currency&access_token=${token}`;
 
       // ── Fetch 2-4: Estrutura de Campanhas, Conjuntos e Anúncios ──
-      const campUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time&access_token=${token}&limit=200`;
-      const adsetUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id&access_token=${token}&limit=200`;
-      const adUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id&access_token=${token}&limit=200`;
+      // Filtra por ACTIVE e PAUSED para não puxar lixo histórico deletado ou arquivado
+      const statusFilter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED"] }]));
+      const campUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time&filtering=${statusFilter}&access_token=${token}&limit=100`;
+      const adsetUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id&filtering=${statusFilter}&access_token=${token}&limit=150`;
+      const adUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id&filtering=${statusFilter}&access_token=${token}&limit=150`;
 
       // ── Fetch 5-8: Insights em lote por nível ──
-      const campInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=campaign&date_preset=${metaDatePreset}&fields=campaign_id,spend,impressions,clicks,actions&access_token=${token}&limit=500`;
-      const adsetInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=adset&date_preset=${metaDatePreset}&fields=adset_id,spend,impressions,clicks,actions&access_token=${token}&limit=500`;
-      const adInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=ad&date_preset=${metaDatePreset}&fields=ad_id,spend,impressions,clicks,actions&access_token=${token}&limit=500`;
+      const campInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=campaign&date_preset=${metaDatePreset}&fields=campaign_id,spend,impressions,clicks,actions&access_token=${token}&limit=200`;
+      const adsetInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=adset&date_preset=${metaDatePreset}&fields=adset_id,spend,impressions,clicks,actions&access_token=${token}&limit=250`;
+      const adInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=ad&date_preset=${metaDatePreset}&fields=ad_id,spend,impressions,clicks,actions&access_token=${token}&limit=250`;
       const accInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=account&date_preset=${metaDatePreset}&fields=spend,impressions,clicks,actions&access_token=${token}`;
 
       const [accRes, campRes, adsetRes, adRes, cInsRes, asInsRes, aInsRes, acInsRes] = await Promise.all([
@@ -983,7 +973,11 @@ export async function GET(request: NextRequest) {
     };
 
     MEMORY_CACHE.set(cacheKey, { timestamp: nowMs, data: finalResponse });
-    return NextResponse.json(finalResponse);
+    return NextResponse.json(finalResponse, {
+      headers: {
+        "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
+      },
+    });
   } catch (error: any) {
     console.error("[Campaigns List Multi-Tier API Error]:", error);
     return NextResponse.json(
