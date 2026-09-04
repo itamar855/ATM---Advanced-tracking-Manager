@@ -348,7 +348,6 @@ export async function GET(request: NextRequest) {
     const fetchPromises = accountIdsToProcess.map(async (accId) => {
       const cleanAccId = accId.startsWith("act_") ? accId : `act_${accId}`;
       const rawAcc = metaAccountsRaw.find((a: any) => a.id === cleanAccId || a.id === accId) || {};
-      const currency = ((rawAcc.currency || "BRL") as string).toUpperCase();
 
       // ── Fetch 1: Metadados puros da Conta (Campos seguros, nunca falham) ──
       const accUrl = `https://graph.facebook.com/v23.0/${cleanAccId}?fields=id,account_id,name,account_status,balance,amount_spent,currency&access_token=${token}`;
@@ -485,11 +484,19 @@ export async function GET(request: NextRequest) {
         }
       } catch {}
 
+      const resolvedCurrency = String(
+        accData?.currency ||
+        rawAcc?.currency ||
+        "BRL"
+      )
+        .trim()
+        .toUpperCase();
+
       accountRawResults.push({
         accId: cleanAccId,
         accData,
         rawAcc,
-        currency,
+        currency: resolvedCurrency,
         rawCampaigns,
         rawAdsets,
         rawAds,
@@ -708,7 +715,7 @@ export async function GET(request: NextRequest) {
         accId,
         accData,
         rawAcc,
-        currency,
+        currency: accCurrency,
         rawCampaigns,
         rawAdsets,
         rawAds,
@@ -717,6 +724,15 @@ export async function GET(request: NextRequest) {
         adInsightsMap,
         accountInsight,
       } = acc;
+
+      const currency = String(
+        accData?.currency ||
+        accCurrency ||
+        rawAcc?.currency ||
+        "BRL"
+      )
+        .trim()
+        .toUpperCase();
 
       const accName = accData.name || rawAcc.name || `Conta ${accId.replace("act_", "")}`;
       const accStatusCode = accData.account_status;
@@ -728,6 +744,13 @@ export async function GET(request: NextRequest) {
 
       const rawPeriodSpend = Number(accountInsight?.spend || 0);
       const periodSpendBrl = convertToBrl(rawPeriodSpend, currency, usdBrlRate);
+
+      const rawAmountSpent = Number(accData?.amount_spent || 0) / 100;
+      const historicSpentBrl = convertToBrl(
+        rawAmountSpent,
+        currency,
+        usdBrlRate
+      );
 
       const accAttr = accountAttribution.get(accId) || { grossRevenue: 0, netRevenue: 0, count: 0 };
       const accGrossRevenue = accAttr.grossRevenue;
@@ -752,6 +775,7 @@ export async function GET(request: NextRequest) {
         card: cardDisplay,
         cycle: cycleBrl,
         spend: periodSpendBrl,
+        historic_spent: historicSpentBrl,
         revenue: accNetRevenue,
         profit: accProfit,
         roas: accRoas,
