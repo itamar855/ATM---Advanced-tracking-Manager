@@ -46,23 +46,35 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const isBoleto = paymentMethodRaw.includes("boleto");
     const isCard = paymentMethodRaw.includes("card") || paymentMethodRaw.includes("cartao") || paymentMethodRaw.includes("credit");
 
-    // Validação estrita se o Pix foi REALMENTE gerado (tem QR Code emitido pela adquirente)
+    // Validação estrita se o Pix foi REALMENTE gerado (tem QR Code ou Copia-e-Cola emitido pelo gateway)
     const hasPixData = Boolean(
-      payload.pix_qr_code ||
-      payload.pix_code ||
-      payload.pix_copy_paste ||
-      payload.qr_code ||
-      payload.qrcode ||
-      payload.qr_code_base64 ||
-      payload.point_of_interaction ||
-      payload.data?.pix_qr_code ||
-      payload.data?.qr_code ||
-      payload.order?.pix_code ||
-      payload.transaction?.pix_code
+      (payload.pix_qr_code && String(payload.pix_qr_code).trim() !== "") ||
+      (payload.pix_code && String(payload.pix_code).trim() !== "") ||
+      (payload.pix_copy_paste && String(payload.pix_copy_paste).trim() !== "") ||
+      (payload.qr_code && String(payload.qr_code).trim() !== "") ||
+      (payload.qrcode && String(payload.qrcode).trim() !== "") ||
+      (payload.qr_code_base64 && String(payload.qr_code_base64).trim() !== "") ||
+      payload.point_of_interaction?.transaction_data?.qr_code ||
+      (payload.data?.pix_qr_code && String(payload.data?.pix_qr_code).trim() !== "") ||
+      (payload.data?.qr_code && String(payload.data?.qr_code).trim() !== "") ||
+      (payload.order?.pix_code && String(payload.order?.pix_code).trim() !== "") ||
+      (payload.transaction?.pix_code && String(payload.transaction?.pix_code).trim() !== "")
     );
 
-    const isRealPixPending = isPix && (hasPixData || status === "waiting_payment" || status === "aguardando_pagamento" || eventType === "PIX_GENERATED" || (status === "pending" && hasPixData));
-    const isRealBoletoPending = isBoleto && (status === "waiting_payment" || status === "aguardando_pagamento" || status === "pending" || eventType === "BOLETO_GENERATED");
+    // Validação estrita de Boleto REALMENTE gerado (tem código de barras ou URL emitida)
+    const hasBoletoData = Boolean(
+      (payload.boleto_url && String(payload.boleto_url).trim() !== "") ||
+      (payload.boleto_barcode && String(payload.boleto_barcode).trim() !== "") ||
+      (payload.boleto_number && String(payload.boleto_number).trim() !== "") ||
+      (payload.data?.boleto_url && String(payload.data?.boleto_url).trim() !== "") ||
+      (payload.data?.boleto_barcode && String(payload.data?.boleto_barcode).trim() !== "") ||
+      (payload.order?.boleto_url && String(payload.order?.boleto_url).trim() !== "")
+    );
+
+    // BLINDAGEM ESTREITA: Jamais considera PIX ou Boleto gerado se não houver a chave/documento emitido!
+    // Se o cliente apenas avançou para a tela de pagamento e abandonou, NÃO É PIX GERADO (é apenas InitiateCheckout sem notificação).
+    const isRealPixPending = isPix && hasPixData;
+    const isRealBoletoPending = isBoleto && hasBoletoData;
 
     // Define evento Meta CAPI:
     // Purchase = venda confirmada
