@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { playNotificationSound } from "@/lib/notifications/sound-effects";
 
 interface Store {
   id: string;
@@ -71,6 +72,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => { loadStores(); }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "ATM_PUSH_RECEIVED") {
+        const sound = event.data?.sound || "/sounds/chaching.wav";
+        playNotificationSound(sound);
+      }
+    };
+
+    navigator.serviceWorker.addEventListener("message", handleMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener("message", handleMessage);
+    };
+  }, []);
 
   return (
     <StoreContext.Provider value={{ stores, activeStore, setActiveStore, loading, reload: loadStores }}>

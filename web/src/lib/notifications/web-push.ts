@@ -108,8 +108,8 @@ export async function sendStorePushNotification(
     const isSilent = config.sound === "silent";
     let soundUrl: string | null = null;
     if (!isSilent) {
-      if (config.sound === "custom" && config.custom_sound_url) {
-        soundUrl = config.custom_sound_url;
+      if (config.sound === "custom") {
+        soundUrl = `/api/v1/notifications/sound?store_id=${storeId}`;
       } else if (config.sound === "safe_coins" || config.sound === "coin") {
         soundUrl = "/sounds/safe-coins.wav";
       } else if (config.sound === "bell" || config.sound === "subtle") {
@@ -185,6 +185,12 @@ export async function sendStorePushNotification(
     console.log(
       `[Web Push] Disparado para loja ${store.name} | Sucesso: ${succeeded}/${subscriptions.length} | Tipo: ${type}`
     );
+
+    if (subscriptions.length > 0 && succeeded === 0) {
+      const firstError: any = results.find((r) => r.status === "rejected");
+      const errMsg = firstError?.reason?.message || "Falha ao entregar push para os aparelhos inscritos.";
+      return { ok: false, error: errMsg, sent: 0, total: subscriptions.length };
+    }
 
     return { ok: true, sent: succeeded, total: subscriptions.length };
   } catch (err: any) {

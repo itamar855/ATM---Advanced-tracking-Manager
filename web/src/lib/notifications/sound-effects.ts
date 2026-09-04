@@ -9,6 +9,8 @@ export function playNotificationSound(soundType: string = "chaching", customUrl?
   // 1. Se for som personalizado ou URL direta
   const directUrl = (soundType === "custom" && customUrl)
     ? customUrl
+    : soundType === "custom"
+    ? "/api/v1/notifications/sound"
     : soundType.startsWith("data:audio") || soundType.startsWith("http") || soundType.startsWith("/")
     ? soundType
     : null;

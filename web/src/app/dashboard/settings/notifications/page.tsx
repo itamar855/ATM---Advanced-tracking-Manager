@@ -217,7 +217,7 @@ export default function NotificationSettingsPage() {
           text: `🎉 ${deviceName} conectado com sucesso! As vendas desta loja vão apitar aqui.`,
         });
         // Toca som de boas-vindas
-        playNotificationSound(config.sound);
+        playNotificationSound(config.sound, config.custom_sound_url);
       } else {
         throw new Error(saveData.error || "Erro ao registrar inscrição");
       }
@@ -237,7 +237,7 @@ export default function NotificationSettingsPage() {
     setFeedbackMsg(null);
 
     // Toca som localmente para demonstração imediata
-    playNotificationSound(config.sound);
+    playNotificationSound(config.sound, config.custom_sound_url);
 
     try {
       const res = await fetch("/api/v1/notifications/test", {
@@ -851,8 +851,8 @@ export default function NotificationSettingsPage() {
                     setConfig((p) => ({
                       ...p,
                       sound: "chaching",
-                      custom_sound_url: undefined,
-                      custom_sound_name: undefined,
+                      custom_sound_url: null as any,
+                      custom_sound_name: null as any,
                     }));
                   }}
                   className="p-2 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"

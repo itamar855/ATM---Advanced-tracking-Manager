@@ -166,6 +166,11 @@ export async function PUT(request: NextRequest) {
       ...config,
     };
 
+    if (config.custom_sound_url === null || config.custom_sound_url === "") {
+      delete (updatedConfig as any).custom_sound_url;
+      delete (updatedConfig as any).custom_sound_name;
+    }
+
     const { error: updateErr } = await supabase
       .from("stores")
       .update({
