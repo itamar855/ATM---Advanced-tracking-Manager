@@ -68,12 +68,13 @@ export async function updateEventResult(
   userDataKeys: string[] = [],
   eventName: string = "Event",
   orderId?: string,
-  emqScore?: number
+  emqScore?: number,
+  createdAt?: string
 ): Promise<void> {
   const finalStoreId = storeId || "dckb5g-7d";
 
   try {
-    const payload = {
+    const payload: any = {
       store_id: finalStoreId,
       order_id: orderId || null,
       event_name: eventName,
@@ -87,6 +88,10 @@ export async function updateEventResult(
       sent_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
+
+    if (createdAt) {
+      payload.created_at = createdAt;
+    }
 
     await fetch(`${SUPABASE_URL}/rest/v1/events`, {
       method: "POST",

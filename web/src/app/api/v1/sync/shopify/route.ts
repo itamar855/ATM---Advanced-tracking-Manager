@@ -9,8 +9,9 @@ export async function POST(request: NextRequest) {
   try {
     let storeId: string | null = null;
     let resetToday = false;
+    let body: any = null;
     try {
-      const body = await request.json();
+      body = await request.json();
       if (body?.store_id) storeId = body.store_id;
       if (body?.reset_today) resetToday = true;
     } catch {
@@ -64,8 +65,22 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 3. Busca pedidos pagos na Shopify API
-    const shopifyUrl = `https://${domain}/admin/api/2024-01/orders.json?status=any&financial_status=paid&limit=250`;
+    // 3. Define intervalo: por padrão sincroniza o dia de hoje (00:00 BRT) para apuração exata do dashboard
+    let createdMinParam = "";
+    const allTime = body?.all_time === true || request.nextUrl.searchParams.get("all_time") === "true";
+    if (!allTime) {
+      // Início do dia de hoje no fuso de Brasília (UTC-3)
+      const now = new Date();
+      const brtOffsetHours = 3;
+      const todayBRT = new Date(now.getTime() - brtOffsetHours * 3600 * 1000);
+      todayBRT.setUTCHours(0, 0, 0, 0);
+      // Início do dia em UTC = todayBRT 00:00 + 3h
+      const startUtc = new Date(todayBRT.getTime() + brtOffsetHours * 3600 * 1000);
+      createdMinParam = `&created_at_min=${encodeURIComponent(startUtc.toISOString())}`;
+    }
+
+    // Busca apenas pedidos comprovadamente PAGOS na Shopify API
+    const shopifyUrl = `https://${domain}/admin/api/2024-01/orders.json?status=any&financial_status=paid${createdMinParam}&limit=250`;
     
     let ordersToProcess: any[] = [];
 
@@ -92,7 +107,7 @@ export async function POST(request: NextRequest) {
     if (ordersToProcess.length === 0) {
       return NextResponse.json({
         ok: true,
-        message: "Nenhum pedido pago encontrado na Shopify.",
+        message: "Nenhum pedido pago encontrado na Shopify para o período.",
         synced_count: 0,
       });
     }
@@ -164,6 +179,7 @@ export async function POST(request: NextRequest) {
       if (!utmSource) utmSource = "FB"; // Fallback default ATM
 
       const eventId = `shopify_sync_${orderId}`;
+      const orderCreatedAt = order.created_at || order.processed_at || new Date().toISOString();
 
       try {
         await updateEventResult(
@@ -201,7 +217,8 @@ export async function POST(request: NextRequest) {
           ["em", "ph", "fn", "fbp", "external_id"],
           "Purchase",
           orderId,
-          95
+          95,
+          orderCreatedAt
         );
 
         syncedCount++;

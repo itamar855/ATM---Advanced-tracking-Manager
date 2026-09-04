@@ -32,10 +32,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ ok: false, error: "Identificador do pedido ausente" }, { status: 400 });
     }
 
-    // 1. Lock de Idempotência
-    const lock = await reservePurchase(storeId, orderId);
-    if (!lock.acquired) {
-      return NextResponse.json({ ok: true, message: "Pedido duplicado ignorado" }, { status: 200 });
+    const metaEventName: "Purchase" | "AddPaymentInfo" = isApproved ? "Purchase" : "AddPaymentInfo";
+
+    // 1. Lock de Idempotência: só bloqueia compra real para não impedir que um PIX pendente seja aprovado depois
+    if (isApproved) {
+      const lock = await reservePurchase(storeId, orderId);
+      if (!lock.acquired) {
+        return NextResponse.json({ ok: true, message: "Pedido aprovado duplicado ignorado" }, { status: 200 });
+      }
     }
 
     const supabase = await createClient();
@@ -267,8 +271,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       sessionData.fbp = `fb.1.${Date.now()}.${Math.floor(Math.random() * 1000000000000000000)}`;
     }
 
-    // 5. Constrói o evento para envio à Meta
+    // 5. Constrói o evento para envio à Meta conforme o status (Purchase se aprovado, AddPaymentInfo se pendente)
     const metaEvent = buildMetaPurchaseEvent(normalizedOrder, sessionData);
+    metaEvent.event_name = metaEventName;
+    metaEvent.event_id = `${metaEventName}_${orderId}`;
 
     const rawToken = integration.access_token_enc.toString();
     let decryptedMetaToken = rawToken;
@@ -309,7 +315,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     await updateEventResult(
       storeId || "dckb5g-7d",
-      `Purchase_${orderId}`,
+      `${metaEventName}_${orderId}`,
       "server",
       dbStatus,
       {
@@ -339,7 +345,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       },
       latencyMs,
       userDataKeys,
-      "Purchase",
+      metaEventName,
       orderId,
       emqScore
     );
@@ -352,16 +358,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .eq("id", storeId)
         .maybeSingle();
 
-      const isApproved = status === 'approved';
-      const isPending = status === 'pending';
+      const isApprovedNotify = status === "approved" || status === "paid" || eventType === "ORDER_PAID";
+      const isPendingNotify = !isApprovedNotify;
 
       const shouldNotify = 
-      (isApproved && storeData?.telegram_notify_approved !== false) || 
-      (isPending && storeData?.telegram_notify_pending !== false);
+      (isApprovedNotify && storeData?.telegram_notify_approved !== false) || 
+      (isPendingNotify && storeData?.telegram_notify_pending !== false);
 
       if (storeData?.telegram_bot_token && storeData?.telegram_chat_id && shouldNotify) {
-        const emoji = isApproved ? "💰" : "🟡";
-        const statusText = isApproved ? "Venda Aprovada" : "Venda Pendente/Pix";
+        const emoji = isApprovedNotify ? "💰" : "🟡";
+        const statusText = isApprovedNotify ? "Venda Aprovada" : "Venda Pendente/Pix";
         const valueText = payload.value ? `R$ ${parseFloat(payload.value).toFixed(2).replace('.', ',')}` : "Valor indefinido";
         const message = `${emoji} *${statusText}!*\n\n*Valor:* ${valueText}\n*Gateway:* Zedy\n*Produto:* ${payload.items?.[0]?.title || 'Não informado'}\n*Cliente:* ${payload.customer?.name || 'Não informado'}`;
 
