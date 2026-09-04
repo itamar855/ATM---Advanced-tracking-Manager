@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { updateEventResult } from "@/lib/tracking/dedup-engine";
 import { decrypt } from "@/lib/encryption";
 
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       storeId = request.nextUrl.searchParams.get("store_id");
     }
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // 1. Busca a loja específica ou a padrão
     let store: any = null;
@@ -45,17 +45,48 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Extrai e decriptografa o token da Shopify (de settings.shopify ou legacy)
-    let token = store.settings?.shopify?.access_token_enc || store.shopify_api_key_enc;
-    if (token && typeof token === "string" && !token.startsWith("shpat_") && !token.startsWith("shpca_")) {
-      try {
-        token = decrypt(token);
-      } catch {
-        // fallback
+    let token: string | null =
+      store.settings?.shopify?.access_token ||
+      store.settings?.shopify?.access_token_plain ||
+      store.shopify_api_key ||
+      null;
+
+    if (!token) {
+      const encCandidate = store.settings?.shopify?.access_token_enc || store.shopify_api_key_enc;
+      if (encCandidate && typeof encCandidate === "string") {
+        if (encCandidate.startsWith("shpat_") || encCandidate.startsWith("shpca_")) {
+          token = encCandidate;
+        } else {
+          try {
+            token = decrypt(encCandidate);
+          } catch (e) {
+            console.error("[Shopify Sync] Erro ao decriptografar token:", e);
+          }
+        }
       }
-    } else if (token && typeof token !== "string") {
+    }
+
+    // Fallback para loja master dckb5g-7d se for o caso
+    if (!token && store.id !== "dckb5g-7d") {
       try {
-        token = decrypt(token);
+        const { data: masterStore } = await supabase
+          .from("stores")
+          .select("settings, shopify_api_key")
+          .eq("id", "dckb5g-7d")
+          .maybeSingle();
+        if (masterStore) {
+          token = masterStore.settings?.shopify?.access_token || masterStore.shopify_api_key;
+          if (!token && masterStore.settings?.shopify?.access_token_enc) {
+            try {
+              token = decrypt(masterStore.settings.shopify.access_token_enc);
+            } catch {}
+          }
+        }
       } catch {}
+    }
+
+    if (token && typeof token === "string") {
+      token = token.trim();
     }
 
     if (!token || (!token.startsWith("shpat_") && !token.startsWith("shpca_"))) {

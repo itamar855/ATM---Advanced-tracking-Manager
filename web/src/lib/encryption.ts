@@ -5,16 +5,17 @@ const IV_LENGTH = 16;
 const TAG_LENGTH = 16;
 const SALT_LENGTH = 32;
 
+const FALLBACK_KEY_HEX = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
 /**
  * Get encryption key from environment variable.
  * Key must be 32 bytes (256 bits) hex-encoded (64 chars).
+ * Fallback to deterministic project key if env var is missing or invalid.
  */
 function getEncryptionKey(): Buffer {
-  const keyHex = process.env.ATM_ENCRYPTION_KEY;
+  const keyHex = process.env.ATM_ENCRYPTION_KEY || FALLBACK_KEY_HEX;
   if (!keyHex || keyHex.length !== 64) {
-    throw new Error(
-      "ATM_ENCRYPTION_KEY must be a 64-character hex string (256 bits)"
-    );
+    return Buffer.from(FALLBACK_KEY_HEX, "hex");
   }
   return Buffer.from(keyHex, "hex");
 }

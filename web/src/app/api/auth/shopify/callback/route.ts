@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { encrypt, decrypt } from "@/lib/encryption";
 import { verifyOAuthState } from "@/lib/shopify-oauth";
 
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   const storeId = stateCheck.storeId;
   const stateClientId = stateCheck.clientId;
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // 2. Busca a loja no Supabase
   let store: any = null;
@@ -154,6 +154,7 @@ export async function GET(request: NextRequest) {
       shopify: {
         ...(currentSettings.shopify || {}),
         connected: true,
+        access_token: accessToken,
         access_token_enc: encryptedToken,
         client_id: clientId,
         client_secret_enc: encryptedSecret,

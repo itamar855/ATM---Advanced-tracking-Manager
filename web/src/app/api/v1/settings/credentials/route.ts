@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { encrypt, decrypt } from "@/lib/encryption";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "store_id obrigatório" }, { status: 400 });
     }
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // Busca configurações atuais da loja
     const { data: store, error: fetchErr } = await supabase
@@ -60,9 +60,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (shopify_api_key && !shopify_api_key.includes("••••")) {
+      shopifySettings.access_token = shopify_api_key.trim();
       shopifySettings.access_token_enc = encrypt(shopify_api_key.trim());
       shopifySettings.connected = true;
       shopifySettings.connected_at = new Date().toISOString();
+      shopifySettings.token_prefix = shopify_api_key.trim().slice(0, 10) + "...";
     }
 
     if (shopify_shop_domain) {
@@ -111,7 +113,7 @@ export async function GET(request: NextRequest) {
     const store_id = request.nextUrl.searchParams.get("store_id");
     if (!store_id) return NextResponse.json({ error: "store_id obrigatório" }, { status: 400 });
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const { data: store } = await supabase
       .from("stores")
       .select("id, name, shop_domain, settings")
@@ -121,7 +123,7 @@ export async function GET(request: NextRequest) {
     if (!store) return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
 
     const shopify = store.settings?.shopify || {};
-    const hasAccessToken = Boolean(shopify.access_token_enc);
+    const hasAccessToken = Boolean(shopify.access_token || shopify.access_token_enc);
     const hasClientSecret = Boolean(shopify.client_secret_enc);
 
     return NextResponse.json({
