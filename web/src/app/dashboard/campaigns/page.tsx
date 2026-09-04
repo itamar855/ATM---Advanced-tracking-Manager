@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import {
   UtmifyCampaignManager,
@@ -18,6 +18,7 @@ function CampaignsContent() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [datePreset, setDatePreset] = useState("today");
   const { activeStore } = useStore();
+  const loadingRef = useRef(false);
 
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
@@ -51,6 +52,8 @@ function CampaignsContent() {
 
   const loadData = async (silent = false) => {
     if (!activeStore?.id) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     
     // Se já temos contas na tela (via cache ou estado), atualiza em background silenciosamente
     const hasData = accounts.length > 0;
@@ -106,6 +109,7 @@ function CampaignsContent() {
       console.error("[Campaigns Page] Erro ao carregar dados:", err);
       setApiError("Erro de conexão ao carregar campanhas.");
     } finally {
+      loadingRef.current = false;
       setLoading(false);
       setIsRefreshing(false);
     }

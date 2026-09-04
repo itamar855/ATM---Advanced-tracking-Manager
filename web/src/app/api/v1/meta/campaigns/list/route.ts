@@ -41,42 +41,7 @@ export async function GET(request: NextRequest) {
 
     const supabase = createAdminClient();
 
-    // 1. Busca token mestre da Meta — integração ativa desta loja com fallback
-    const { data: storeInt } = await supabase
-      .from("integrations")
-      .select("*")
-      .eq("store_id", storeId)
-      .eq("platform", "meta")
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    let integration = storeInt;
-    if (!integration) {
-      const { data: fallbackInt } = await supabase
-        .from("integrations")
-        .select("*")
-        .eq("platform", "meta")
-        .eq("status", "active")
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      integration = fallbackInt;
-    }
-
-    let token = resolveMetaAccessToken(integration?.access_token_enc) || resolveMetaAccessToken(process.env.META_ACCESS_TOKEN) || "";
-
-    if (!token) {
-      return NextResponse.json({
-        ok: false,
-        error: "Token da Meta não configurado. Acesse Integrações e conecte sua conta do Facebook.",
-        accounts: [], campaigns: [], adsets: [], ads: [],
-      });
-    }
-
-    const usdBrlRate = await getUsdBrlRate();
-
-    // 2. Mapeia date_preset para a Graph API e resolve intervalo
+    // 1. Mapeia date_preset para a Graph API e resolve intervalo
     const presetMap: Record<string, string> = {
       today: "today",
       yesterday: "yesterday",
@@ -117,6 +82,60 @@ export async function GET(request: NextRequest) {
       }
       default: // "today"
         break;
+    }
+
+    // 2. Executa consultas independentes em paralelo (integração, cotação USD/BRL, eventos e taxas)
+    const [storeIntResult, usdBrlRate, dbEventsResult, storeTaxesResult] = await Promise.all([
+      supabase
+        .from("integrations")
+        .select("*")
+        .eq("store_id", storeId)
+        .eq("platform", "meta")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      getUsdBrlRate(),
+      supabase
+        .from("events")
+        .select("id, event_name, meta_response, created_at")
+        .eq("store_id", storeId)
+        .in("event_name", ["Purchase", "InitiateCheckout"])
+        .eq("status", "accepted")
+        .gte("created_at", startDate.toISOString())
+        .lte("created_at", endDate.toISOString())
+        .order("created_at", { ascending: false })
+        .limit(2000),
+      supabase
+        .from("taxes_and_duties")
+        .select("*")
+        .eq("store_id", storeId),
+    ]);
+
+    const storeInt = storeIntResult.data;
+    const dbEvents = dbEventsResult.data;
+    const storeTaxesAndDuties = storeTaxesResult.data;
+
+    let integration = storeInt;
+    if (!integration) {
+      const { data: fallbackInt } = await supabase
+        .from("integrations")
+        .select("*")
+        .eq("platform", "meta")
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      integration = fallbackInt;
+    }
+
+    let token = resolveMetaAccessToken(integration?.access_token_enc) || resolveMetaAccessToken(process.env.META_ACCESS_TOKEN) || "";
+
+    if (!token) {
+      return NextResponse.json({
+        ok: false,
+        error: "Token da Meta não configurado. Acesse Integrações e conecte sua conta do Facebook.",
+        accounts: [], campaigns: [], adsets: [], ads: [],
+      });
     }
 
     // 3. Busca contas vinculadas ao token via /me/adaccounts e /me/businesses
@@ -196,23 +215,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. Busca Vendas Aprovadas desta loja
-    const { data: dbEvents } = await supabase
-      .from("events")
-      .select("id, event_name, meta_response, created_at")
-      .eq("store_id", storeId)
-      .in("event_name", ["Purchase", "InitiateCheckout"])
-      .eq("status", "accepted")
-      .gte("created_at", startDate.toISOString())
-      .lte("created_at", endDate.toISOString())
-      .order("created_at", { ascending: false })
-      .limit(2000);
-
-    // Busca regras de impostos e taxas configuradas pelo usuário para esta loja
-    const { data: storeTaxesAndDuties } = await supabase
-      .from("taxes_and_duties")
-      .select("*")
-      .eq("store_id", storeId);
+    // 5. Estrutura normalizada de eventos com UTMs extraídas em cascata (já carregados em paralelo)
 
     // Estrutura normalizada de eventos com UTMs extraídas em cascata
     interface ParsedEvent {

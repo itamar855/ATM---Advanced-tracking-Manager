@@ -76,17 +76,36 @@ export async function POST(request: NextRequest) {
       }
       payload = { name: newName };
     } else if (action === "budget") {
-      let budgetAmount = Number(value || 0);
+      const normalizedValue = String(value ?? "").replace(",", ".").trim();
+      let budgetAmount = Number(normalizedValue);
+
+      if (isNaN(budgetAmount) || budgetAmount <= 0) {
+        return NextResponse.json(
+          { ok: false, error: "Valor de orçamento inválido. Informe um número válido maior que zero." },
+          { status: 400 }
+        );
+      }
+
       // Se a conta for USD e o usuário digitou em BRL, converte para USD
       if (curr === "USD") {
         budgetAmount = budgetAmount / usdBrlRate;
       }
       const budgetCents = Math.round(budgetAmount * 100);
+
+      if (isNaN(budgetCents) || budgetCents <= 0) {
+        return NextResponse.json(
+          { ok: false, error: "Valor de orçamento calculado inválido." },
+          { status: 400 }
+        );
+      }
+
       payload = { daily_budget: budgetCents };
     } else if (action === "duplicate") {
       const copies = Number(body.copies) || 1;
-      const newBudget = body.newBudget ? Number(body.newBudget) : null;
-      let targetBudget = newBudget;
+      const rawNewBudget = body.newBudget !== undefined && body.newBudget !== null && body.newBudget !== ""
+        ? Number(String(body.newBudget).replace(",", ".").trim())
+        : null;
+      let targetBudget = rawNewBudget !== null && !isNaN(rawNewBudget) && rawNewBudget > 0 ? rawNewBudget : null;
 
       if (targetBudget !== null && targetBudget > 0) {
         if (curr === "USD") {
@@ -150,12 +169,22 @@ export async function POST(request: NextRequest) {
     if (!metaRes.ok) {
       console.error("[Meta Manage API Error]:", resData);
       
-      let errMsg = resData.error?.message || "Erro na Meta API";
-      if (errMsg.includes("(#200) Requires") && errMsg.includes("ads_management")) {
+      const metaError =
+        resData.error?.error_user_msg ||
+        resData.error?.error_user_title ||
+        resData.error?.message ||
+        "Erro desconhecido na Meta";
+
+      let errMsg = metaError;
+      if (resData.error?.message?.includes("(#200) Requires") && resData.error?.message?.includes("ads_management")) {
         errMsg = "Sem permissão. Você precisa adicionar 'ads_management' no Token da Meta e atualizar as Integrações.";
       } else if (resData.error?.code === 190) {
         errMsg = "O Token da Meta expirou ou é inválido. Gere um novo nas configurações.";
-      } else if (errMsg.includes("Campaign budget is not supported") || errMsg.includes("ad set budget") || errMsg.includes("campaign budget")) {
+      } else if (
+        resData.error?.message?.includes("Campaign budget is not supported") ||
+        resData.error?.message?.includes("ad set budget") ||
+        resData.error?.message?.includes("campaign budget")
+      ) {
         errMsg = "Esta campanha é ABO (Orçamento no Conjunto). O orçamento deve ser alterado no nível de Conjuntos de Anúncios (CJs).";
       }
       
