@@ -371,6 +371,11 @@ export async function POST(request: NextRequest) {
       status,
       {
         ...(capiResult.response || {}),
+        track_id: track_id || undefined,
+        fbp: enrichedUserData.fbp || sessionData.fbp || undefined,
+        fbc: enrichedUserData.fbc || sessionData.fbc || undefined,
+        client_ip: sessionData.client_ip || undefined,
+        client_user_agent: sessionData.client_user_agent || undefined,
         custom_data: {
           ...(metaEvent.custom_data || {}),
           ...(rawCustomData || {}),
@@ -383,7 +388,8 @@ export async function POST(request: NextRequest) {
         order_details: {
           value: metaEvent.custom_data?.value || rawCustomData?.value || 0,
           currency: metaEvent.custom_data?.currency || "BRL",
-          customer_name: `${enrichedUserData.firstName || ""} ${enrichedUserData.lastName || ""}`.trim() || undefined,
+          content_name: metaEvent.custom_data?.content_name || rawCustomData?.content_name || undefined,
+          customer_name: (enrichedUserData.firstName || enrichedUserData.lastName) ? `${enrichedUserData.firstName || ""} ${enrichedUserData.lastName || ""}`.trim() : undefined,
           customer_email: enrichedUserData.email || undefined,
           customer_phone: enrichedUserData.phone || undefined,
           utm_source: utmSource,

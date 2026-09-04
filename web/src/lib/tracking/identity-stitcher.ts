@@ -134,7 +134,12 @@ export async function getVisitorIdentity(
 ): Promise<VisitorPIIData> {
   const finalStoreId = storeId || "dckb5g-7d";
 
-  // 1. Consulta cache em memória
+  // Se não temos nem trackId nem fbp, o visitante é estritamente anônimo
+  if (!trackId && !fbp) {
+    return { country: "BR" };
+  }
+
+  // 1. Consulta cache em memória deste visitante específico
   if (trackId) {
     const cached = identityMemoryCache.get(getCacheKey(finalStoreId, trackId));
     if (cached && (cached.data.phone || cached.data.email)) return cached.data;
@@ -149,17 +154,25 @@ export async function getVisitorIdentity(
   try {
     const supabase = createAdminClient();
 
-    // 2. Consulta eventos recentes com dados de contato dessa mesma sessão/fbp
+    // 2. Consulta eventos anteriores COM DADOS DE CONTATO vinculados ESTRITAMENTE a este track_id ou fbp
     let query = supabase
       .from("events")
       .select("meta_response")
       .eq("store_id", finalStoreId)
       .in("event_name", ["Purchase", "InitiateCheckout", "Lead", "AddToCart"])
-      .not("meta_response->order_details->customer_email", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(10);
+      .not("meta_response->order_details->customer_email", "is", null);
 
-    const { data: events } = await query;
+    if (trackId && fbp) {
+      query = query.or(`meta_response->>track_id.eq.${trackId},meta_response->>fbp.eq.${fbp}`);
+    } else if (trackId) {
+      query = query.eq("meta_response->>track_id", trackId);
+    } else if (fbp) {
+      query = query.eq("meta_response->>fbp", fbp);
+    }
+
+    const { data: events } = await query
+      .order("created_at", { ascending: false })
+      .limit(5);
 
     for (const ev of events || []) {
       const od = ev.meta_response?.order_details || {};
@@ -181,8 +194,15 @@ export async function getVisitorIdentity(
 
       if (result.email && result.phone) break;
     }
+
+    // Se encontrou dados deste visitante, armazena no cache em memória
+    if (result.email || result.phone) {
+      const now = Date.now();
+      if (trackId) identityMemoryCache.set(getCacheKey(finalStoreId, trackId), { data: result, updatedAt: now });
+      if (fbp) identityMemoryCache.set(getCacheKey(finalStoreId, fbp), { data: result, updatedAt: now });
+    }
   } catch (err: any) {
-    console.warn("[Identity Stitcher] Erro ao buscar dados de eventos anteriores:", err.message);
+    console.warn("[Identity Stitcher] Erro ao buscar dados de eventos anteriores do visitante:", err.message);
   }
 
   return result;
@@ -370,18 +390,29 @@ export async function retroactivelyEnrichCompletedEvents(
   const phone = normalizePhone(pii.phone);
   const email = normalizeEmail(pii.email);
   if (!phone && !email) return;
+  if (!trackId && !fbp) return;
 
   const finalStoreId = storeId || "dckb5g-7d";
   const supabase = createAdminClient();
 
   try {
-    // Busca eventos das últimas 2 horas dessa loja
+    // Busca eventos das últimas 2 horas dessa loja ESTRITAMENTE deste visitante
     const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
-    const { data: recentEvents } = await supabase
+    let query = supabase
       .from("events")
       .select("id, event_name, user_data_keys, meta_response, health_score")
       .eq("store_id", finalStoreId)
-      .gte("created_at", twoHoursAgo)
+      .gte("created_at", twoHoursAgo);
+
+    if (trackId && fbp) {
+      query = query.or(`meta_response->>track_id.eq.${trackId},meta_response->>fbp.eq.${fbp}`);
+    } else if (trackId) {
+      query = query.eq("meta_response->>track_id", trackId);
+    } else if (fbp) {
+      query = query.eq("meta_response->>fbp", fbp);
+    }
+
+    const { data: recentEvents } = await query
       .order("created_at", { ascending: false })
       .limit(30);
 
@@ -397,6 +428,14 @@ export async function retroactivelyEnrichCompletedEvents(
         keys.push("ph");
         updated = true;
       }
+      if (pii.firstName && !keys.includes("fn")) {
+        keys.push("fn");
+        updated = true;
+      }
+      if (pii.lastName && !keys.includes("ln")) {
+        keys.push("ln");
+        updated = true;
+      }
 
       if (updated) {
         const activeCount = keys.length;
@@ -406,6 +445,7 @@ export async function retroactivelyEnrichCompletedEvents(
 
         if (email) od.customer_email = email;
         if (phone) od.customer_phone = phone;
+        if (pii.firstName) od.customer_name = `${pii.firstName} ${pii.lastName || ""}`.trim();
 
         await supabase
           .from("events")
