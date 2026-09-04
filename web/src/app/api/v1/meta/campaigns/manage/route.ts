@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
 import { getUsdBrlRate } from "@/lib/currency";
+import { clearCampaignsMemoryCache } from "../list/route";
 
 export const dynamic = "force-dynamic";
 
@@ -150,6 +151,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: false, error: "Falha na duplicação na API da Meta", details: failed.error }, { status: 400 });
       }
 
+      clearCampaignsMemoryCache(store_id);
       return NextResponse.json({ ok: true, action, id, meta_response: { results } });
     } else if (action === "delete") {
       method = "DELETE";
@@ -166,14 +168,14 @@ export async function POST(request: NextRequest) {
 
     const resData = await metaRes.json();
 
-    if (!metaRes.ok) {
+    if (!metaRes.ok || resData.error || resData.success === false) {
       console.error("[Meta Manage API Error]:", resData);
       
       const metaError =
         resData.error?.error_user_msg ||
         resData.error?.error_user_title ||
         resData.error?.message ||
-        "Erro desconhecido na Meta";
+        (resData.success === false ? "Operação rejeitada pela Meta Ads." : "Erro desconhecido na Meta");
 
       let errMsg = metaError;
       if (resData.error?.message?.includes("(#200) Requires") && resData.error?.message?.includes("ads_management")) {
@@ -190,6 +192,8 @@ export async function POST(request: NextRequest) {
       
       return NextResponse.json({ ok: false, error: errMsg }, { status: 400 });
     }
+
+    clearCampaignsMemoryCache(store_id);
 
     return NextResponse.json({
       ok: true,

@@ -65,7 +65,8 @@ function CampaignsContent() {
     setApiError(null);
 
     try {
-      const res = await fetch(`/api/v1/meta/campaigns/list?date_preset=${datePreset}&store_id=${activeStore.id}`, {
+      const url = `/api/v1/meta/campaigns/list?date_preset=${datePreset}&store_id=${activeStore.id}${silent ? "&refresh=true" : ""}`;
+      const res = await fetch(url, {
         cache: "no-store",
       });
 

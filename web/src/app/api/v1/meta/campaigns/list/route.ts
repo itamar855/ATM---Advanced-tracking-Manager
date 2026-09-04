@@ -13,6 +13,18 @@ interface CacheEntry {
 const MEMORY_CACHE = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 60000; // 60 segundos (carregamento ultra-rápido < 50ms)
 
+export function clearCampaignsMemoryCache(storeId?: string) {
+  if (!storeId) {
+    MEMORY_CACHE.clear();
+    return;
+  }
+  for (const key of Array.from(MEMORY_CACHE.keys())) {
+    if (key.startsWith(`${storeId}_`)) {
+      MEMORY_CACHE.delete(key);
+    }
+  }
+}
+
 /**
  * GET /api/v1/meta/campaigns/list
  * Retorna dados estruturados em 4 níveis (Contas, Campanhas, Conjuntos/AdSets, Anúncios/Ads)
@@ -22,6 +34,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const datePreset = searchParams.get("date_preset") || "today";
+    const isRefresh = searchParams.get("refresh") === "true";
 
     const storeId = searchParams.get("store_id");
     if (!storeId) {
@@ -31,7 +44,7 @@ export async function GET(request: NextRequest) {
     const cacheKey = `${storeId}_${datePreset}_${searchParams.get("account_id") || "all"}`;
     const nowMs = Date.now();
     const cached = MEMORY_CACHE.get(cacheKey);
-    if (cached && (nowMs - cached.timestamp < CACHE_TTL_MS)) {
+    if (!isRefresh && cached && (nowMs - cached.timestamp < CACHE_TTL_MS)) {
       return NextResponse.json(cached.data, {
         headers: {
           "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",

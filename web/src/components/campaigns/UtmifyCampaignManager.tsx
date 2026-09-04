@@ -165,6 +165,7 @@ export function UtmifyCampaignManager({
   const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
   const [editBudgetValue, setEditBudgetValue] = useState<string>("");
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, "active" | "paused">>({});
 
   // Edição de Nome
   const [editingNameId, setEditingNameId] = useState<string | null>(null);
@@ -238,8 +239,13 @@ export function UtmifyCampaignManager({
 
   // ── Ação de Toggle Switch (Play/Pause) ───────────────────────────────────
 
-  const handleToggleStatus = async (id: string, currentStatus: "active" | "paused", level: "campaign" | "adset" | "ad") => {
-    const newStatus = currentStatus === "active" ? "PAUSED" : "ACTIVE";
+  const handleToggleStatus = async (id: string, currentStatus: "active" | "paused" | string, level: "campaign" | "adset" | "ad") => {
+    const currentResolved = statusOverrides[id] ?? (String(currentStatus).toLowerCase() === "active" ? "active" : "paused");
+    const nextStatus = currentResolved === "active" ? "paused" : "active";
+    const metaValue = nextStatus === "active" ? "ACTIVE" : "PAUSED";
+
+    // Otimista: atualiza imediatamente na UI
+    setStatusOverrides(prev => ({ ...prev, [id]: nextStatus }));
     setActionLoadingId(id);
 
     try {
@@ -250,18 +256,23 @@ export function UtmifyCampaignManager({
           id,
           level,
           action: "status",
-          value: newStatus,
+          value: metaValue,
           store_id: activeStore?.id,
         }),
       });
 
-      if (res.ok) {
+      const d = await res.json();
+
+      if (res.ok && d.ok) {
         onRefresh();
       } else {
-        const d = await res.json();
+        // Rollback do estado otimista se a Meta rejeitar
+        setStatusOverrides(prev => ({ ...prev, [id]: currentResolved }));
         alert("Erro na Meta: " + (d.error || "Não foi possível alterar o status."));
       }
     } catch (e: any) {
+      // Rollback do estado otimista em falha de conexão
+      setStatusOverrides(prev => ({ ...prev, [id]: currentResolved }));
       alert("Erro ao conectar: " + e.message);
     } finally {
       setActionLoadingId(null);
@@ -326,6 +337,15 @@ export function UtmifyCampaignManager({
     if (selectedRowIds.length === 0) return;
     const level = activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad";
     
+    // Otimista: reflete status imediatamente
+    setStatusOverrides(prev => {
+      const updated = { ...prev };
+      selectedRowIds.forEach(id => {
+        updated[id] = newStatus;
+      });
+      return updated;
+    });
+
     setIsBulkActionRunning(true);
     let successCount = 0;
     
@@ -338,7 +358,7 @@ export function UtmifyCampaignManager({
             id,
             level,
             action: "status",
-            value: newStatus,
+            value: newStatus === "active" ? "ACTIVE" : "PAUSED",
             store_id: activeStore?.id,
           }),
         })
@@ -1025,30 +1045,35 @@ export function UtmifyCampaignManager({
                         {row.status}
                       </span>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleToggleStatus(
-                            row.id,
-                            row.status,
-                            activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad"
-                          )
-                        }
-                        disabled={actionLoadingId === row.id}
-                        className={cn(
-                          "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none cursor-pointer shrink-0",
-                          row.status === "active" ? "bg-emerald-500" : "bg-zinc-700",
-                          actionLoadingId === row.id && "opacity-50 animate-pulse"
-                        )}
-                        title={row.status === "active" ? "Pausar" : "Ativar"}
-                      >
-                        <span
-                          className={cn(
-                            "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
-                            row.status === "active" ? "translate-x-4.5" : "translate-x-0.5"
-                          )}
-                        />
-                      </button>
+                      (() => {
+                        const isRowActive = (statusOverrides[row.id] ?? (String(row.status).toLowerCase() === "active" ? "active" : "paused")) === "active";
+                        return (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleToggleStatus(
+                                row.id,
+                                row.status,
+                                activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad"
+                              )
+                            }
+                            disabled={actionLoadingId === row.id}
+                            className={cn(
+                              "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none cursor-pointer shrink-0",
+                              isRowActive ? "bg-emerald-500" : "bg-zinc-700",
+                              actionLoadingId === row.id && "opacity-50 animate-pulse"
+                            )}
+                            title={isRowActive ? "Pausar" : "Ativar"}
+                          >
+                            <span
+                              className={cn(
+                                "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+                                isRowActive ? "translate-x-4.5" : "translate-x-0.5"
+                              )}
+                            />
+                          </button>
+                        );
+                      })()
                     )}
 
                     <div className="min-w-0 flex-1">
@@ -1288,29 +1313,34 @@ export function UtmifyCampaignManager({
                             {row.status}
                           </span>
                         ) : (
-                          <button
-                            onClick={() =>
-                              handleToggleStatus(
-                                row.id,
-                                row.status,
-                                activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad"
-                              )
-                            }
-                            disabled={actionLoadingId === row.id}
-                            className={cn(
-                              "relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none cursor-pointer",
-                              row.status === "active" ? "bg-emerald-500" : "bg-zinc-600",
-                              actionLoadingId === row.id && "opacity-50 animate-pulse"
-                            )}
-                            title={row.status === "active" ? "Desativar" : "Ativar"}
-                          >
-                            <span
-                              className={cn(
-                                "inline-block h-3 w-3 transform rounded-full bg-white transition-transform",
-                                row.status === "active" ? "translate-x-4.5" : "translate-x-0.5"
-                              )}
-                            />
-                          </button>
+                          (() => {
+                            const isRowActive = (statusOverrides[row.id] ?? (String(row.status).toLowerCase() === "active" ? "active" : "paused")) === "active";
+                            return (
+                              <button
+                                onClick={() =>
+                                  handleToggleStatus(
+                                    row.id,
+                                    row.status,
+                                    activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad"
+                                  )
+                                }
+                                disabled={actionLoadingId === row.id}
+                                className={cn(
+                                  "relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none cursor-pointer",
+                                  isRowActive ? "bg-emerald-500" : "bg-zinc-600",
+                                  actionLoadingId === row.id && "opacity-50 animate-pulse"
+                                )}
+                                title={isRowActive ? "Desativar" : "Ativar"}
+                              >
+                                <span
+                                  className={cn(
+                                    "inline-block h-3 w-3 transform rounded-full bg-white transition-transform",
+                                    isRowActive ? "translate-x-4.5" : "translate-x-0.5"
+                                  )}
+                                />
+                              </button>
+                            );
+                          })()
                         )}
                       </td>
 
