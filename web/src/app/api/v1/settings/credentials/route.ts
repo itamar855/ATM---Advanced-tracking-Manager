@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { encrypt } from "@/lib/encryption";
+import { encrypt, decrypt } from "@/lib/encryption";
+
+export const dynamic = "force-dynamic";
 
 /**
  * POST /api/v1/settings/credentials
- * Permite ao admin/lojista salvar e atualizar chaves diretamente pelo painel do ATM.
+ * Salva credenciais do app Shopify e tokens com criptografia segura no Supabase.
  */
 export async function POST(request: NextRequest) {
   try {
-    const { store_id, shopify_api_key, shopify_api_secret, mercadopago_token } = await request.json();
+    const body = await request.json();
+    const {
+      store_id,
+      shopify_api_key, // Token manual (shpat_...)
+      shopify_client_id, // Client ID do App Partners
+      shopify_client_secret, // Client Secret (shpss_...)
+      shopify_shop_domain, // Domínio myshopify
+      mercadopago_token,
+    } = body;
 
     if (!store_id) {
       return NextResponse.json({ ok: false, error: "store_id obrigatório" }, { status: 400 });
@@ -16,31 +26,63 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient();
 
-    const updateData: any = {};
-
-    // Criptografa chaves antes de persistir no banco (conforme regras de segurança)
-    if (shopify_api_key) {
-      updateData.shopify_api_key_enc = encrypt(shopify_api_key);
-    }
-    if (shopify_api_secret) {
-      updateData.shopify_api_secret_enc = encrypt(shopify_api_secret);
-    }
-    if (mercadopago_token) {
-      updateData.mercadopago_token_enc = encrypt(mercadopago_token);
-    }
-
-    const { error } = await supabase
+    // Busca configurações atuais da loja
+    const { data: store, error: fetchErr } = await supabase
       .from("stores")
-      .update(updateData)
+      .select("id, settings, shop_domain")
+      .eq("id", store_id)
+      .maybeSingle();
+
+    if (fetchErr || !store) {
+      return NextResponse.json({ ok: false, error: "Loja não encontrada" }, { status: 404 });
+    }
+
+    const currentSettings = store.settings || {};
+    const shopifySettings = currentSettings.shopify || {};
+
+    if (shopify_client_id !== undefined) {
+      shopifySettings.client_id = shopify_client_id.trim();
+    }
+
+    if (shopify_client_secret && !shopify_client_secret.includes("••••")) {
+      shopifySettings.client_secret_enc = encrypt(shopify_client_secret.trim());
+    }
+
+    if (shopify_api_key && !shopify_api_key.includes("••••")) {
+      shopifySettings.access_token_enc = encrypt(shopify_api_key.trim());
+      shopifySettings.connected = true;
+      shopifySettings.connected_at = new Date().toISOString();
+    }
+
+    if (shopify_shop_domain) {
+      shopifySettings.shop_domain = shopify_shop_domain.trim();
+    }
+
+    const updatedSettings = {
+      ...currentSettings,
+      shopify: shopifySettings,
+    };
+
+    const updatePayload: any = {
+      settings: updatedSettings,
+    };
+
+    if (shopify_shop_domain) {
+      updatePayload.shop_domain = shopify_shop_domain.trim();
+    }
+
+    const { error: updateErr } = await supabase
+      .from("stores")
+      .update(updatePayload)
       .eq("id", store_id);
 
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    if (updateErr) {
+      return NextResponse.json({ ok: false, error: updateErr.message }, { status: 500 });
     }
 
     return NextResponse.json({
       ok: true,
-      message: "Credenciais de API salvas e criptografadas no banco de dados com sucesso!"
+      message: "Credenciais da Shopify atualizadas com sucesso!",
     });
 
   } catch (error: any) {
@@ -49,6 +91,10 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/**
+ * GET /api/v1/settings/credentials
+ * Retorna status da integração com a Shopify e credenciais mascaradas.
+ */
 export async function GET(request: NextRequest) {
   try {
     const store_id = request.nextUrl.searchParams.get("store_id");
@@ -57,20 +103,25 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const { data: store } = await supabase
       .from("stores")
-      .select("shopify_api_key_enc, telegram_bot_token, telegram_chat_id, telegram_notify_approved, telegram_notify_pending")
+      .select("id, name, shop_domain, settings")
       .eq("id", store_id)
       .maybeSingle();
 
     if (!store) return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
 
+    const shopify = store.settings?.shopify || {};
+    const hasAccessToken = Boolean(shopify.access_token_enc);
+    const hasClientSecret = Boolean(shopify.client_secret_enc);
+
     return NextResponse.json({
       ok: true,
-      telegramBotToken: store.telegram_bot_token || "",
-      telegramChatId: store.telegram_chat_id || "",
-      telegramNotifyApproved: store.telegram_notify_approved ?? true,
-      telegramNotifyPending: store.telegram_notify_pending ?? true,
-      // Retorna apenas se o token existe e seu formato parcial por segurança, ou o original se precisar exibir
-      shopifyToken: store.shopify_api_key_enc ? "shpat_***" : "", 
+      shopifyConnected: hasAccessToken || shopify.connected === true,
+      shopifyClientId: shopify.client_id || "",
+      shopifyClientSecretMasked: hasClientSecret ? "shpss_••••••••••••••••••••••••" : "",
+      shopifyTokenMasked: hasAccessToken ? "shpat_••••••••••••••••••••••••" : "",
+      shopifyShopDomain: shopify.shop_domain || store.shop_domain || "dckb5g-7d.myshopify.com",
+      shopifyConnectedAt: shopify.connected_at || null,
+      shopifyScope: shopify.scope || "",
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

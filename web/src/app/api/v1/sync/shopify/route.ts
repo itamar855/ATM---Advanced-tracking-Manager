@@ -3,57 +3,68 @@ import { createClient } from "@/lib/supabase/server";
 import { updateEventResult } from "@/lib/tracking/dedup-engine";
 import { decrypt } from "@/lib/encryption";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(request: NextRequest) {
   try {
+    let storeId: string | null = null;
     let resetToday = false;
     try {
       const body = await request.json();
-      if (body?.reset_today) {
-        resetToday = true;
-      }
+      if (body?.store_id) storeId = body.store_id;
+      if (body?.reset_today) resetToday = true;
     } catch {
       // no body
     }
 
+    if (!storeId) {
+      storeId = request.nextUrl.searchParams.get("store_id");
+    }
+
     const supabase = await createClient();
 
-    // 1. Busca loja para pegar Shopify Admin Token e Domain
-    const { data: stores } = await supabase
-      .from("stores")
-      .select("*")
-      .limit(1);
+    // 1. Busca a loja específica ou a padrão
+    let store: any = null;
+    if (storeId) {
+      const { data } = await supabase.from("stores").select("*").eq("id", storeId).maybeSingle();
+      store = data;
+    }
+    if (!store) {
+      const { data: stores } = await supabase.from("stores").select("*").limit(1);
+      store = stores?.[0];
+    }
 
-    const store = stores?.[0];
     if (!store) {
       return NextResponse.json({ ok: false, error: "Nenhuma loja encontrada" }, { status: 400 });
     }
 
-    const domain = store.shop_domain;
+    const domain = store.settings?.shopify?.shop_domain || store.shop_domain;
     if (!domain) {
       return NextResponse.json({ ok: false, error: "Domínio da loja (Shopify) não configurado" }, { status: 400 });
     }
 
-    let token = store.shopify_api_key_enc;
-    if (token && typeof token !== "string") {
+    // 2. Extrai e decriptografa o token da Shopify (de settings.shopify ou legacy)
+    let token = store.settings?.shopify?.access_token_enc || store.shopify_api_key_enc;
+    if (token && typeof token === "string" && !token.startsWith("shpat_") && !token.startsWith("shpca_")) {
       try {
-        token = decrypt(token); // se for Buffer ou bytea
+        token = decrypt(token);
       } catch {
         // fallback
       }
-    } else if (typeof token === "string" && !token.startsWith("shpat_")) {
-       try {
-         token = decrypt(token);
-       } catch {}
+    } else if (token && typeof token !== "string") {
+      try {
+        token = decrypt(token);
+      } catch {}
     }
 
-    if (!token || !token.startsWith("shpat_")) {
+    if (!token || (!token.startsWith("shpat_") && !token.startsWith("shpca_"))) {
       return NextResponse.json({
         ok: false,
-        error: "Token da Shopify não encontrado ou inválido. Acesse Integrações e salve o Token Admin (shpat_...).",
+        error: "Token da Shopify não encontrado ou inválido. Acesse Integrações e conecte via OAuth para gerar o token.",
       });
     }
 
-    // Busca pedidos pagos na Shopify
+    // 3. Busca pedidos pagos na Shopify API
     const shopifyUrl = `https://${domain}/admin/api/2024-01/orders.json?status=any&financial_status=paid&limit=250`;
     
     let ordersToProcess: any[] = [];
@@ -64,7 +75,7 @@ export async function POST(request: NextRequest) {
           "X-Shopify-Access-Token": token,
           "Accept": "application/json",
         },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(15000),
       });
 
       if (!res.ok) {
