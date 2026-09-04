@@ -65,12 +65,29 @@ export async function GET(request: NextRequest) {
     stateClientId ||
     store.settings?.shopify?.client_id ||
     process.env.SHOPIFY_API_KEY ||
-    process.env.SHOPIFY_CLIENT_ID;
+    process.env.SHOPIFY_CLIENT_ID ||
+    "58504954bae6d390c53081c82eaf76b1";
 
   let clientSecret = "";
   if (store.settings?.shopify?.client_secret_enc) {
     try {
       clientSecret = decrypt(store.settings.shopify.client_secret_enc);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Fallback para o clientSecret mestre gravado no Supabase
+  if (!clientSecret) {
+    try {
+      const { data: masterStore } = await supabase
+        .from("stores")
+        .select("settings")
+        .eq("id", "dckb5g-7d")
+        .maybeSingle();
+      if (masterStore?.settings?.shopify?.client_secret_enc) {
+        clientSecret = decrypt(masterStore.settings.shopify.client_secret_enc);
+      }
     } catch {
       // ignore
     }

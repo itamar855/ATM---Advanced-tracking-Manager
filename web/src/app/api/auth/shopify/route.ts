@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (!clientId) {
-    clientId = process.env.SHOPIFY_API_KEY || process.env.SHOPIFY_CLIENT_ID || "";
+    clientId = process.env.SHOPIFY_API_KEY || process.env.SHOPIFY_CLIENT_ID || "58504954bae6d390c53081c82eaf76b1";
   }
 
   if (!clientId) {

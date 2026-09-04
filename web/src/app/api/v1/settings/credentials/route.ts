@@ -40,6 +40,17 @@ export async function POST(request: NextRequest) {
     const currentSettings = store.settings || {};
     const shopifySettings = currentSettings.shopify || {};
 
+    // Suporte para desconectar loja com 1 clique
+    if (body.action === "disconnect_shopify" || body.disconnect_shopify) {
+      shopifySettings.connected = false;
+      shopifySettings.access_token_enc = null;
+      await supabase.from("stores").update({
+        settings: { ...currentSettings, shopify: shopifySettings },
+      }).eq("id", store_id);
+
+      return NextResponse.json({ ok: true, message: "Loja Shopify desconectada com sucesso!" });
+    }
+
     if (shopify_client_id !== undefined) {
       shopifySettings.client_id = shopify_client_id.trim();
     }
