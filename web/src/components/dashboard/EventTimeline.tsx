@@ -33,6 +33,7 @@ export interface EventItem {
   value: number;
   fbtraceId?: string;
   paymentMethod?: string | null;
+  productName?: string | null;
   customer?: {
     name?: string | null;
     email?: string | null;
@@ -97,6 +98,7 @@ export function EventTimeline({ events }: EventTimelineProps) {
   const purchaseCount = dateFilteredEvents.filter((e) => e.eventName === "Purchase").length;
   const checkoutCount = dateFilteredEvents.filter((e) => e.eventName === "InitiateCheckout").length;
   const cartCount = dateFilteredEvents.filter((e) => e.eventName === "AddToCart").length;
+  const viewContentCount = dateFilteredEvents.filter((e) => e.eventName === "ViewContent").length;
   const leadCount = dateFilteredEvents.filter((e) => e.eventName === "Lead").length;
   const pageviewCount = dateFilteredEvents.filter((e) => e.eventName === "PageView").length;
 
@@ -181,6 +183,7 @@ export function EventTimeline({ events }: EventTimelineProps) {
               { key: "Purchase", label: "💰 Compras", count: purchaseCount, color: "bg-emerald-600 text-white" },
               { key: "InitiateCheckout", label: "🚀 Checkouts", count: checkoutCount, color: "bg-amber-600 text-white" },
               { key: "AddToCart", label: "🛒 Carrinhos", count: cartCount, color: "bg-purple-600 text-white" },
+              { key: "ViewContent", label: "👀 Produtos Vistos", count: viewContentCount, color: "bg-indigo-600 text-white" },
               { key: "Lead", label: "🎯 Leads", count: leadCount, color: "bg-pink-600 text-white" },
               { key: "PageView", label: "👁️ PageViews", count: pageviewCount, color: "bg-cyan-600 text-white" },
             ].map((f) => {
@@ -212,6 +215,8 @@ export function EventTimeline({ events }: EventTimelineProps) {
               const isPurchase = event.eventName === "Purchase";
               const isCheckout = event.eventName === "InitiateCheckout";
               const isCart = event.eventName === "AddToCart";
+              const isViewContent = event.eventName === "ViewContent";
+              const isAddPayment = event.eventName === "AddPaymentInfo";
 
               const timeFormatted = new Date(event.createdAt).toLocaleTimeString("pt-BR", {
                 hour: "2-digit",
@@ -263,6 +268,12 @@ export function EventTimeline({ events }: EventTimelineProps) {
                               ? "text-amber-400"
                               : isCart
                               ? "text-purple-400"
+                              : isViewContent
+                              ? "text-indigo-400"
+                              : isAddPayment
+                              ? "text-orange-400"
+                              : event.eventName === "Lead"
+                              ? "text-pink-400"
                               : "text-zinc-200"
                           }`}
                         >
@@ -272,6 +283,10 @@ export function EventTimeline({ events }: EventTimelineProps) {
                             ? "InitiateCheckout"
                             : isCart
                             ? "AddToCart"
+                            : isViewContent
+                            ? "ViewContent (Produto Visto)"
+                            : isAddPayment
+                            ? "AddPaymentInfo (PIX Gerado)"
                             : event.eventName === "Lead"
                             ? "Lead (Contato Capturado)"
                             : "PageView"}
@@ -290,6 +305,12 @@ export function EventTimeline({ events }: EventTimelineProps) {
                         <span className="text-[11px] font-mono text-zinc-400">
                           {event.orderId}
                         </span>
+
+                        {event.productName && (
+                          <span className="text-[10px] text-zinc-300 font-medium truncate max-w-[180px] sm:max-w-[280px] bg-zinc-800/80 px-2 py-0.5 rounded border border-zinc-700/60" title={event.productName}>
+                            📦 {event.productName}
+                          </span>
+                        )}
 
                         {event.status === "accepted" && event.fbtraceId ? (
                           <span className="text-[9px] px-2 py-0.5 rounded-full font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -410,6 +431,14 @@ export function EventTimeline({ events }: EventTimelineProps) {
                 <span className="text-zinc-400">Nome do Evento:</span>
                 <span className="font-bold text-white">{selectedEvent.eventName}</span>
               </div>
+              {selectedEvent.productName && (
+                <div className="flex justify-between py-1 border-b border-zinc-800/60">
+                  <span className="text-zinc-400">Produto Visto:</span>
+                  <span className="font-semibold text-white truncate max-w-[240px] text-right" title={selectedEvent.productName}>
+                    📦 {selectedEvent.productName}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between py-1 border-b border-zinc-800/60">
                 <span className="text-zinc-400">Pedido ID:</span>
                 <span className="font-mono text-blue-400 font-bold">{selectedEvent.orderId}</span>

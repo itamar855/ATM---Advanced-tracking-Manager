@@ -77,6 +77,7 @@ export async function GET(request: NextRequest) {
           email: orderDetails.customer_email || null,
           phone: orderDetails.customer_phone || null,
         },
+        productName: customData.content_name || orderDetails.content_name || (customData.contents?.[0]?.title || null),
         utms: {
           source: customData.utm_source || orderDetails.utm_source || null,
           campaign: customData.utm_campaign || orderDetails.utm_campaign || null,
