@@ -108,5 +108,34 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  return NextResponse.redirect(authorizationUrl);
+  // HTML com "The Great Escape" para quebrar se estiver em iframe do Shopify Admin
+  const escapeHtml = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>ATM — Conectando à Shopify...</title>
+  <script>
+    const targetUrl = ${JSON.stringify(authorizationUrl)};
+    try {
+      if (window.top !== window.self) {
+        window.top.location.href = targetUrl;
+      } else {
+        window.location.href = targetUrl;
+      }
+    } catch (e) {
+      window.location.href = targetUrl;
+    }
+  </script>
+</head>
+<body style="background:#07090E;color:#E4E4E7;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;">
+  <div style="text-align:center;padding:24px;">
+    <p style="font-size:15px;font-weight:600;margin-bottom:12px;">Conectando com a Shopify...</p>
+    <a href="${authorizationUrl}" target="_top" style="color:#10B981;font-size:13px;text-decoration:underline;">Clique aqui se você não for redirecionado automaticamente</a>
+  </div>
+</body>
+</html>`;
+
+  return new NextResponse(escapeHtml, {
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
 }

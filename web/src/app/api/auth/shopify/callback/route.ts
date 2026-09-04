@@ -242,12 +242,21 @@ function renderSuccessHtml(data: {
     </div>
 
     <div class="btn-group">
-      <a href="${data.integrationsUrl}" class="btn-primary">Ver Configurações de Integração</a>
-      <a href="${data.dashboardUrl}" class="btn-secondary">Ir para a Dashboard de Lucro</a>
+      <a href="${data.integrationsUrl}" target="_top" class="btn-primary">Ver Configurações de Integração</a>
+      <a href="${data.dashboardUrl}" target="_top" class="btn-secondary">Ir para a Dashboard de Lucro</a>
     </div>
 
     <p class="info">Se você abriu esta janela em outro navegador ou aba, já pode fechá-la com segurança.</p>
   </div>
+  <script>
+    try {
+      if (window.top !== window.self) {
+        setTimeout(function() {
+          window.top.location.href = ${JSON.stringify(data.integrationsUrl)};
+        }, 1200);
+      }
+    } catch (e) {}
+  </script>
 </body>
 </html>`;
 
