@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { playNotificationSound } from "@/lib/notifications/sound-effects";
 
@@ -31,37 +31,64 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [stores, setStores] = useState<Store[]>([]);
   const [activeStore, setActiveStoreState] = useState<Store | null>(null);
   const [loading, setLoading] = useState(true);
+  const isMountedRef = useRef(true);
+  const lastLoadedUserIdRef = useRef<string | null>(null);
 
-  async function loadStores() {
-    setLoading(true);
+  const loadStores = useCallback(async () => {
+    const supabase = createClient();
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setLoading(false); return; }
+      // 1. Obtém sessão: prioriza getSession local rápida e faz fallback para getUser
+      const { data: sessionData } = await supabase.auth.getSession();
+      let user = sessionData?.session?.user || null;
 
-      const { data } = await supabase
+      if (!user) {
+        const { data: userData } = await supabase.auth.getUser();
+        user = userData?.user || null;
+      }
+
+      // Se não houver usuário autenticado, não consulta para manter isolamento multi-tenant estrito
+      if (!user) {
+        if (isMountedRef.current) {
+          lastLoadedUserIdRef.current = null;
+          setLoading(false);
+        }
+        return;
+      }
+
+      // 2. Consulta lojas protegida por RLS (Postgres: tenant_id = auth.uid())
+      const { data, error } = await supabase
         .from("stores")
         .select("id, name, shop_domain")
         .order("created_at", { ascending: true });
 
-      if (data && data.length > 0) {
-        setStores(data);
+      if (error) {
+        console.error("[StoreContext] Error loading stores:", error);
+      } else if (isMountedRef.current) {
+        lastLoadedUserIdRef.current = user.id;
+        if (data && data.length > 0) {
+          setStores(data);
 
-        // Retoma loja salva no localStorage
-        const savedId = typeof window !== "undefined" ? localStorage.getItem("atm_active_store_id") : null;
-        const saved = savedId ? data.find((s) => s.id === savedId) : null;
-        const initialStore = saved || data[0];
-        setActiveStoreState(initialStore);
-        if (typeof window !== "undefined") {
-          document.cookie = `atm_active_store_id=${initialStore.id}; path=/; max-age=31536000; SameSite=Lax`;
+          // Retoma loja salva no localStorage
+          const savedId = typeof window !== "undefined" ? localStorage.getItem("atm_active_store_id") : null;
+          const saved = savedId ? data.find((s) => s.id === savedId) : null;
+          const initialStore = saved || data[0];
+          setActiveStoreState(initialStore);
+          if (typeof window !== "undefined") {
+            document.cookie = `atm_active_store_id=${initialStore.id}; path=/; max-age=31536000; SameSite=Lax`;
+          }
+        } else {
+          setStores([]);
+          setActiveStoreState(null);
         }
       }
     } catch (err) {
       console.error("[StoreContext]", err);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
-  }
+  }, []);
 
   function setActiveStore(store: Store) {
     setActiveStoreState(store);
@@ -71,8 +98,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  useEffect(() => { loadStores(); }, []);
+  // Efeito principal: listener seguro do ciclo de vida de autenticação (reage a INITIAL_SESSION, SIGNED_IN, etc.)
+  useEffect(() => {
+    isMountedRef.current = true;
+    const supabase = createClient();
 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMountedRef.current) return;
+
+      if (event === "SIGNED_IN") {
+        loadStores();
+      } else if (event === "INITIAL_SESSION") {
+        if (session?.user?.id) {
+          if (session.user.id !== lastLoadedUserIdRef.current) {
+            loadStores();
+          }
+        } else {
+          setLoading(false);
+        }
+      } else if (event === "TOKEN_REFRESHED") {
+        if (session?.user?.id && session.user.id !== lastLoadedUserIdRef.current) {
+          loadStores();
+        }
+      } else if (event === "SIGNED_OUT") {
+        lastLoadedUserIdRef.current = null;
+        setStores([]);
+        setActiveStoreState(null);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      isMountedRef.current = false;
+      subscription.unsubscribe();
+    };
+  }, [loadStores]);
+
+  // Listener para som de notificação push via Service Worker
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
 
