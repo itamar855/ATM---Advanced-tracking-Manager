@@ -208,6 +208,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .eq("source", "server");
 
       const isPending = payload.financial_status === "pending" || payload.financial_status === "authorized";
+      const gatewayRaw = String(payload.payment_gateway_names?.[0] || payload.gateway || "").toLowerCase();
+      let cleanPaymentMethod = "PEDIDO";
+      if (gatewayRaw.includes("pix")) cleanPaymentMethod = "PIX";
+      else if (gatewayRaw.includes("boleto")) cleanPaymentMethod = "BOLETO";
+      else if (gatewayRaw.includes("card") || gatewayRaw.includes("cartao") || gatewayRaw.includes("credit")) cleanPaymentMethod = "CARTÃO";
+      else if (gatewayRaw) cleanPaymentMethod = gatewayRaw.toUpperCase();
 
       // Disparo de Notificação Telegram
       try {
@@ -226,8 +232,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           const customerName = `${normalizedOrder.customer.firstName} ${normalizedOrder.customer.lastName}`.trim() || "Cliente Identificado";
           
           const emoji = isPending ? "🟡" : "💰";
-          const statusText = isPending ? "Venda Pendente" : "Venda Aprovada";
-          const message = `${emoji} *${statusText}!*\n\n*Valor:* ${formattedValue}\n*Gateway:* Shopify\n*Produto:* ${payload.line_items?.[0]?.title || 'Não informado'}\n*Cliente:* ${customerName}`;
+          const statusText = isPending ? (cleanPaymentMethod === "PIX" ? "Pix Gerado" : (cleanPaymentMethod === "BOLETO" ? "Boleto Gerado" : "Venda Pendente")) : "Venda Aprovada";
+          const message = `${emoji} *${statusText}!*\n\n*Valor:* ${formattedValue}\n*Gateway:* Shopify (${cleanPaymentMethod})\n*Produto:* ${payload.line_items?.[0]?.title || 'Não informado'}\n*Cliente:* ${customerName}`;
 
           fetch(`https://api.telegram.org/bot${storeData.telegram_bot_token}/sendMessage`, {
             method: "POST",
@@ -252,7 +258,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           orderId,
           value: Number(payload.total_price || 0),
           customerName,
-          paymentMethod: (payload.payment_gateway_names?.[0] || "PIX/Boleto").toUpperCase(),
+          paymentMethod: cleanPaymentMethod,
           itemsSummary: payload.line_items?.[0]?.title,
         }).catch((pushErr) => console.warn("[Web Push Shopify Error]:", pushErr));
       } catch {}

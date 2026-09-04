@@ -26,6 +26,31 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const eventType = (payload.event || payload.eventType || payload.type || "").toLowerCase();
     const status = (payload.status || payload.order_status || "").toLowerCase();
 
+    const paymentMethodRaw = String(
+      payload.payment_method ||
+      payload.paymentMethod ||
+      payload.gateway ||
+      payload.payment_type ||
+      ""
+    ).toLowerCase();
+
+    const isPix = paymentMethodRaw.includes("pix");
+    const isBoleto = paymentMethodRaw.includes("boleto");
+    const isCard = paymentMethodRaw.includes("card") || paymentMethodRaw.includes("cartao") || paymentMethodRaw.includes("credit");
+
+    const hasPixData = Boolean(
+      payload.pix_qr_code ||
+      payload.pix_code ||
+      payload.pix_copy_paste ||
+      payload.qr_code ||
+      payload.qrcode ||
+      payload.qr_code_base64 ||
+      payload.point_of_interaction
+    );
+
+    const isRealPixPending = isPix && (hasPixData || status === "waiting_payment" || status === "aguardando_pagamento" || eventType === "PIX_GENERATED" || (status === "pending" && hasPixData));
+    const isRealBoletoPending = isBoleto && (status === "waiting_payment" || status === "aguardando_pagamento" || status === "pending" || eventType === "BOLETO_GENERATED");
+
     let metaEventName: "Purchase" | "InitiateCheckout" | "AddPaymentInfo" = "Purchase";
     let isTrackable = false;
 
@@ -41,21 +66,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     ) {
       metaEventName = "Purchase";
       isTrackable = true;
-    } else if (
-      eventStr.includes("abandon") ||
-      eventStr.includes("carrinho_abandonado")
-    ) {
-      metaEventName = "InitiateCheckout";
+    } else if (isRealPixPending || isRealBoletoPending) {
+      metaEventName = "AddPaymentInfo";
       isTrackable = true;
     } else if (
+      eventStr.includes("abandon") ||
+      eventStr.includes("carrinho_abandonado") ||
       eventStr.includes("waiting") ||
       eventStr.includes("aguardando") ||
-      eventStr.includes("pix") ||
-      eventStr.includes("boleto") ||
       eventStr.includes("pending") ||
-      eventStr.includes("venda_aguardando_pagamento")
+      eventType === "ORDER_CREATED"
     ) {
-      metaEventName = "AddPaymentInfo";
+      metaEventName = "InitiateCheckout";
       isTrackable = true;
     }
 
@@ -384,19 +406,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .eq("id", storeId)
         .maybeSingle();
 
-      const isPending = payload.status === "pending" || eventType === "ORDER_CREATED";
+      const isApprovedNotify = metaEventName === "Purchase";
+      const shouldSendPendingNotification = isRealPixPending || isRealBoletoPending;
       
       const shouldNotify = 
-        (isPending && storeData?.telegram_notify_pending !== false) ||
-        (!isPending && storeData?.telegram_notify_approved !== false);
+        (isApprovedNotify && storeData?.telegram_notify_approved !== false) ||
+        (!isApprovedNotify && shouldSendPendingNotification && storeData?.telegram_notify_pending !== false);
 
       if (storeData?.telegram_bot_token && storeData?.telegram_chat_id && shouldNotify) {
         const formattedValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: payload.currency || 'BRL' }).format(orderValue);
         const customerName = `${normalizedOrder.customer.firstName} ${normalizedOrder.customer.lastName}`.trim() || "Cliente Identificado";
         
-        const emoji = isPending ? "🟡" : "💰";
-        const statusText = isPending ? "Venda Pendente/Pix" : "Venda Aprovada";
-        const message = `${emoji} *${statusText}!*\n\n*Valor:* ${formattedValue}\n*Gateway:* Gateway de Pagamento\n*Produto:* ${products?.[0]?.title || 'Não informado'}\n*Cliente:* ${customerName}`;
+        const emoji = isApprovedNotify ? "💰" : (isRealPixPending ? "🟡" : "📄");
+        const statusText = isApprovedNotify ? "Venda Aprovada" : (isRealPixPending ? "Pix Gerado" : "Boleto Gerado");
+        const cleanMethod = isRealPixPending ? "PIX" : (isRealBoletoPending ? "BOLETO" : (isCard ? "CARTÃO" : "PEDIDO"));
+        const message = `${emoji} *${statusText}!*\n\n*Valor:* ${formattedValue}\n*Gateway:* Gateway de Pagamento (${cleanMethod})\n*Produto:* ${products?.[0]?.title || 'Não informado'}\n*Cliente:* ${customerName}`;
 
         fetch(`https://api.telegram.org/bot${storeData.telegram_bot_token}/sendMessage`, {
           method: "POST",
@@ -413,28 +437,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // Disparo de Notificação Web Push Nativa (iPhone / Android / PC)
-    try {
-      const { sendStorePushNotification } = await import("@/lib/notifications/web-push");
-      const isPending = (
-        metaEventName === "AddPaymentInfo" ||
-        payload.status === "pending" ||
-        payload.status === "waiting_payment" ||
-        eventType === "ORDER_CREATED" ||
-        eventStr.includes("waiting") ||
-        eventStr.includes("aguardando") ||
-        eventStr.includes("pix") ||
-        eventStr.includes("boleto")
-      );
-      const pushType = isPending ? "pending" : "approved";
-      const customerName = `${normalizedOrder.customer.firstName || ""} ${normalizedOrder.customer.lastName || ""}`.trim() || "Cliente";
-      sendStorePushNotification(storeId, pushType, {
-        orderId,
-        value: orderValue,
-        customerName,
-        paymentMethod: payload.payment_method || "Cartão/PIX",
-        itemsSummary: products?.[0]?.title,
-      }).catch((pushErr) => console.warn("[Web Push Gateway7 Error]:", pushErr));
-    } catch {}
+    if (metaEventName === "Purchase" || isRealPixPending || isRealBoletoPending) {
+      try {
+        const { sendStorePushNotification } = await import("@/lib/notifications/web-push");
+        const pushType = metaEventName === "Purchase" ? "approved" : "pending";
+        const cleanMethod = isRealPixPending ? "PIX" : (isRealBoletoPending ? "BOLETO" : (isCard ? "CARTÃO" : "PEDIDO"));
+        const customerName = `${normalizedOrder.customer.firstName || ""} ${normalizedOrder.customer.lastName || ""}`.trim() || "Cliente";
+        sendStorePushNotification(storeId, pushType, {
+          orderId,
+          value: orderValue,
+          customerName,
+          paymentMethod: cleanMethod,
+          itemsSummary: products?.[0]?.title,
+        }).catch((pushErr) => console.warn("[Web Push Gateway7 Error]:", pushErr));
+      } catch {}
+    }
 
     return NextResponse.json({
       ok: metaResponse.ok,

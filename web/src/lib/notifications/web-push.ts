@@ -15,6 +15,9 @@ export * from "./types";
 
 webPush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
+// Cache de deduplicação em memória para evitar notificações repetidas do mesmo pedido/status (1 hora)
+const NOTIFICATION_DEDUP_CACHE = new Map<string, number>();
+
 /**
  * Dispara notificação push para todos os aparelhos conectados da loja
  */
@@ -24,6 +27,22 @@ export async function sendStorePushNotification(
   data: OrderNotificationPayload
 ) {
   try {
+    // 0. Trava de deduplicação anti-spam (ignora repetições do mesmo pedido e status em até 1h)
+    const dedupKey = `${storeId}_${data.orderId || "unknown"}_${type}`;
+    const now = Date.now();
+    const lastSent = NOTIFICATION_DEDUP_CACHE.get(dedupKey);
+    if (lastSent && now - lastSent < 3600000) {
+      return { ok: true, message: "Notificação duplicada ignorada (já enviada recentemente)" };
+    }
+    NOTIFICATION_DEDUP_CACHE.set(dedupKey, now);
+
+    // Limpeza periódica de memória
+    if (NOTIFICATION_DEDUP_CACHE.size > 2000) {
+      for (const [k, ts] of NOTIFICATION_DEDUP_CACHE.entries()) {
+        if (now - ts > 7200000) NOTIFICATION_DEDUP_CACHE.delete(k);
+      }
+    }
+
     const supabase = createAdminClient();
     // Busca resiliente da loja: por ID ou por shop_domain
     let { data: store } = await supabase
@@ -78,14 +97,21 @@ export async function sendStorePushNotification(
       return { ok: false, message: "Nenhum dispositivo cadastrado para receber notificações" };
     }
 
-    // Monta as variáveis dinâmicas
+    // Monta as variáveis dinâmicas com resolução precisa do método (NUNCA força PIX se não for)
+    const rawMethod = String(data.paymentMethod || "").trim().toLowerCase();
+    let displayMethod = "PEDIDO";
+    if (rawMethod.includes("pix")) displayMethod = "PIX";
+    else if (rawMethod.includes("boleto")) displayMethod = "BOLETO";
+    else if (rawMethod.includes("card") || rawMethod.includes("cartao") || rawMethod.includes("credit")) displayMethod = "CARTÃO";
+    else if (rawMethod) displayMethod = rawMethod.toUpperCase();
+
     const formattedValue = `R$ ${data.value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
     const firstName = (data.customerName || "Cliente").trim().split(" ")[0];
     const variables = {
       valor: formattedValue,
       cliente_nome: data.customerName || "Cliente",
       cliente_primeiro_nome: firstName,
-      metodo_pagamento: (data.paymentMethod || "PIX").toUpperCase(),
+      metodo_pagamento: displayMethod,
       loja: store.name || "ATM PRO",
       pedido_id: data.orderId ? `#${data.orderId.replace(/\D/g, "").slice(-4) || data.orderId.slice(-4)}` : "#1001",
       produtos: data.itemsSummary || "Produto",

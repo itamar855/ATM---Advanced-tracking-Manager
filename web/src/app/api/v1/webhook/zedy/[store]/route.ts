@@ -32,13 +32,62 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ ok: false, error: "Identificador do pedido ausente" }, { status: 400 });
     }
 
-    const metaEventName: "Purchase" | "AddPaymentInfo" = isApproved ? "Purchase" : "AddPaymentInfo";
+    // Identificação precisa do método de pagamento e validação de PIX real
+    const paymentMethodRaw = String(
+      payload.paymentMethod ||
+      payload.payment_method ||
+      payload.gateway ||
+      payload.payment_type ||
+      (payload.commission?.paymentMethod) ||
+      ""
+    ).toLowerCase();
 
-    // 1. Lock de Idempotência: só bloqueia compra real para não impedir que um PIX pendente seja aprovado depois
+    const isPix = paymentMethodRaw.includes("pix");
+    const isBoleto = paymentMethodRaw.includes("boleto");
+    const isCard = paymentMethodRaw.includes("card") || paymentMethodRaw.includes("cartao") || paymentMethodRaw.includes("credit");
+
+    // Validação estrita se o Pix foi REALMENTE gerado (tem QR Code emitido pela adquirente)
+    const hasPixData = Boolean(
+      payload.pix_qr_code ||
+      payload.pix_code ||
+      payload.pix_copy_paste ||
+      payload.qr_code ||
+      payload.qrcode ||
+      payload.qr_code_base64 ||
+      payload.point_of_interaction ||
+      payload.data?.pix_qr_code ||
+      payload.data?.qr_code ||
+      payload.order?.pix_code ||
+      payload.transaction?.pix_code
+    );
+
+    const isRealPixPending = isPix && (hasPixData || status === "waiting_payment" || status === "aguardando_pagamento" || eventType === "PIX_GENERATED" || (status === "pending" && hasPixData));
+    const isRealBoletoPending = isBoleto && (status === "waiting_payment" || status === "aguardando_pagamento" || status === "pending" || eventType === "BOLETO_GENERATED");
+
+    // Define evento Meta CAPI:
+    // Purchase = venda confirmada
+    // AddPaymentInfo = PIX gerado ou Boleto impresso real
+    // InitiateCheckout = carrinho criado / início de checkout sem método de pagamento finalizado
+    let metaEventName: "Purchase" | "AddPaymentInfo" | "InitiateCheckout" = "Purchase";
+    if (isApproved) {
+      metaEventName = "Purchase";
+    } else if (isRealPixPending || isRealBoletoPending) {
+      metaEventName = "AddPaymentInfo";
+    } else {
+      metaEventName = "InitiateCheckout";
+    }
+
+    // 1. Lock de Idempotência: bloqueia compra real ou AddPaymentInfo duplicado
     if (isApproved) {
       const lock = await reservePurchase(storeId, orderId);
       if (!lock.acquired) {
         return NextResponse.json({ ok: true, message: "Pedido aprovado duplicado ignorado" }, { status: 200 });
+      }
+    } else if (metaEventName === "AddPaymentInfo") {
+      const { reserveEvent } = await import("@/lib/tracking/dedup-engine");
+      const lock = await reserveEvent(storeId, "AddPaymentInfo", `AddPaymentInfo_${orderId}`, "server");
+      if (!lock.acquired) {
+        return NextResponse.json({ ok: true, message: "AddPaymentInfo duplicado ignorado" }, { status: 200 });
       }
     }
 
@@ -358,18 +407,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .eq("id", storeId)
         .maybeSingle();
 
-      const isApprovedNotify = status === "approved" || status === "paid" || eventType === "ORDER_PAID";
-      const isPendingNotify = !isApprovedNotify;
+      const isApprovedNotify = isApproved;
+      // Somente notifica pendente se for comprovadamente PIX Gerado ou Boleto Gerado!
+      const shouldSendPendingNotification = isRealPixPending || isRealBoletoPending;
 
-      const shouldNotify = 
-      (isApprovedNotify && storeData?.telegram_notify_approved !== false) || 
-      (isPendingNotify && storeData?.telegram_notify_pending !== false);
+      const shouldNotifyTelegram = 
+        (isApprovedNotify && storeData?.telegram_notify_approved !== false) || 
+        (!isApprovedNotify && shouldSendPendingNotification && storeData?.telegram_notify_pending !== false);
 
-      if (storeData?.telegram_bot_token && storeData?.telegram_chat_id && shouldNotify) {
-        const emoji = isApprovedNotify ? "💰" : "🟡";
-        const statusText = isApprovedNotify ? "Venda Aprovada" : "Venda Pendente/Pix";
-        const valueText = payload.value ? `R$ ${parseFloat(payload.value).toFixed(2).replace('.', ',')}` : "Valor indefinido";
-        const message = `${emoji} *${statusText}!*\n\n*Valor:* ${valueText}\n*Gateway:* Zedy\n*Produto:* ${payload.items?.[0]?.title || 'Não informado'}\n*Cliente:* ${payload.customer?.name || 'Não informado'}`;
+      if (storeData?.telegram_bot_token && storeData?.telegram_chat_id && shouldNotifyTelegram) {
+        const emoji = isApprovedNotify ? "💰" : (isRealPixPending ? "🟡" : "📄");
+        const statusText = isApprovedNotify ? "Venda Aprovada" : (isRealPixPending ? "Pix Gerado" : "Boleto Gerado");
+        const valueText = orderValue > 0 ? `R$ ${orderValue.toFixed(2).replace('.', ',')}` : "Valor indefinido";
+        const methodLabel = isRealPixPending ? "PIX" : (isRealBoletoPending ? "Boleto" : (isCard ? "Cartão" : "Outro"));
+        const message = `${emoji} *${statusText}!*\n\n*Valor:* ${valueText}\n*Gateway:* Zedy (${methodLabel})\n*Produto:* ${payload.items?.[0]?.title || payload.products?.[0]?.name || 'Não informado'}\n*Cliente:* ${customer.name || payload.customer?.name || 'Não informado'}`;
 
         fetch(`https://api.telegram.org/bot${storeData.telegram_bot_token}/sendMessage`, {
           method: "POST",
@@ -386,17 +437,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // 8.1 Disparo de Notificação Web Push Nativa (iPhone / Android / PC)
-    try {
-      const { sendStorePushNotification } = await import("@/lib/notifications/web-push");
-      const pushType = (status === "approved" || status === "paid" || eventType === "ORDER_PAID") ? "approved" : "pending";
-      sendStorePushNotification(storeId, pushType, {
-        orderId,
-        value: orderValue,
-        customerName: customer.name || payload.customer?.name,
-        paymentMethod: paymentMethod,
-        itemsSummary: payload.items?.[0]?.title,
-      }).catch((pushErr) => console.warn("[Web Push Zedy Error]:", pushErr));
-    } catch {}
+    // Apenas dispara para compras aprovadas OU PIX/Boleto gerados de verdade!
+    const shouldSendPush = isApproved || isRealPixPending || isRealBoletoPending;
+    if (shouldSendPush) {
+      try {
+        const { sendStorePushNotification } = await import("@/lib/notifications/web-push");
+        const pushType = isApproved ? "approved" : "pending";
+        const cleanMethod = isRealPixPending ? "PIX" : (isRealBoletoPending ? "BOLETO" : (isCard ? "CARTÃO" : "PEDIDO"));
+        sendStorePushNotification(storeId, pushType, {
+          orderId,
+          value: orderValue,
+          customerName: customer.name || payload.customer?.name,
+          paymentMethod: cleanMethod,
+          itemsSummary: payload.items?.[0]?.title || payload.products?.[0]?.name,
+        }).catch((pushErr) => console.warn("[Web Push Zedy Error]:", pushErr));
+      } catch {}
+    }
 
     return NextResponse.json({ ok: true, metaResponse, emq_score: emqScore, signals_sent: userDataKeys });
 
