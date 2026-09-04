@@ -34,7 +34,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const isMountedRef = useRef(true);
   const lastLoadedUserIdRef = useRef<string | null>(null);
 
+  const isFetchingRef = useRef(false);
+
   const loadStores = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     const supabase = createClient();
     try {
       // 1. Obtém sessão: prioriza getSession local rápida e faz fallback para getUser
@@ -46,7 +50,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         user = userData?.user || null;
       }
 
-      // Se não houver usuário autenticado, não consulta para manter isolamento multi-tenant estrito
+      // Se não houver usuário autenticado, mantém isolamento multi-tenant estrito
       if (!user) {
         if (isMountedRef.current) {
           lastLoadedUserIdRef.current = null;
@@ -84,6 +88,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error("[StoreContext]", err);
     } finally {
+      isFetchingRef.current = false;
       if (isMountedRef.current) {
         setLoading(false);
       }
@@ -98,27 +103,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Efeito principal: listener seguro do ciclo de vida de autenticação (reage a INITIAL_SESSION, SIGNED_IN, etc.)
+  // 1. Carga inicial garantida no mount
   useEffect(() => {
     isMountedRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadStores();
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [loadStores]);
+
+  // 2. Listener reativo para eventos posteriores de autenticação (login, logout, refresh)
+  useEffect(() => {
     const supabase = createClient();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMountedRef.current) return;
 
       if (event === "SIGNED_IN") {
-        loadStores();
-      } else if (event === "INITIAL_SESSION") {
-        if (session?.user?.id) {
-          if (session.user.id !== lastLoadedUserIdRef.current) {
-            loadStores();
-          }
-        } else {
-          setLoading(false);
-        }
+        void loadStores();
       } else if (event === "TOKEN_REFRESHED") {
         if (session?.user?.id && session.user.id !== lastLoadedUserIdRef.current) {
-          loadStores();
+          void loadStores();
         }
       } else if (event === "SIGNED_OUT") {
         lastLoadedUserIdRef.current = null;
@@ -129,7 +135,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
 
     return () => {
-      isMountedRef.current = false;
       subscription.unsubscribe();
     };
   }, [loadStores]);
