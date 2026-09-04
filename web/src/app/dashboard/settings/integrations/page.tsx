@@ -317,7 +317,13 @@ function IntegrationsContent() {
 
   const handleCopyShopifyOAuthLink = async () => {
     if (!shopifyClientId.trim()) {
-      alert("Por favor, preencha o Client ID do seu aplicativo Shopify antes de gerar o link.");
+      const input = document.getElementById("shopify-client-id-input");
+      if (input) {
+        input.focus();
+        input.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      setSaveSuccessMsg("👉 Por favor, cole o seu Client ID no campo acima antes de gerar o link!");
+      setTimeout(() => setSaveSuccessMsg(""), 6000);
       return;
     }
     setGeneratingOAuthLink(true);
@@ -342,7 +348,7 @@ function IntegrationsContent() {
       if (data.ok && data.authorizeUrl) {
         await navigator.clipboard.writeText(data.authorizeUrl);
         setCopiedShopifyAuthLink(true);
-        setSaveSuccessMsg("Link copiado! Cole no navegador onde você já está logado na sua loja Shopify.");
+        setSaveSuccessMsg("✓ Link copiado! Cole no navegador onde você já está logado na sua loja Shopify.");
         setTimeout(() => setCopiedShopifyAuthLink(false), 8000);
       } else {
         alert("Erro ao gerar link: " + (data.error || "Desconhecido"));
@@ -356,7 +362,13 @@ function IntegrationsContent() {
 
   const handleConnectShopifyOAuth = async () => {
     if (!shopifyClientId.trim()) {
-      alert("Por favor, preencha o Client ID do seu aplicativo Shopify antes de conectar.");
+      const input = document.getElementById("shopify-client-id-input");
+      if (input) {
+        input.focus();
+        input.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      setSaveSuccessMsg("👉 Por favor, cole o seu Client ID no campo acima antes de conectar a loja!");
+      setTimeout(() => setSaveSuccessMsg(""), 6000);
       return;
     }
     const targetStoreId = activeStore?.id || storeId || "dckb5g-7d";
@@ -1334,22 +1346,30 @@ function IntegrationsContent() {
             )}
 
             {/* Form Fields: Client ID, Secret, Store Domain */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
               <div>
-                <label className="block text-[11px] font-bold text-zinc-400 mb-1">
-                  Client ID (App ATM no Partners) <span className="text-red-400">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-zinc-200">
+                    Client ID (App ATM no Partners) <span className="text-red-400">*</span>
+                  </label>
+                  {!shopifyClientId.trim() && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium animate-pulse">
+                      Preencha aqui
+                    </span>
+                  )}
+                </div>
                 <input
+                  id="shopify-client-id-input"
                   type="text"
                   value={shopifyClientId}
                   onChange={(e) => setShopifyClientId(e.target.value)}
-                  placeholder="Ex: 408583405569..."
-                  className="w-full px-3 py-2 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-200 font-mono focus:outline-none focus:border-blue-500/50"
+                  placeholder="Cole seu Client ID aqui (ex: 408583405569...)"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#131722] border border-zinc-700 hover:border-zinc-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-xs text-white placeholder:text-zinc-500 font-mono transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-zinc-400 mb-1">
+                <label className="block text-xs font-bold text-zinc-200 mb-1.5">
                   Client Secret (Chave Secreta)
                 </label>
                 <input
@@ -1357,12 +1377,12 @@ function IntegrationsContent() {
                   value={shopifyClientSecret}
                   onChange={(e) => setShopifyClientSecret(e.target.value)}
                   placeholder="shpss_..."
-                  className="w-full px-3 py-2 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-200 font-mono focus:outline-none focus:border-blue-500/50"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#131722] border border-zinc-700 hover:border-zinc-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-xs text-white placeholder:text-zinc-500 font-mono transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-zinc-400 mb-1">
+                <label className="block text-xs font-bold text-zinc-200 mb-1.5">
                   Domínio Shopify da Loja (.myshopify.com)
                 </label>
                 <input
@@ -1370,26 +1390,27 @@ function IntegrationsContent() {
                   value={shopifyShopDomain}
                   onChange={(e) => setShopifyShopDomain(e.target.value)}
                   placeholder="dckb5g-7d.myshopify.com"
-                  className="w-full px-3 py-2 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-200 font-mono focus:outline-none focus:border-blue-500/50"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#131722] border border-zinc-700 hover:border-zinc-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-xs text-white placeholder:text-zinc-500 font-mono transition-all"
                 />
               </div>
             </div>
 
             {/* Action Buttons: Copy Link, Connect 1-Click, Save Creds */}
-            <div className="pt-2 flex flex-wrap items-center gap-2.5">
-              {/* Botão Copiar Link para Outro Navegador (Destaque conforme solicitado) */}
+            <div className="pt-2 flex flex-wrap items-center gap-3">
+              {/* Botão Copiar Link para Outro Navegador (100% vibrante e destacado) */}
               <button
+                type="button"
                 onClick={handleCopyShopifyOAuthLink}
-                disabled={generatingOAuthLink || !shopifyClientId.trim()}
+                disabled={generatingOAuthLink}
                 title="Gera a URL oficial assinada para você colar na janela/navegador onde sua loja Shopify já está aberta"
-                className="px-4 py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
+                className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/30 active:scale-95 cursor-pointer"
               >
                 {generatingOAuthLink ? (
-                  <Loader2 size={14} className="animate-spin" />
+                  <Loader2 size={15} className="animate-spin" />
                 ) : copiedShopifyAuthLink ? (
-                  <Check size={14} className="text-emerald-400" />
+                  <Check size={15} className="text-white" />
                 ) : (
-                  <Copy size={14} />
+                  <Copy size={15} />
                 )}
                 {copiedShopifyAuthLink
                   ? "✓ Link Copiado! Cole na aba da Shopify"
@@ -1398,21 +1419,22 @@ function IntegrationsContent() {
 
               {/* Botão Conectar Agora (1-Clique) */}
               <button
+                type="button"
                 onClick={handleConnectShopifyOAuth}
-                disabled={!shopifyClientId.trim()}
-                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                className="px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg shadow-blue-600/30 active:scale-95 cursor-pointer"
               >
-                <ExternalLink size={14} />
+                <ExternalLink size={15} />
                 ⚡ Conectar Loja Agora (1-Clique)
               </button>
 
               {/* Botão Salvar Credenciais */}
               <button
+                type="button"
                 onClick={handleSaveShopifyCredentials}
                 disabled={savingShopifyCreds}
-                className="px-3.5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold transition-all flex items-center gap-1.5"
+                className="px-4 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 text-xs font-bold transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
               >
-                {savingShopifyCreds ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                {savingShopifyCreds ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
                 Salvar Credenciais
               </button>
 
@@ -1421,14 +1443,16 @@ function IntegrationsContent() {
                 <>
                   <div className="h-6 w-px bg-zinc-800 mx-1 hidden md:block" />
                   <button
+                    type="button"
                     onClick={() => handleSyncShopify(false)}
                     disabled={syncingShopify}
-                    className="px-3.5 py-2.5 rounded-xl bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
+                    className="px-4 py-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 active:scale-95 cursor-pointer"
                   >
-                    {syncingShopify ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    {syncingShopify ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
                     Sincronizar Pedidos Reais
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       if (window.confirm("Deseja apagar os eventos de hoje e ressincronizar os pedidos limpos da Shopify?")) {
                         handleSyncShopify(true);
@@ -1436,9 +1460,9 @@ function IntegrationsContent() {
                     }}
                     disabled={syncingShopify}
                     title="Apaga os eventos de hoje e ressincroniza limpo direto da Shopify"
-                    className="px-3 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
+                    className="px-3 py-3 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 active:scale-95 cursor-pointer"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={15} />
                   </button>
                 </>
               )}
