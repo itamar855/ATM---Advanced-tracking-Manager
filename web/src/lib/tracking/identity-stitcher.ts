@@ -159,8 +159,7 @@ export async function getVisitorIdentity(
       .from("events")
       .select("meta_response")
       .eq("store_id", finalStoreId)
-      .in("event_name", ["Purchase", "InitiateCheckout", "Lead", "AddToCart"])
-      .not("meta_response->order_details->customer_email", "is", null);
+      .in("event_name", ["Purchase", "InitiateCheckout", "Lead", "AddToCart"]);
 
     if (trackId && fbp) {
       query = query.or(`meta_response->>track_id.eq.${trackId},meta_response->>fbp.eq.${fbp}`);
@@ -396,11 +395,35 @@ export async function retroactivelyEnrichCompletedEvents(
   const supabase = createAdminClient();
 
   try {
-    // Busca eventos das últimas 2 horas dessa loja ESTRITAMENTE deste visitante
+    // 1. Busca credenciais ativas da Meta CAPI
+    let pixelId = process.env.META_PIXEL_ID || "1104875232197441";
+    let accessToken = "";
+    let testEventCode = process.env.META_TEST_EVENT_CODE || undefined;
+
+    try {
+      const { data: integration } = await supabase
+        .from("integrations")
+        .select("*")
+        .eq("platform", "meta")
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (integration) {
+        pixelId = integration.pixel_id || pixelId;
+        accessToken = resolveMetaAccessToken(integration.access_token_enc) || "";
+        testEventCode = integration.config?.test_event_code || testEventCode;
+      }
+    } catch {}
+
+    if (!accessToken) accessToken = process.env.META_ACCESS_TOKEN || "";
+
+    // 2. Busca eventos das últimas 2 horas dessa loja ESTRITAMENTE deste visitante
     const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
     let query = supabase
       .from("events")
-      .select("id, event_name, user_data_keys, meta_response, health_score")
+      .select("id, event_name, event_id, created_at, user_data_keys, meta_response, health_score")
       .eq("store_id", finalStoreId)
       .gte("created_at", twoHoursAgo);
 
@@ -436,10 +459,38 @@ export async function retroactivelyEnrichCompletedEvents(
         keys.push("ln");
         updated = true;
       }
+      if (pii.city && !keys.includes("ct")) {
+        keys.push("ct");
+        updated = true;
+      }
+      if (pii.state && !keys.includes("st")) {
+        keys.push("st");
+        updated = true;
+      }
+      if (pii.zip && !keys.includes("zp")) {
+        keys.push("zp");
+        updated = true;
+      }
+      if (!keys.includes("co")) {
+        keys.push("co");
+      }
+      if (!keys.includes("external_id") && (email || phone || fbp)) {
+        keys.push("external_id");
+        updated = true;
+      }
 
       if (updated) {
-        const activeCount = keys.length;
-        const newScore = Math.min(100, Math.round((activeCount / 8) * 100));
+        // Pesos oficiais EMQ da Meta
+        const weights: Record<string, number> = {
+          em: 20, ph: 15, fbp: 15, fbc: 10, external_id: 10,
+          fn: 5, ln: 5, ct: 5, st: 5, zp: 4, co: 3, client_ip_address: 2, client_user_agent: 1,
+        };
+        let newScore = 0;
+        for (const k of keys) {
+          newScore += weights[k] || 0;
+        }
+        newScore = Math.min(100, Math.round(newScore));
+
         const metaResp = ev.meta_response || {};
         const od = metaResp.order_details || {};
 
@@ -447,6 +498,7 @@ export async function retroactivelyEnrichCompletedEvents(
         if (phone) od.customer_phone = phone;
         if (pii.firstName) od.customer_name = `${pii.firstName} ${pii.lastName || ""}`.trim();
 
+        // 3. Atualiza registro na tabela do Supabase com EMQ maximizado
         await supabase
           .from("events")
           .update({
@@ -455,9 +507,78 @@ export async function retroactivelyEnrichCompletedEvents(
             meta_response: {
               ...metaResp,
               order_details: od,
+              retroactively_enriched: true,
+              enriched_at: new Date().toISOString(),
             },
           })
           .eq("id", ev.id);
+
+        // 4. REENVIO RETROATIVO PARA A META CAPI:
+        // A Meta combina os parâmetros do mesmo event_id elevando o EMQ de todo o funil!
+        if (accessToken && ev.event_id) {
+          const evFbp = metaResp.fbp || metaResp.user_data?.fbp;
+          const evFbc = metaResp.fbc || metaResp.user_data?.fbc;
+          const evClientIp = metaResp.client_ip || metaResp.user_data?.client_ip_address;
+          const evClientUa = metaResp.client_user_agent || metaResp.user_data?.client_user_agent;
+
+          const user_data: MetaEvent["user_data"] = {
+            fbp: fbp || evFbp || undefined,
+            fbc: pii.fbc || evFbc || undefined,
+            client_ip_address: pii.client_ip || evClientIp || undefined,
+            client_user_agent: pii.client_user_agent || evClientUa || undefined,
+          };
+
+          if (email) user_data.em = [hashEmail(email)!];
+          if (phone) user_data.ph = [hashPhone(phone)!];
+          if (pii.firstName) {
+            user_data.fn = [sha256Hash(pii.firstName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
+          }
+          if (pii.lastName) {
+            user_data.ln = [sha256Hash(pii.lastName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
+          }
+          if (pii.city) {
+            user_data.ct = [sha256Hash(pii.city.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
+          }
+          if (pii.state) {
+            user_data.st = [sha256Hash(pii.state.toLowerCase().slice(0, 2))];
+          }
+          if (pii.zip) {
+            user_data.zp = [sha256Hash(pii.zip.replace(/\D/g, ""))];
+          }
+          user_data.co = [sha256Hash("br")];
+
+          if (email) {
+            user_data.external_id = [sha256Hash(`customer:${email}`)];
+          } else if (phone) {
+            user_data.external_id = [sha256Hash(`customer:${phone}`)];
+          } else if (fbp || evFbp) {
+            user_data.external_id = [sha256Hash(`visitor:${fbp || evFbp}`)];
+          }
+
+          const eventTime = Math.floor(new Date(ev.created_at || Date.now()).getTime() / 1000);
+          const metaEvent: MetaEvent = {
+            event_name: ev.event_name,
+            event_time: eventTime,
+            event_id: ev.event_id,
+            event_source_url: metaResp.event_source_url || "https://atacadodasgaiolas.shop",
+            action_source: "website",
+            user_data,
+            custom_data: metaResp.custom_data || {},
+          };
+
+          sendMetaCAPIEvent(
+            { pixelId, accessToken, apiVersion: "v23.0", testEventCode },
+            metaEvent
+          ).then((res) => {
+            if (res.ok) {
+              console.log(
+                `[Identity Stitcher] Evento ${ev.event_name} (${ev.event_id.slice(-8)}) retroalimentado com sucesso na Meta CAPI! Novo EMQ: ${newScore}%`
+              );
+            }
+          }).catch((capiErr) => {
+            console.warn(`[Identity Stitcher] Erro ao despachar retroalimentação CAPI (${ev.event_name}):`, capiErr.message);
+          });
+        }
       }
     }
   } catch (e: any) {

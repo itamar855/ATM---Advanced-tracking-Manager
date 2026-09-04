@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     // Se capturou telefone ou e-mail, atualiza o grafo de identidade e libera o buffer de eventos
     if (phone || email) {
       const { stitchVisitorIdentity, enrichAndFlushBufferedEvents, retroactivelyEnrichCompletedEvents } = await import("@/lib/tracking/identity-stitcher");
-      await stitchVisitorIdentity(store_id, track_id, fbp, {
+      const piiObj = {
         phone,
         email,
         firstName,
@@ -68,10 +68,11 @@ export async function POST(request: NextRequest) {
         client_user_agent,
         fbp,
         fbc,
-      });
+      };
+      await stitchVisitorIdentity(store_id, track_id, fbp, piiObj);
 
-      enrichAndFlushBufferedEvents(store_id, track_id, fbp, { phone, email, firstName, lastName }).catch(() => {});
-      retroactivelyEnrichCompletedEvents(store_id, track_id, fbp, { phone, email, firstName, lastName }).catch(() => {});
+      enrichAndFlushBufferedEvents(store_id, track_id, fbp, piiObj).catch(() => {});
+      retroactivelyEnrichCompletedEvents(store_id, track_id, fbp, piiObj).catch(() => {});
     }
 
     const sessionData = {

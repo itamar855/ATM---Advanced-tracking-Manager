@@ -320,28 +320,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (normalizedOrder.customer.email || normalizedOrder.customer.phone) {
       try {
         const { stitchVisitorIdentity, enrichAndFlushBufferedEvents, retroactivelyEnrichCompletedEvents } = await import("@/lib/tracking/identity-stitcher");
-        stitchVisitorIdentity(storeId, trackId, sessionData.fbp, {
+        const fullPii = {
           phone: normalizedOrder.customer.phone,
           email: normalizedOrder.customer.email,
-          firstName: normalizedOrder.customer.firstName,
-          lastName: normalizedOrder.customer.lastName,
+          firstName: normalizedOrder.customer.firstName || undefined,
+          lastName: normalizedOrder.customer.lastName || undefined,
+          city: normalizedOrder.address.city || undefined,
+          state: normalizedOrder.address.state || undefined,
+          zip: normalizedOrder.address.zip || undefined,
+          country: normalizedOrder.address.country || "BR",
           fbp: sessionData.fbp,
           fbc: sessionData.fbc,
           client_ip: sessionData.client_ip,
           client_user_agent: sessionData.client_user_agent,
-        }).catch(() => {});
+        };
 
-        enrichAndFlushBufferedEvents(storeId, trackId, sessionData.fbp, {
-          phone: normalizedOrder.customer.phone,
-          email: normalizedOrder.customer.email,
-          firstName: normalizedOrder.customer.firstName,
-          lastName: normalizedOrder.customer.lastName,
-        }).catch(() => {});
-
-        retroactivelyEnrichCompletedEvents(storeId, trackId, sessionData.fbp, {
-          phone: normalizedOrder.customer.phone,
-          email: normalizedOrder.customer.email,
-        }).catch(() => {});
+        stitchVisitorIdentity(storeId, trackId, sessionData.fbp, fullPii).catch(() => {});
+        enrichAndFlushBufferedEvents(storeId, trackId, sessionData.fbp, fullPii).catch(() => {});
+        retroactivelyEnrichCompletedEvents(storeId, trackId, sessionData.fbp, fullPii).catch(() => {});
       } catch {}
     }
 
