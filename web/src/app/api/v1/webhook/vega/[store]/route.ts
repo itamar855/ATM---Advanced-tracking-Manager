@@ -38,40 +38,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const isBoleto = paymentMethodRaw.includes("boleto");
     const isCard = paymentMethodRaw.includes("card") || paymentMethodRaw.includes("cartao") || paymentMethodRaw.includes("credit");
 
-    // Validação estrita se o Pix foi REALMENTE gerado (tem QR Code ou Copia-e-Cola emitido pelo gateway)
-    const hasPixData = Boolean(
-      (payload.pix_qr_code && String(payload.pix_qr_code).trim() !== "") ||
-      (payload.pix_code && String(payload.pix_code).trim() !== "") ||
-      (payload.pix_copy_paste && String(payload.pix_copy_paste).trim() !== "") ||
-      (payload.qr_code && String(payload.qr_code).trim() !== "") ||
-      (payload.qrcode && String(payload.qrcode).trim() !== "") ||
-      (payload.qr_code_base64 && String(payload.qr_code_base64).trim() !== "") ||
-      payload.point_of_interaction?.transaction_data?.qr_code ||
-      (payload.data?.pix_qr_code && String(payload.data?.pix_qr_code).trim() !== "") ||
-      (payload.data?.qr_code && String(payload.data?.qr_code).trim() !== "") ||
-      (payload.order?.pix_code && String(payload.order?.pix_code).trim() !== "") ||
-      (payload.transaction?.pix_code && String(payload.transaction?.pix_code).trim() !== "")
-    );
+    const eventStr = `${eventType} ${status}`.toLowerCase();
+    const isPendingOrder = eventStr.includes("pending") || eventStr.includes("waiting") || eventStr.includes("aguardando") || eventType === "ORDER_CREATED";
 
-    // Validação estrita de Boleto REALMENTE gerado (tem código de barras ou URL emitida)
-    const hasBoletoData = Boolean(
-      (payload.boleto_url && String(payload.boleto_url).trim() !== "") ||
-      (payload.boleto_barcode && String(payload.boleto_barcode).trim() !== "") ||
-      (payload.boleto_number && String(payload.boleto_number).trim() !== "") ||
-      (payload.data?.boleto_url && String(payload.data?.boleto_url).trim() !== "") ||
-      (payload.data?.boleto_barcode && String(payload.data?.boleto_barcode).trim() !== "") ||
-      (payload.order?.boleto_url && String(payload.order?.boleto_url).trim() !== "")
-    );
-
-    // BLINDAGEM ESTREITA: Jamais considera PIX ou Boleto gerado se não houver a chave/documento emitido!
-    // Se o cliente apenas avançou para a tela de pagamento e abandonou, NÃO É PIX GERADO (é apenas InitiateCheckout sem notificação).
-    const isRealPixPending = isPix && hasPixData;
-    const isRealBoletoPending = isBoleto && hasBoletoData;
+    // Identificação direta de pendente: status pendente + método PIX ou Boleto
+    const isPixPending = isPendingOrder && isPix;
+    const isBoletoPending = isPendingOrder && isBoleto;
 
     let metaEventName: "Purchase" | "InitiateCheckout" | "AddPaymentInfo" = "Purchase";
     let isTrackable = false;
-
-    const eventStr = `${eventType} ${status}`.toLowerCase();
 
     if (
       eventStr.includes("paid") ||
@@ -83,16 +58,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     ) {
       metaEventName = "Purchase";
       isTrackable = true;
-    } else if (isRealPixPending || isRealBoletoPending) {
+    } else if (isPixPending || isBoletoPending) {
       metaEventName = "AddPaymentInfo";
       isTrackable = true;
     } else if (
       eventStr.includes("abandon") ||
       eventStr.includes("carrinho_abandonado") ||
-      eventStr.includes("waiting") ||
-      eventStr.includes("aguardando") ||
-      eventStr.includes("pending") ||
-      eventType === "ORDER_CREATED"
+      isPendingOrder
     ) {
       metaEventName = "InitiateCheckout";
       isTrackable = true;
@@ -124,6 +96,71 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     if (!orderId) {
       return NextResponse.json({ ok: false, error: "Identificador do pedido/carrinho ausente" }, { status: 400 });
+    }
+
+    // Normalização prévia de dados para notificação antecipada de pedidos pendentes
+    const customer = payload.customer || payload.buyer || payload.client || {};
+    const rawAddress =
+      payload.address ||
+      payload.customer?.address ||
+      payload.shipping_address ||
+      payload.billing_address ||
+      payload.shippingAddress ||
+      payload.billingAddress ||
+      {};
+
+    let orderValue = 0;
+    if (payload.total_price !== undefined && payload.total_price !== null) {
+      orderValue = Number(payload.total_price);
+    } else if (payload.totalPrice !== undefined && payload.totalPrice !== null) {
+      orderValue = Number(payload.totalPrice);
+    } else if (payload.value !== undefined && payload.value !== null) {
+      orderValue = Number(payload.value);
+    } else if (payload.amount !== undefined && payload.amount !== null) {
+      orderValue = Number(payload.amount);
+    } else if (payload.total_amount !== undefined && payload.total_amount !== null) {
+      orderValue = Number(payload.total_amount);
+    } else if (payload.totalPriceInCents !== undefined && payload.totalPriceInCents !== null) {
+      orderValue = Number(payload.totalPriceInCents) / 100;
+    } else if (payload.total !== undefined && payload.total !== null) {
+      orderValue = Number(payload.total);
+    }
+
+    const rawProducts = payload.items || payload.products || payload.line_items || [];
+    const products = rawProducts.map((item: any) => ({
+      id: String(item.id || item.product_id || item.variant_id || "PROD"),
+      name: item.title || item.name || "Produto",
+      quantity: Number(item.quantity || 1),
+      price: Number(item.price || item.unit_price || 0),
+    }));
+
+    const earlyCustomerName = `${(customer.name || customer.first_name || payload.name || "").split(" ")[0]} ${(customer.name || customer.first_name || payload.name || "").split(" ").slice(1).join(" ") || customer.last_name || ""}`.trim() || "Cliente";
+
+    // Disparo antecipado de notificação para pedidos pendentes (desacoplado da Meta CAPI)
+    if (isPixPending || isBoletoPending) {
+      const cleanPendingMethod = isPixPending ? "PIX" : "BOLETO";
+      console.log("[NOTIFICATION_PENDING_TRIGGER]", {
+        orderId,
+        paymentMethod: cleanPendingMethod,
+        status: status || eventType,
+        storeId,
+      });
+
+      try {
+        const { dispatchOrderNotification } = await import("@/lib/notifications/notification-service");
+        await dispatchOrderNotification({
+          storeId,
+          orderId,
+          type: "pending",
+          value: orderValue,
+          currency: payload.currency || "BRL",
+          paymentMethod: cleanPendingMethod,
+          customerName: earlyCustomerName,
+          itemsSummary: products?.[0]?.name || payload.items?.[0]?.title,
+        });
+      } catch (pushErr) {
+        console.warn("[Notification Vega Pending Error]:", pushErr);
+      }
     }
 
     // 1. Lock de Idempotência (para Purchase em produção real)
@@ -180,7 +217,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // 3. Normalização dos dados do cliente e pedido do Vega Checkout
-    const customer = payload.customer || payload.buyer || payload.client || {};
     const address = payload.address || payload.shipping_address || payload.billing_address || {};
     const trackingParams = payload.tracking_params || payload.trackingParameters || payload.metadata || {};
 
@@ -190,41 +226,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const utmContent = trackingParams.utm_content || payload.utm_content || "";
     const utmTerm = trackingParams.utm_term || payload.utm_term || "";
     const trackId = trackingParams.track_id || trackingParams._ztid || payload.track_id || "";
-
-    // Valor da transação (cobrindo todas as variações de payload do Vega / Zedy / Gateways)
-    let orderValue = 0;
-    if (payload.total_price !== undefined && payload.total_price !== null) {
-      orderValue = Number(payload.total_price);
-    } else if (payload.totalPrice !== undefined && payload.totalPrice !== null) {
-      orderValue = Number(payload.totalPrice);
-    } else if (payload.value !== undefined && payload.value !== null) {
-      orderValue = Number(payload.value);
-    } else if (payload.amount !== undefined && payload.amount !== null) {
-      orderValue = Number(payload.amount);
-    } else if (payload.total_amount !== undefined && payload.total_amount !== null) {
-      orderValue = Number(payload.total_amount);
-    } else if (payload.totalPriceInCents !== undefined && payload.totalPriceInCents !== null) {
-      orderValue = Number(payload.totalPriceInCents) / 100;
-    } else if (payload.total !== undefined && payload.total !== null) {
-      orderValue = Number(payload.total);
-    }
-
-    const rawProducts = payload.items || payload.products || payload.line_items || [];
-    const products = rawProducts.map((item: any) => ({
-      id: String(item.id || item.product_id || item.variant_id || "PROD"),
-      name: item.title || item.name || "Produto",
-      quantity: Number(item.quantity || 1),
-      price: Number(item.price || item.unit_price || 0),
-    }));
-
-    const rawAddress =
-      payload.address ||
-      payload.customer?.address ||
-      payload.shipping_address ||
-      payload.billing_address ||
-      payload.shippingAddress ||
-      payload.billingAddress ||
-      {};
 
     const normalizedOrder: NormalizedOrder = {
       orderId,
@@ -411,59 +412,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       orderId
     );
 
-    // 8. Disparo de Notificação Telegram
-    try {
-      const { data: storeData } = await supabase
-        .from("stores")
-        .select("telegram_bot_token, telegram_chat_id, telegram_notify_approved, telegram_notify_pending")
-        .eq("id", storeId)
-        .maybeSingle();
-
-      const isApprovedNotify = metaEventName === "Purchase";
-      const shouldSendPendingNotification = isRealPixPending || isRealBoletoPending;
-      
-      const shouldNotify = 
-        (isApprovedNotify && storeData?.telegram_notify_approved !== false) ||
-        (!isApprovedNotify && shouldSendPendingNotification && storeData?.telegram_notify_pending !== false);
-
-      if (storeData?.telegram_bot_token && storeData?.telegram_chat_id && shouldNotify) {
-        const formattedValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: payload.currency || 'BRL' }).format(orderValue);
-        const customerName = `${normalizedOrder.customer.firstName} ${normalizedOrder.customer.lastName}`.trim() || "Cliente Identificado";
-        
-        const emoji = isApprovedNotify ? "💰" : (isRealPixPending ? "🟡" : "📄");
-        const statusText = isApprovedNotify ? "Venda Aprovada" : (isRealPixPending ? "Pix Gerado" : "Boleto Gerado");
-        const cleanMethod = isRealPixPending ? "PIX" : (isRealBoletoPending ? "BOLETO" : (isCard ? "CARTÃO" : "PEDIDO"));
-        const message = `${emoji} *${statusText}!*\n\n*Valor:* ${formattedValue}\n*Gateway:* Vega (${cleanMethod})\n*Produto:* ${products?.[0]?.title || 'Não informado'}\n*Cliente:* ${customerName}`;
-
-        fetch(`https://api.telegram.org/bot${storeData.telegram_bot_token}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: storeData.telegram_chat_id,
-            text: message,
-            parse_mode: "Markdown"
-          })
-        }).catch(err => console.error("[Telegram Push Error (Vega)]", err));
-      }
-    } catch (e) {
-      console.error("Erro ao buscar store para Telegram (Vega):", e);
-    }
-
-    // Disparo de Notificação Web Push Nativa (iPhone / Android / PC)
-    if (metaEventName === "Purchase" || isRealPixPending || isRealBoletoPending) {
+    // 8. Disparo unificado de notificação interna (Realtime + Toast) + Web Push nativo para compra aprovada
+    if (metaEventName === "Purchase") {
       try {
-        const { sendStorePushNotification } = await import("@/lib/notifications/web-push");
-        const pushType = metaEventName === "Purchase" ? "approved" : "pending";
-        const cleanMethod = isRealPixPending ? "PIX" : (isRealBoletoPending ? "BOLETO" : (isCard ? "CARTÃO" : "PEDIDO"));
+        const cleanApprovedMethod = isCard ? "CARTÃO" : (paymentMethodRaw.includes("pix") ? "PIX" : (paymentMethodRaw.includes("boleto") ? "BOLETO" : "PEDIDO"));
         const customerName = `${normalizedOrder.customer.firstName || ""} ${normalizedOrder.customer.lastName || ""}`.trim() || "Cliente";
-        sendStorePushNotification(storeId, pushType, {
+        const { dispatchOrderNotification } = await import("@/lib/notifications/notification-service");
+        await dispatchOrderNotification({
+          storeId,
           orderId,
+          type: "approved",
           value: orderValue,
+          currency: payload.currency || "BRL",
+          paymentMethod: cleanApprovedMethod,
           customerName,
-          paymentMethod: cleanMethod,
-          itemsSummary: products?.[0]?.title,
-        }).catch((pushErr) => console.warn("[Web Push Vega Error]:", pushErr));
-      } catch {}
+          itemsSummary: products?.[0]?.name || products?.[0]?.title,
+        });
+      } catch (pushErr) {
+        console.warn("[Notification Vega Approved Error]:", pushErr);
+      }
     }
 
     return NextResponse.json({

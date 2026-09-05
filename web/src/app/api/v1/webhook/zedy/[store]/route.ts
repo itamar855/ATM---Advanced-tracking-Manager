@@ -46,44 +46,61 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const isBoleto = paymentMethodRaw.includes("boleto");
     const isCard = paymentMethodRaw.includes("card") || paymentMethodRaw.includes("cartao") || paymentMethodRaw.includes("credit");
 
-    // Validação estrita se o Pix foi REALMENTE gerado (tem QR Code ou Copia-e-Cola emitido pelo gateway)
-    const hasPixData = Boolean(
-      (payload.pix_qr_code && String(payload.pix_qr_code).trim() !== "") ||
-      (payload.pix_code && String(payload.pix_code).trim() !== "") ||
-      (payload.pix_copy_paste && String(payload.pix_copy_paste).trim() !== "") ||
-      (payload.qr_code && String(payload.qr_code).trim() !== "") ||
-      (payload.qrcode && String(payload.qrcode).trim() !== "") ||
-      (payload.qr_code_base64 && String(payload.qr_code_base64).trim() !== "") ||
-      payload.point_of_interaction?.transaction_data?.qr_code ||
-      (payload.data?.pix_qr_code && String(payload.data?.pix_qr_code).trim() !== "") ||
-      (payload.data?.qr_code && String(payload.data?.qr_code).trim() !== "") ||
-      (payload.order?.pix_code && String(payload.order?.pix_code).trim() !== "") ||
-      (payload.transaction?.pix_code && String(payload.transaction?.pix_code).trim() !== "")
-    );
+    // Identificação direta de pendente: status pendente + método PIX ou Boleto
+    const isPixPending = isPending && isPix;
+    const isBoletoPending = isPending && isBoleto;
 
-    // Validação estrita de Boleto REALMENTE gerado (tem código de barras ou URL emitida)
-    const hasBoletoData = Boolean(
-      (payload.boleto_url && String(payload.boleto_url).trim() !== "") ||
-      (payload.boleto_barcode && String(payload.boleto_barcode).trim() !== "") ||
-      (payload.boleto_number && String(payload.boleto_number).trim() !== "") ||
-      (payload.data?.boleto_url && String(payload.data?.boleto_url).trim() !== "") ||
-      (payload.data?.boleto_barcode && String(payload.data?.boleto_barcode).trim() !== "") ||
-      (payload.order?.boleto_url && String(payload.order?.boleto_url).trim() !== "")
-    );
+    // Normalização inicial do cliente e valor para notificação antecipada
+    const customer = payload.customer || {};
+    const address = payload.address || {};
+    const rawValue = payload.commission?.totalPriceInCents ||
+      (payload.products || []).reduce((acc: number, p: any) => acc + (p.priceInCents * (p.quantity || 1)), 0);
+    const orderValue = Number(rawValue || 0) / 100; // Converte centavos para reais
 
-    // BLINDAGEM ESTREITA: Jamais considera PIX ou Boleto gerado se não houver a chave/documento emitido!
-    // Se o cliente apenas avançou para a tela de pagamento e abandonou, NÃO É PIX GERADO (é apenas InitiateCheckout sem notificação).
-    const isRealPixPending = isPix && hasPixData;
-    const isRealBoletoPending = isBoleto && hasBoletoData;
+    // Método de pagamento — Zedy pode enviar em vários campos
+    const paymentMethod =
+      payload.paymentMethod ||
+      payload.payment_method ||
+      payload.gateway ||
+      payload.payment_type ||
+      (payload.commission?.paymentMethod) ||
+      "";
+
+    // Disparo antecipado de notificação para pedidos pendentes (desacoplado da Meta CAPI)
+    if (isPixPending || isBoletoPending) {
+      const cleanPendingMethod = isPixPending ? "PIX" : "BOLETO";
+      console.log("[NOTIFICATION_PENDING_TRIGGER]", {
+        orderId,
+        paymentMethod: cleanPendingMethod,
+        status: status || eventType,
+        storeId,
+      });
+
+      try {
+        const { dispatchOrderNotification } = await import("@/lib/notifications/notification-service");
+        await dispatchOrderNotification({
+          storeId,
+          orderId,
+          type: "pending",
+          value: orderValue,
+          currency: payload.currency || "BRL",
+          paymentMethod: cleanPendingMethod,
+          customerName: customer.name || payload.customer?.name,
+          itemsSummary: payload.items?.[0]?.title || payload.products?.[0]?.name,
+        });
+      } catch (pushErr) {
+        console.warn("[Notification Zedy Pending Error]:", pushErr);
+      }
+    }
 
     // Define evento Meta CAPI:
     // Purchase = venda confirmada
-    // AddPaymentInfo = PIX gerado ou Boleto impresso real
-    // InitiateCheckout = carrinho criado / início de checkout sem método de pagamento finalizado
+    // AddPaymentInfo = PIX gerado ou Boleto pendente
+    // InitiateCheckout = carrinho criado / abandono sem método
     let metaEventName: "Purchase" | "AddPaymentInfo" | "InitiateCheckout" = "Purchase";
     if (isApproved) {
       metaEventName = "Purchase";
-    } else if (isRealPixPending || isRealBoletoPending) {
+    } else if (isPixPending || isBoletoPending) {
       metaEventName = "AddPaymentInfo";
     } else {
       metaEventName = "InitiateCheckout";
@@ -132,9 +149,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // 3. Normaliza os dados vindos do Zedy de acordo com o Schema oficial:
-    const customer = payload.customer || {};
-    const address = payload.address || {};
-    
     // Zedy envia parâmetros de rastreamento no objeto trackingParameters
     const trackingParams = payload.trackingParameters || {};
     const utmSource = trackingParams.utm_source || payload.utm_source || "";
@@ -159,20 +173,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       payload._ztid ||
       checkoutUrlParams.get("track_id") ||
       checkoutUrlParams.get("_ztid") ||
-      "";
-
-    // Calcula valor total com base no commission ou somatório de priceInCents
-    const rawValue = payload.commission?.totalPriceInCents ||
-      (payload.products || []).reduce((acc: number, p: any) => acc + (p.priceInCents * (p.quantity || 1)), 0);
-    const orderValue = Number(rawValue || 0) / 100; // Converte centavos para reais
-
-    // Método de pagamento — Zedy pode enviar em vários campos
-    const paymentMethod =
-      payload.paymentMethod ||
-      payload.payment_method ||
-      payload.gateway ||
-      payload.payment_type ||
-      (payload.commission?.paymentMethod) ||
       "";
 
     const normalizedOrder: NormalizedOrder = {
@@ -407,59 +407,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       emqScore
     );
 
-    // 8. Disparo de Notificação Pushcut
-    try {
-      const { data: storeData } = await supabase
-        .from("stores")
-        .select("telegram_bot_token, telegram_chat_id, telegram_notify_approved, telegram_notify_pending")
-        .eq("id", storeId)
-        .maybeSingle();
-
-      const isApprovedNotify = isApproved;
-      // Somente notifica pendente se for comprovadamente PIX Gerado ou Boleto Gerado!
-      const shouldSendPendingNotification = isRealPixPending || isRealBoletoPending;
-
-      const shouldNotifyTelegram = 
-        (isApprovedNotify && storeData?.telegram_notify_approved !== false) || 
-        (!isApprovedNotify && shouldSendPendingNotification && storeData?.telegram_notify_pending !== false);
-
-      if (storeData?.telegram_bot_token && storeData?.telegram_chat_id && shouldNotifyTelegram) {
-        const emoji = isApprovedNotify ? "💰" : (isRealPixPending ? "🟡" : "📄");
-        const statusText = isApprovedNotify ? "Venda Aprovada" : (isRealPixPending ? "Pix Gerado" : "Boleto Gerado");
-        const valueText = orderValue > 0 ? `R$ ${orderValue.toFixed(2).replace('.', ',')}` : "Valor indefinido";
-        const methodLabel = isRealPixPending ? "PIX" : (isRealBoletoPending ? "Boleto" : (isCard ? "Cartão" : "Outro"));
-        const message = `${emoji} *${statusText}!*\n\n*Valor:* ${valueText}\n*Gateway:* Zedy (${methodLabel})\n*Produto:* ${payload.items?.[0]?.title || payload.products?.[0]?.name || 'Não informado'}\n*Cliente:* ${customer.name || payload.customer?.name || 'Não informado'}`;
-
-        fetch(`https://api.telegram.org/bot${storeData.telegram_bot_token}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: storeData.telegram_chat_id,
-            text: message,
-            parse_mode: "Markdown"
-          })
-        }).catch(err => console.error("[Telegram Push Error]", err));
-      }
-    } catch (e) {
-      console.error("Erro ao buscar store para Telegram (Zedy):", e);
-    }
-
-    // 8.1 Disparo de Notificação Web Push Nativa (iPhone / Android / PC)
-    // Apenas dispara para compras aprovadas OU PIX/Boleto gerados de verdade!
-    const shouldSendPush = isApproved || isRealPixPending || isRealBoletoPending;
-    if (shouldSendPush) {
+    // 8. Disparo unificado de notificação interna (Realtime + Toast) + Web Push nativo para compra aprovada
+    if (isApproved) {
       try {
-        const { sendStorePushNotification } = await import("@/lib/notifications/web-push");
-        const pushType = isApproved ? "approved" : "pending";
-        const cleanMethod = isRealPixPending ? "PIX" : (isRealBoletoPending ? "BOLETO" : (isCard ? "CARTÃO" : "PEDIDO"));
-        sendStorePushNotification(storeId, pushType, {
+        const cleanApprovedMethod = isCard ? "CARTÃO" : (paymentMethodRaw.includes("pix") ? "PIX" : (paymentMethodRaw.includes("boleto") ? "BOLETO" : "PEDIDO"));
+        const { dispatchOrderNotification } = await import("@/lib/notifications/notification-service");
+        await dispatchOrderNotification({
+          storeId,
           orderId,
+          type: "approved",
           value: orderValue,
+          currency: payload.currency || "BRL",
+          paymentMethod: cleanApprovedMethod,
           customerName: customer.name || payload.customer?.name,
-          paymentMethod: cleanMethod,
           itemsSummary: payload.items?.[0]?.title || payload.products?.[0]?.name,
-        }).catch((pushErr) => console.warn("[Web Push Zedy Error]:", pushErr));
-      } catch {}
+        });
+      } catch (pushErr) {
+        console.warn("[Notification Zedy Approved Error]:", pushErr);
+      }
     }
 
     return NextResponse.json({ ok: true, metaResponse, emq_score: emqScore, signals_sent: userDataKeys });

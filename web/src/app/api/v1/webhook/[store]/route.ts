@@ -23,7 +23,51 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const payload = JSON.parse(rawBody);
     const orderId = String(payload.id);
 
-    // 1. Lock de Idempotência
+    const isPending = payload.financial_status === "pending" || payload.financial_status === "authorized";
+
+    // 1. Tratamento específico para criação de pedido pendente (PIX/Boleto aguardando pagamento)
+    // Não adquire lock de Purchase para permitir que orders/paid seja processado quando o pagamento for aprovado
+    if (topicHeader === "orders/create" && isPending) {
+      const gatewayRaw = String(payload.payment_gateway_names?.[0] || payload.gateway || "").toLowerCase();
+      let cleanPaymentMethod = "PEDIDO";
+      if (gatewayRaw.includes("pix")) cleanPaymentMethod = "PIX";
+      else if (gatewayRaw.includes("boleto")) cleanPaymentMethod = "BOLETO";
+      else if (gatewayRaw.includes("card") || gatewayRaw.includes("cartao") || gatewayRaw.includes("credit")) cleanPaymentMethod = "CARTÃO";
+      else if (gatewayRaw) cleanPaymentMethod = gatewayRaw.toUpperCase();
+      const customerName = `${payload.customer?.first_name || ""} ${payload.customer?.last_name || ""}`.trim() || "Cliente";
+
+      console.log("[NOTIFICATION_PENDING_TRIGGER]", {
+        orderId,
+        paymentMethod: cleanPaymentMethod,
+        status: payload.financial_status,
+        storeId,
+      });
+
+      try {
+        const { dispatchOrderNotification } = await import("@/lib/notifications/notification-service");
+        await dispatchOrderNotification({
+          storeId,
+          orderId,
+          type: "pending",
+          value: Number(payload.total_price || 0),
+          currency: payload.currency || "BRL",
+          paymentMethod: cleanPaymentMethod,
+          customerName,
+          itemsSummary: payload.line_items?.[0]?.title,
+        });
+      } catch (e: any) {
+        console.warn("[Shopify Webhook Pending Notification Error]:", e?.message);
+      }
+
+      return NextResponse.json({
+        ok: true,
+        message: "Pedido pendente registrado e notificado com sucesso",
+        order_id: orderId,
+        type: "pending",
+      }, { status: 200 });
+    }
+
+    // 2. Lock de Idempotência para Venda Aprovada (Purchase)
     const lock = await reservePurchase(storeId, orderId);
     if (!lock.acquired) {
       if (lock.state === "sent") {
@@ -232,7 +276,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .eq("event_id", metaEvent.event_id)
         .eq("source", "server");
 
-      const isPending = payload.financial_status === "pending" || payload.financial_status === "authorized";
       const gatewayRaw = String(payload.payment_gateway_names?.[0] || payload.gateway || "").toLowerCase();
       let cleanPaymentMethod = "PEDIDO";
       if (gatewayRaw.includes("pix")) cleanPaymentMethod = "PIX";
@@ -240,53 +283,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       else if (gatewayRaw.includes("card") || gatewayRaw.includes("cartao") || gatewayRaw.includes("credit")) cleanPaymentMethod = "CARTÃO";
       else if (gatewayRaw) cleanPaymentMethod = gatewayRaw.toUpperCase();
 
-      // Disparo de Notificação Telegram
+      const customerName = `${normalizedOrder.customer.firstName || ""} ${normalizedOrder.customer.lastName || ""}`.trim() || "Cliente";
+
+      // Disparo unificado de notificação interna (Realtime + Toast) + Web Push nativo
       try {
-        const { data: storeData } = await supabase
-          .from("stores")
-          .select("telegram_bot_token, telegram_chat_id, telegram_notify_approved, telegram_notify_pending")
-          .eq("id", storeId)
-          .maybeSingle();
-
-        const shouldNotify = 
-          (isPending && storeData?.telegram_notify_pending !== false) ||
-          (!isPending && storeData?.telegram_notify_approved !== false);
-
-        if (storeData?.telegram_bot_token && storeData?.telegram_chat_id && shouldNotify) {
-          const formattedValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: payload.currency || 'BRL' }).format(Number(payload.total_price || 0));
-          const customerName = `${normalizedOrder.customer.firstName} ${normalizedOrder.customer.lastName}`.trim() || "Cliente Identificado";
-          
-          const emoji = isPending ? "🟡" : "💰";
-          const statusText = isPending ? (cleanPaymentMethod === "PIX" ? "Pix Gerado" : (cleanPaymentMethod === "BOLETO" ? "Boleto Gerado" : "Venda Pendente")) : "Venda Aprovada";
-          const message = `${emoji} *${statusText}!*\n\n*Valor:* ${formattedValue}\n*Gateway:* Shopify (${cleanPaymentMethod})\n*Produto:* ${payload.line_items?.[0]?.title || 'Não informado'}\n*Cliente:* ${customerName}`;
-
-          fetch(`https://api.telegram.org/bot${storeData.telegram_bot_token}/sendMessage`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              chat_id: storeData.telegram_chat_id,
-              text: message,
-              parse_mode: "Markdown"
-            })
-          }).catch(err => console.error("[Telegram Push Error (Shopify)]", err));
-        }
-      } catch (e) {
-        console.error("Erro ao buscar store para Telegram (Shopify):", e);
-      }
-
-      // Disparo de Notificação Web Push Nativa (iPhone / Android / PC)
-      try {
-        const { sendStorePushNotification } = await import("@/lib/notifications/web-push");
-        const pushType = isPending ? "pending" : "approved";
-        const customerName = `${normalizedOrder.customer.firstName || ""} ${normalizedOrder.customer.lastName || ""}`.trim() || "Cliente";
-        sendStorePushNotification(storeId, pushType, {
+        const { dispatchOrderNotification } = await import("@/lib/notifications/notification-service");
+        await dispatchOrderNotification({
+          storeId,
           orderId,
+          type: "approved",
           value: Number(payload.total_price || 0),
-          customerName,
+          currency: payload.currency || "BRL",
           paymentMethod: cleanPaymentMethod,
+          customerName,
           itemsSummary: payload.line_items?.[0]?.title,
-        }).catch((pushErr) => console.warn("[Web Push Shopify Error]:", pushErr));
-      } catch {}
+        });
+      } catch (pushErr) {
+        console.warn("[Notification Shopify Approved Error]:", pushErr);
+      }
 
       return NextResponse.json({
         ok: true,
