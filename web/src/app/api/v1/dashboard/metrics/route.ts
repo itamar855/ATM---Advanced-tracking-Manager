@@ -202,26 +202,65 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 5. Busca vendas aprovadas NO PERÍODO HARMONIZADO (usando effectiveStartDate e queryEndUtc)
-    const { data: allPurchases } = await supabase
-      .from("events")
-      .select("id, event_name, meta_response, created_at")
-      .eq("store_id", storeId)
-      .eq("event_name", "Purchase")
-      .eq("status", "accepted")
-      .gte("created_at", effectiveStartDate)
-      .lte("created_at", queryEndUtc)
-      .order("created_at", { ascending: false });
+    // Normalizador tolerante a zeros à esquerda (ex: USD 01 = USD 1, USD 02 = USD 2, USD 03 = USD 3)
+    const normalizeMeta = (str: string): string => {
+      return String(str || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "")
+        .replace(/([a-z])0+(\d)/g, "$1$2");
+    };
 
-    // 6. Busca vendas pendentes (PIX/Boleto aguardando pagamento) no período
-    const { data: pendingPurchases } = await supabase
-      .from("events")
-      .select("meta_response")
-      .eq("store_id", storeId)
-      .eq("event_name", "Purchase")
-      .eq("status", "pending")
-      .gte("created_at", effectiveStartDate)
-      .lte("created_at", queryEndUtc);
+    const targetAccount = availableAccounts.find((a) => a.id === selectedAccountId);
+    const targetAccNorm = targetAccount ? normalizeMeta(targetAccount.name) : "";
+    const targetAccIdNum = selectedAccountId.replace(/^act_/, "");
+    const formattedTargetId = selectedAccountId.startsWith("act_") ? selectedAccountId : `act_${selectedAccountId}`;
+
+    const targetCampaignIds = new Set<string>();
+    const campPromise = (selectedAccountId !== "all" && token)
+      ? (async () => {
+          try {
+            const campRes = await fetch(
+              `https://graph.facebook.com/v23.0/${formattedTargetId}/campaigns?fields=id,name&limit=150&access_token=${token}`,
+              { cache: "no-store" }
+            );
+            if (campRes.ok) {
+              const campData = await campRes.json();
+              if (Array.isArray(campData.data)) {
+                campData.data.forEach((c: any) => {
+                  if (c.id) targetCampaignIds.add(String(c.id));
+                });
+              }
+            }
+          } catch (e) {
+            console.warn(`[Dashboard Metrics] Erro ao buscar campanhas da conta ${formattedTargetId}:`, e);
+          }
+        })()
+      : Promise.resolve();
+
+    // 5. Busca vendas aprovadas NO PERÍODO HARMONIZADO (usando effectiveStartDate e queryEndUtc)
+    const [purchasesResult, pendingResult] = await Promise.all([
+      supabase
+        .from("events")
+        .select("id, event_name, meta_response, created_at")
+        .eq("store_id", storeId)
+        .eq("event_name", "Purchase")
+        .eq("status", "accepted")
+        .gte("created_at", effectiveStartDate)
+        .lte("created_at", queryEndUtc)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("events")
+        .select("meta_response")
+        .eq("store_id", storeId)
+        .eq("event_name", "Purchase")
+        .eq("status", "pending")
+        .gte("created_at", effectiveStartDate)
+        .lte("created_at", queryEndUtc),
+      campPromise,
+    ]);
+
+    const allPurchases = purchasesResult.data || [];
+    const pendingPurchases = pendingResult.data || [];
 
     // Busca regras de impostos e taxas configuradas pelo usuário para esta loja
     const { data: storeTaxesAndDuties } = await supabase
@@ -248,8 +287,6 @@ export async function GET(request: NextRequest) {
     let iqSalesCount = 0;
     let naSalesCount = 0;
 
-    const targetAccount = availableAccounts.find((a) => a.id === selectedAccountId);
-    const targetAccNameClean = targetAccount ? targetAccount.name.toLowerCase().replace(/[^a-z0-9]/g, "") : "";
     const seenOrderIds = new Set<string>();
 
     (allPurchases || []).forEach((ev) => {
@@ -265,14 +302,19 @@ export async function GET(request: NextRequest) {
       }
       if (orderId) seenOrderIds.add(orderId);
 
-      const utmCampaign = String(customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-      const utmSource = String(customData.utm_source || orderDetails.utm_source || tracking.utm_source || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const rawCamp = String(customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || "").trim();
+      const rawSrc = String(customData.utm_source || orderDetails.utm_source || tracking.utm_source || "").trim();
+      const campId = rawCamp.includes("|") ? rawCamp.split("|")[1].trim() : (customData.campaign_id || orderDetails.campaign_id || "");
+
+      const normCamp = normalizeMeta(rawCamp);
+      const normSrc = normalizeMeta(rawSrc);
 
       // Se uma conta específica foi selecionada, só contabiliza vendas atribuídas a ela
       if (selectedAccountId !== "all") {
         const matchesAccount =
-          (targetAccNameClean && (utmCampaign.includes(targetAccNameClean) || utmSource.includes(targetAccNameClean))) ||
-          (String(customData.utm_source || "").includes(selectedAccountId));
+          (campId && targetCampaignIds.has(campId)) ||
+          (targetAccNorm && (normCamp.includes(targetAccNorm) || normSrc.includes(targetAccNorm))) ||
+          (rawSrc.includes(targetAccIdNum) || String(customData.ad_account_id || orderDetails.ad_account_id || "").includes(targetAccIdNum));
         if (!matchesAccount) return;
       }
 
@@ -387,6 +429,22 @@ export async function GET(request: NextRequest) {
       const metaResp = ev.meta_response || {};
       const orderDetails = metaResp.order_details || {};
       const customData = metaResp.custom_data || {};
+      const tracking = orderDetails.tracking_params || {};
+
+      if (selectedAccountId !== "all") {
+        const rawCamp = String(customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || "").trim();
+        const rawSrc = String(customData.utm_source || orderDetails.utm_source || tracking.utm_source || "").trim();
+        const campId = rawCamp.includes("|") ? rawCamp.split("|")[1].trim() : (customData.campaign_id || orderDetails.campaign_id || "");
+        const normCamp = normalizeMeta(rawCamp);
+        const normSrc = normalizeMeta(rawSrc);
+
+        const matchesAccount =
+          (campId && targetCampaignIds.has(campId)) ||
+          (targetAccNorm && (normCamp.includes(targetAccNorm) || normSrc.includes(targetAccNorm))) ||
+          (rawSrc.includes(targetAccIdNum) || String(customData.ad_account_id || orderDetails.ad_account_id || "").includes(targetAccIdNum));
+        if (!matchesAccount) return;
+      }
+
       pendingSalesValue += Number(orderDetails.value || customData.value || 0);
     });
 

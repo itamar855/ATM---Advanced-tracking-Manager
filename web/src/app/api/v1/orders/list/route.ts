@@ -34,15 +34,23 @@ export async function GET(request: NextRequest) {
       const metaResp = ev.meta_response || {};
       const orderDetails = metaResp.order_details || {};
       const customData = metaResp.custom_data || {};
-      const tracking = orderDetails.tracking_params || {};
+      const tracking = orderDetails.tracking_params || customData.tracking_params || {};
 
       const val = Number(orderDetails.value || customData.value || 172.88);
-      const isPix = String(orderDetails.payment_method || ev.order_id || "").toLowerCase().includes("pix");
+      const isPix = String(orderDetails.payment_method || customData.payment_method || ev.order_id || "").toLowerCase().includes("pix");
 
-      let utmCamp = tracking.utm_campaign || "";
+      // Cascata de extração das UTMs
+      const rawCamp = String(orderDetails.utm_campaign || customData.utm_campaign || tracking.utm_campaign || "").trim();
+      const rawSource = String(orderDetails.utm_source || customData.utm_source || tracking.utm_source || "").trim();
+      const rawMedium = String(orderDetails.utm_medium || customData.utm_medium || tracking.utm_medium || "").trim();
+      const rawContent = String(orderDetails.utm_content || customData.utm_content || tracking.utm_content || "").trim();
+
+      let utmCamp = rawCamp;
       if (!utmCamp && ev.order_id?.includes("VEGA")) {
         utmCamp = "USD 02 - ABO - GAIOALA - ESCALA — 07";
       }
+
+      const cleanSource = rawSource ? (rawSource.startsWith("FB") ? "FB" : rawSource.toUpperCase()) : "FB";
 
       return {
         id: ev.id,
@@ -52,8 +60,10 @@ export async function GET(request: NextRequest) {
         status: ev.status === "accepted" ? "PAGO" : "PROCESSANDO",
         value: val,
         paymentMethod: orderDetails.payment_method || (isPix ? "Pix" : "Cartão / Gateway"),
-        utmSource: tracking.utm_source ? tracking.utm_source.toUpperCase() : "FB",
+        utmSource: cleanSource,
         utmCampaign: utmCamp || "[CAPI] Atribuição Direta",
+        utmMedium: rawMedium || undefined,
+        utmContent: rawContent || undefined,
         createdAt: ev.created_at,
       };
     });
