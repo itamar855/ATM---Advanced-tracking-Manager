@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
 import { getUsdBrlRate, convertToBrl } from "@/lib/currency";
+import { resolveAccountDateRange, AccountDateRange } from "@/lib/date-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -54,51 +55,8 @@ export async function GET(request: NextRequest) {
 
     const supabase = createAdminClient();
 
-    // 1. Mapeia date_preset para a Graph API e resolve intervalo
-    const presetMap: Record<string, string> = {
-      today: "today",
-      yesterday: "yesterday",
-      last_7d: "last_7d",
-      last_30d: "last_30d",
-      last_60d: "last_60d",
-      this_month: "this_month",
-    };
-    const metaDatePreset = presetMap[datePreset] || "today";
-
-    const now = new Date();
-    const brDateStr = now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-
-    let startDate = new Date(`${brDateStr}T00:00:00-03:00`);
-    let endDate = new Date(`${brDateStr}T23:59:59.999-03:00`);
-
-    switch (datePreset) {
-      case "yesterday": {
-        const yest = new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
-        const yestStr = yest.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-        startDate = new Date(`${yestStr}T00:00:00-03:00`);
-        endDate = new Date(`${yestStr}T23:59:59.999-03:00`);
-        break;
-      }
-      case "last_7d":
-        startDate = new Date(startDate.getTime() - 7 * 24 * 60 * 60 * 1000);
-        break;
-      case "last_30d":
-        startDate = new Date(startDate.getTime() - 30 * 24 * 60 * 60 * 1000);
-        break;
-      case "last_60d":
-        startDate = new Date(startDate.getTime() - 60 * 24 * 60 * 60 * 1000);
-        break;
-      case "this_month": {
-        const [year, month] = brDateStr.split("-");
-        startDate = new Date(`${year}-${month}-01T00:00:00-03:00`);
-        break;
-      }
-      default: // "today"
-        break;
-    }
-
-    // 2. Executa consultas independentes em paralelo (integração, cotação USD/BRL, eventos e taxas)
-    const [storeIntResult, usdBrlRate, dbEventsResult, storeTaxesResult] = await Promise.all([
+    // 1. Executa consultas independentes em paralelo (integração, cotação USD/BRL e taxas)
+    const [storeIntResult, usdBrlRate, storeTaxesResult] = await Promise.all([
       supabase
         .from("integrations")
         .select("*")
@@ -109,23 +67,12 @@ export async function GET(request: NextRequest) {
         .maybeSingle(),
       getUsdBrlRate(),
       supabase
-        .from("events")
-        .select("id, event_name, meta_response, created_at")
-        .eq("store_id", storeId)
-        .in("event_name", ["Purchase", "InitiateCheckout"])
-        .eq("status", "accepted")
-        .gte("created_at", startDate.toISOString())
-        .lte("created_at", endDate.toISOString())
-        .order("created_at", { ascending: false })
-        .limit(2000),
-      supabase
         .from("taxes_and_duties")
         .select("*")
         .eq("store_id", storeId),
     ]);
 
     const storeInt = storeIntResult.data;
-    const dbEvents = dbEventsResult.data;
     const storeTaxesAndDuties = storeTaxesResult.data;
 
     let integration = storeInt;
@@ -228,9 +175,232 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. Estrutura normalizada de eventos com UTMs extraídas em cascata (já carregados em paralelo)
+    // 3. Resolve metadados e fuso horário de cada conta de anúncio
+    const accountsMeta = await Promise.all(
+      accountIdsToProcess.map(async (accId) => {
+        const cleanAccId = accId.startsWith("act_") ? accId : `act_${accId}`;
+        const rawAcc = metaAccountsRaw.find((a: any) => a.id === cleanAccId || a.id === accId) || {};
+        let tzName = integration?.config?.ad_accounts_metadata?.[cleanAccId]?.timezone_name || rawAcc.timezone_name || null;
+        let accData: any = null;
 
-    // Estrutura normalizada de eventos com UTMs extraídas em cascata
+        try {
+          const accRes = await fetch(
+            `https://graph.facebook.com/v23.0/${cleanAccId}?fields=id,account_id,name,account_status,balance,amount_spent,currency,timezone_name,timezone_offset_hours_utc&access_token=${token}`,
+            { cache: "no-store", signal: AbortSignal.timeout(6000) }
+          );
+          if (accRes.ok) {
+            const data = await accRes.json();
+            if (!data.error) {
+              accData = data;
+              if (data.timezone_name) tzName = data.timezone_name;
+            }
+          }
+        } catch (e) {
+          console.warn(`[Campaigns] Erro ao buscar metadados da conta ${cleanAccId}:`, e);
+        }
+
+        if (!accData) {
+          accData = {
+            name: rawAcc.name || `Conta ${cleanAccId.replace("act_", "")}`,
+            account_status: rawAcc.account_status || 1,
+            balance: rawAcc.balance || 0,
+            amount_spent: rawAcc.amount_spent || 0,
+            currency: rawAcc.currency || "BRL",
+          };
+        }
+
+        const dateRange = resolveAccountDateRange(datePreset, tzName);
+
+        return {
+          cleanAccId,
+          rawAcc,
+          accData,
+          timezoneName: tzName,
+          dateRange,
+        };
+      })
+    );
+
+    // 4. Determina intervalo UTC unificado para carregar eventos no Supabase
+    let queryStartUtc: string;
+    let queryEndUtc: string;
+
+    if (accountsMeta.length > 0) {
+      queryStartUtc = accountsMeta.reduce(
+        (min, a) => (a.dateRange.startUtc < min ? a.dateRange.startUtc : min),
+        accountsMeta[0].dateRange.startUtc
+      );
+      queryEndUtc = accountsMeta.reduce(
+        (max, a) => (a.dateRange.endUtc > max ? a.dateRange.endUtc : max),
+        accountsMeta[0].dateRange.endUtc
+      );
+    } else {
+      const fallbackRange = resolveAccountDateRange(datePreset, "America/Sao_Paulo");
+      queryStartUtc = fallbackRange.startUtc;
+      queryEndUtc = fallbackRange.endUtc;
+    }
+
+    // 5. Coleta estrutura e insights da Meta e eventos do Supabase em paralelo
+    const accountRawResults: Array<{
+      accId: string;
+      accData: any;
+      rawAcc: any;
+      currency: string;
+      rawCampaigns: any[];
+      rawAdsets: any[];
+      rawAds: any[];
+      campaignInsightsMap: Map<string, any>;
+      adsetInsightsMap: Map<string, any>;
+      adInsightsMap: Map<string, any>;
+      accountInsight: any;
+    }> = [];
+    const accountErrors: Array<{ id: string; error: string }> = [];
+
+    const dbEventsPromise = supabase
+      .from("events")
+      .select("id, event_name, meta_response, created_at")
+      .eq("store_id", storeId)
+      .in("event_name", ["Purchase", "InitiateCheckout"])
+      .eq("status", "accepted")
+      .gte("created_at", queryStartUtc)
+      .lte("created_at", queryEndUtc)
+      .order("created_at", { ascending: false })
+      .limit(2000);
+
+    const fetchPromises = accountsMeta.map(async (acc) => {
+      const { cleanAccId, rawAcc, accData, dateRange } = acc;
+
+      const timeRangeParam = encodeURIComponent(
+        JSON.stringify({ since: dateRange.since, until: dateRange.until })
+      );
+
+      // Filtra por ACTIVE e PAUSED para não puxar lixo histórico deletado ou arquivado
+      const statusFilter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED"] }]));
+      const campUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time&filtering=${statusFilter}&access_token=${token}&limit=100`;
+      const adsetUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id&filtering=${statusFilter}&access_token=${token}&limit=150`;
+      const adUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id&filtering=${statusFilter}&access_token=${token}&limit=150`;
+
+      // ── Insights em lote por nível usando time_range={since, until} ──
+      const campInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=campaign&time_range=${timeRangeParam}&fields=campaign_id,spend,impressions,clicks,actions&access_token=${token}&limit=200`;
+      const adsetInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=adset&time_range=${timeRangeParam}&fields=adset_id,spend,impressions,clicks,actions&access_token=${token}&limit=250`;
+      const adInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=ad&time_range=${timeRangeParam}&fields=ad_id,spend,impressions,clicks,actions&access_token=${token}&limit=250`;
+      const accInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=account&time_range=${timeRangeParam}&fields=spend,impressions,clicks,actions&access_token=${token}`;
+
+      const [campRes, adsetRes, adRes, cInsRes, asInsRes, aInsRes, acInsRes] = await Promise.all([
+        fetch(campUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch(adsetUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch(adUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch(campInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch(adsetInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch(adInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+        fetch(accInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
+      ]);
+
+      let rawCampaigns: any[] = [];
+      let rawAdsets: any[] = [];
+      let rawAds: any[] = [];
+
+      try {
+        if (campRes && campRes.ok) {
+          const campData = await campRes.json();
+          if (campData.error) {
+            accountErrors.push({ id: cleanAccId, error: campData.error.message || "Erro ao buscar campanhas" });
+          } else {
+            rawCampaigns = Array.isArray(campData.data) ? campData.data : [];
+          }
+        }
+      } catch {}
+
+      try {
+        if (adsetRes && adsetRes.ok) {
+          const adsetData = await adsetRes.json();
+          rawAdsets = Array.isArray(adsetData.data) ? adsetData.data : [];
+        }
+      } catch {}
+
+      try {
+        if (adRes && adRes.ok) {
+          const adData = await adRes.json();
+          rawAds = Array.isArray(adData.data) ? adData.data : [];
+        }
+      } catch {}
+
+      // Mapeamento de Insights
+      const campaignInsightsMap = new Map<string, any>();
+      try {
+        if (cInsRes && cInsRes.ok) {
+          const cInsData = await cInsRes.json();
+          if (Array.isArray(cInsData.data)) {
+            cInsData.data.forEach((ins: any) => {
+              if (ins.campaign_id) campaignInsightsMap.set(ins.campaign_id, ins);
+            });
+          }
+        }
+      } catch {}
+
+      const adsetInsightsMap = new Map<string, any>();
+      try {
+        if (asInsRes && asInsRes.ok) {
+          const asInsData = await asInsRes.json();
+          if (Array.isArray(asInsData.data)) {
+            asInsData.data.forEach((ins: any) => {
+              if (ins.adset_id) adsetInsightsMap.set(ins.adset_id, ins);
+            });
+          }
+        }
+      } catch {}
+
+      const adInsightsMap = new Map<string, any>();
+      try {
+        if (aInsRes && aInsRes.ok) {
+          const aInsData = await aInsRes.json();
+          if (Array.isArray(aInsData.data)) {
+            aInsData.data.forEach((ins: any) => {
+              if (ins.ad_id) adInsightsMap.set(ins.ad_id, ins);
+            });
+          }
+        }
+      } catch {}
+
+      let accountInsight: any = {};
+      try {
+        if (acInsRes && acInsRes.ok) {
+          const acInsData = await acInsRes.json();
+          accountInsight = acInsData.data?.[0] || {};
+        }
+      } catch {}
+
+      const resolvedCurrency = String(
+        accData?.currency ||
+        rawAcc?.currency ||
+        "BRL"
+      )
+        .trim()
+        .toUpperCase();
+
+      accountRawResults.push({
+        accId: cleanAccId,
+        accData,
+        rawAcc,
+        currency: resolvedCurrency,
+        rawCampaigns,
+        rawAdsets,
+        rawAds,
+        campaignInsightsMap,
+        adsetInsightsMap,
+        adInsightsMap,
+        accountInsight,
+      });
+    });
+
+    const [dbEventsResult] = await Promise.all([
+      dbEventsPromise,
+      Promise.all(fetchPromises),
+    ]);
+
+    const dbEvents = dbEventsResult.data || [];
+
+    // 6. Estrutura normalizada de eventos com UTMs extraídas em cascata
     interface ParsedEvent {
       id: string;
       isPurchase: boolean;
@@ -341,186 +511,6 @@ export async function GET(request: NextRequest) {
       if (isPurchase) parsedPurchases.push(parsed);
       else if (isIC) parsedICs.push(parsed);
     });
-
-    // 5. Coleta dados das contas selecionadas com timeout seguro (6s)
-    const accountRawResults: Array<{
-      accId: string;
-      accData: any;
-      rawAcc: any;
-      currency: string;
-      rawCampaigns: any[];
-      rawAdsets: any[];
-      rawAds: any[];
-      campaignInsightsMap: Map<string, any>;
-      adsetInsightsMap: Map<string, any>;
-      adInsightsMap: Map<string, any>;
-      accountInsight: any;
-    }> = [];
-    const accountErrors: Array<{ id: string; error: string }> = [];
-
-    const fetchPromises = accountIdsToProcess.map(async (accId) => {
-      const cleanAccId = accId.startsWith("act_") ? accId : `act_${accId}`;
-      const rawAcc = metaAccountsRaw.find((a: any) => a.id === cleanAccId || a.id === accId) || {};
-
-      // ── Fetch 1: Metadados puros da Conta (Campos seguros, nunca falham) ──
-      const accUrl = `https://graph.facebook.com/v23.0/${cleanAccId}?fields=id,account_id,name,account_status,balance,amount_spent,currency&access_token=${token}`;
-
-      // ── Fetch 2-4: Estrutura de Campanhas, Conjuntos e Anúncios ──
-      // Filtra por ACTIVE e PAUSED para não puxar lixo histórico deletado ou arquivado
-      const statusFilter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED"] }]));
-      const campUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time&filtering=${statusFilter}&access_token=${token}&limit=100`;
-      const adsetUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id&filtering=${statusFilter}&access_token=${token}&limit=150`;
-      const adUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id&filtering=${statusFilter}&access_token=${token}&limit=150`;
-
-      // ── Fetch 5-8: Insights em lote por nível ──
-      const campInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=campaign&date_preset=${metaDatePreset}&fields=campaign_id,spend,impressions,clicks,actions&access_token=${token}&limit=200`;
-      const adsetInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=adset&date_preset=${metaDatePreset}&fields=adset_id,spend,impressions,clicks,actions&access_token=${token}&limit=250`;
-      const adInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=ad&date_preset=${metaDatePreset}&fields=ad_id,spend,impressions,clicks,actions&access_token=${token}&limit=250`;
-      const accInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=account&date_preset=${metaDatePreset}&fields=spend,impressions,clicks,actions&access_token=${token}`;
-
-      const [accRes, campRes, adsetRes, adRes, cInsRes, asInsRes, aInsRes, acInsRes] = await Promise.all([
-        fetch(accUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-        fetch(campUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-        fetch(adsetUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-        fetch(adUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-        fetch(campInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-        fetch(adsetInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-        fetch(adInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-        fetch(accInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-      ]);
-
-      let accData: any = {};
-      try {
-        if (accRes && accRes.ok) {
-          const raw = await accRes.json();
-          if (!raw.error) {
-            accData = raw;
-          } else {
-            accData = {
-              name: rawAcc.name || `Conta ${cleanAccId.replace("act_", "")}`,
-              account_status: rawAcc.account_status || 1,
-              balance: rawAcc.balance || 0,
-              amount_spent: rawAcc.amount_spent || 0,
-              currency: rawAcc.currency || "BRL",
-            };
-          }
-        } else {
-          accData = {
-            name: rawAcc.name || `Conta ${cleanAccId.replace("act_", "")}`,
-            account_status: rawAcc.account_status || 1,
-            balance: rawAcc.balance || 0,
-            amount_spent: rawAcc.amount_spent || 0,
-            currency: rawAcc.currency || "BRL",
-          };
-        }
-      } catch {
-        accData = {
-          name: rawAcc.name || `Conta ${cleanAccId.replace("act_", "")}`,
-          account_status: 1,
-          balance: 0,
-          amount_spent: 0,
-          currency: rawAcc.currency || "BRL",
-        };
-      }
-
-      let rawCampaigns: any[] = [];
-      let rawAdsets: any[] = [];
-      let rawAds: any[] = [];
-
-      try {
-        if (campRes && campRes.ok) {
-          const campData = await campRes.json();
-          if (campData.error) {
-            accountErrors.push({ id: cleanAccId, error: campData.error.message || "Erro ao buscar campanhas" });
-          } else {
-            rawCampaigns = Array.isArray(campData.data) ? campData.data : [];
-          }
-        }
-      } catch {}
-
-      try {
-        if (adsetRes && adsetRes.ok) {
-          const adsetData = await adsetRes.json();
-          rawAdsets = Array.isArray(adsetData.data) ? adsetData.data : [];
-        }
-      } catch {}
-
-      try {
-        if (adRes && adRes.ok) {
-          const adData = await adRes.json();
-          rawAds = Array.isArray(adData.data) ? adData.data : [];
-        }
-      } catch {}
-
-      // Mapeamento de Insights
-      const campaignInsightsMap = new Map<string, any>();
-      try {
-        if (cInsRes && cInsRes.ok) {
-          const cInsData = await cInsRes.json();
-          if (Array.isArray(cInsData.data)) {
-            cInsData.data.forEach((ins: any) => {
-              if (ins.campaign_id) campaignInsightsMap.set(ins.campaign_id, ins);
-            });
-          }
-        }
-      } catch {}
-
-      const adsetInsightsMap = new Map<string, any>();
-      try {
-        if (asInsRes && asInsRes.ok) {
-          const asInsData = await asInsRes.json();
-          if (Array.isArray(asInsData.data)) {
-            asInsData.data.forEach((ins: any) => {
-              if (ins.adset_id) adsetInsightsMap.set(ins.adset_id, ins);
-            });
-          }
-        }
-      } catch {}
-
-      const adInsightsMap = new Map<string, any>();
-      try {
-        if (aInsRes && aInsRes.ok) {
-          const aInsData = await aInsRes.json();
-          if (Array.isArray(aInsData.data)) {
-            aInsData.data.forEach((ins: any) => {
-              if (ins.ad_id) adInsightsMap.set(ins.ad_id, ins);
-            });
-          }
-        }
-      } catch {}
-
-      let accountInsight: any = {};
-      try {
-        if (acInsRes && acInsRes.ok) {
-          const acInsData = await acInsRes.json();
-          accountInsight = acInsData.data?.[0] || {};
-        }
-      } catch {}
-
-      const resolvedCurrency = String(
-        accData?.currency ||
-        rawAcc?.currency ||
-        "BRL"
-      )
-        .trim()
-        .toUpperCase();
-
-      accountRawResults.push({
-        accId: cleanAccId,
-        accData,
-        rawAcc,
-        currency: resolvedCurrency,
-        rawCampaigns,
-        rawAdsets,
-        rawAds,
-        campaignInsightsMap,
-        adsetInsightsMap,
-        adInsightsMap,
-        accountInsight,
-      });
-    });
-
-    await Promise.all(fetchPromises);
 
     // Listas globais consolidadas
     const globalCampaignsList: Array<{ id: string; name: string; accId: string; cleanName: string }> = [];

@@ -2,74 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
 import { getUsdBrlRate, convertToBrl } from "@/lib/currency";
+import { resolveAccountDateRange, AccountDateRange } from "@/lib/date-utils";
 
 export const dynamic = "force-dynamic";
-
-/**
- * Converte um date_preset em { startDate, endDate } como strings ISO.
- * Para garantir que Gasto × Vendas usem EXATAMENTE o mesmo intervalo,
- * aplicamos a fórmula: effective_start_date = MAX(checkout_started_at, startDate)
- *
- * @param datePreset - Período selecionado pelo usuário
- * @param checkoutStartedAt - Data em que o checkout entrou em operação (por loja)
- */
-function resolveDateRange(datePreset: string, checkoutStartedAt?: string | null): {
-  startDate: string;
-  endDate: string;
-  effectiveStartDate: string;
-} {
-  const now = new Date();
-  // Formato da data em Brasília YYYY-MM-DD
-  const brDateStr = now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-
-  let startDate = new Date(`${brDateStr}T00:00:00-03:00`);
-  let endDate = new Date(`${brDateStr}T23:59:59.999-03:00`);
-
-  switch (datePreset) {
-    case "yesterday": {
-      const yest = new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
-      const yestStr = yest.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-      startDate = new Date(`${yestStr}T00:00:00-03:00`);
-      endDate = new Date(`${yestStr}T23:59:59.999-03:00`);
-      break;
-    }
-    case "last_7d": {
-      startDate = new Date(startDate.getTime() - 7 * 24 * 60 * 60 * 1000);
-      break;
-    }
-    case "last_30d": {
-      startDate = new Date(startDate.getTime() - 30 * 24 * 60 * 60 * 1000);
-      break;
-    }
-    case "last_60d": {
-      startDate = new Date(startDate.getTime() - 60 * 24 * 60 * 60 * 1000);
-      break;
-    }
-    case "this_month": {
-      const [year, month] = brDateStr.split("-");
-      startDate = new Date(`${year}-${month}-01T00:00:00-03:00`);
-      break;
-    }
-    default: // "today"
-      break;
-  }
-
-  // effective_start_date = MAX(checkout_started_at, startDate)
-  // Garante que não comparamos gasto de ANTES do checkout entrar em operação com vendas inexistentes
-  let effectiveStartDate = startDate.toISOString();
-  if (checkoutStartedAt) {
-    const coDate = new Date(checkoutStartedAt);
-    if (coDate > startDate) {
-      effectiveStartDate = coDate.toISOString();
-    }
-  }
-
-  return {
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString(),
-    effectiveStartDate,
-  };
-}
 
 /**
  * GET /api/v1/dashboard/metrics
@@ -126,25 +61,14 @@ export async function GET(request: NextRequest) {
     // 2. Resolve data de conexão da plataforma (só exibe métricas a partir da conexão)
     const platformConnectedAt = integration?.created_at || "2026-08-26T00:00:00.000Z";
 
-    // 3. Resolve intervalo de datas com regra effective_start_date
-    const presetMap: Record<string, string> = {
-      today: "today",
-      yesterday: "yesterday",
-      last_7d: "last_7d",
-      last_30d: "last_30d",
-      last_60d: "last_60d",
-      this_month: "this_month",
-    };
-    const metaDatePreset = presetMap[datePreset] || "today";
-    const { startDate, endDate, effectiveStartDate } = resolveDateRange(datePreset, platformConnectedAt);
-
     let totalSpendBrl = 0;
     let totalSpendOriginal = 0;
     let totalImpressions = 0;
     let totalClicks = 0;
     const availableAccounts: Array<{ id: string; name: string; currency: string; status: string; spend: number; spendBrl: number }> = [];
+    const accountRanges: Array<{ id: string; range: AccountDateRange; isActive: boolean }> = [];
 
-    // 4. Busca lista de contas e consulta gastos na Meta Graph API pelo período
+    // 3. Busca lista de contas e consulta gastos na Meta Graph API pelo período
     let accountIdsToQuery = configuredAccountIds;
     if (token && accountIdsToQuery.length === 0) {
       try {
@@ -167,27 +91,37 @@ export async function GET(request: NextRequest) {
       const spendPromises = accountIdsToQuery.map(async (accId) => {
         const formattedId = accId.startsWith("act_") ? accId : `act_${accId}`;
         try {
-          const [accInfoRes, insRes] = await Promise.all([
-            fetch(
-              `https://graph.facebook.com/v23.0/${formattedId}?fields=name,currency,account_status&access_token=${token}`,
-              { cache: "no-store" }
-            ),
-            fetch(
-              `https://graph.facebook.com/v23.0/${formattedId}/insights?date_preset=${metaDatePreset}&fields=spend,impressions,clicks,cpc,cpm&access_token=${token}`,
-              { cache: "no-store" }
-            ),
-          ]);
+          // 1. Metadados da Conta (incluindo timezone)
+          const accInfoRes = await fetch(
+            `https://graph.facebook.com/v23.0/${formattedId}?fields=name,currency,account_status,timezone_name,timezone_offset_hours_utc&access_token=${token}`,
+            { cache: "no-store" }
+          );
 
           let accName = formattedId;
           let currency = "BRL";
           let isActive = true;
+          let tzName: string | null = integration?.config?.ad_accounts_metadata?.[formattedId]?.timezone_name || null;
 
           if (accInfoRes.ok) {
             const accInfo = await accInfoRes.json();
             if (accInfo.name) accName = accInfo.name;
             if (accInfo.currency) currency = accInfo.currency.toUpperCase();
             if (accInfo.account_status !== undefined) isActive = accInfo.account_status === 1;
+            if (accInfo.timezone_name) tzName = accInfo.timezone_name;
           }
+
+          // 2. Resolve janela de datas exata no fuso da conta
+          const accDateRange = resolveAccountDateRange(datePreset, tzName);
+          accountRanges.push({ id: formattedId, range: accDateRange, isActive });
+
+          // 3. Consulta Insights usando time_range={since, until}
+          const timeRangeParam = encodeURIComponent(
+            JSON.stringify({ since: accDateRange.since, until: accDateRange.until })
+          );
+          const insRes = await fetch(
+            `https://graph.facebook.com/v23.0/${formattedId}/insights?time_range=${timeRangeParam}&fields=spend,impressions,clicks,cpc,cpm&access_token=${token}`,
+            { cache: "no-store" }
+          );
 
           let origSpend = 0;
           let imp = 0;
@@ -236,7 +170,39 @@ export async function GET(request: NextRequest) {
       await Promise.all(spendPromises);
     }
 
-    // 5. Busca vendas aprovadas NO PERÍODO CONECTADO (usando effectiveStartDate)
+    // 4. Determina intervalo UTC harmonizado para consulta de pedidos/vendas no Supabase
+    const relevantRanges = accountRanges.filter((ar) =>
+      selectedAccountId === "all" ? ar.isActive : ar.id === (selectedAccountId.startsWith("act_") ? selectedAccountId : `act_${selectedAccountId}`)
+    );
+
+    let queryStartUtc: string;
+    let queryEndUtc: string;
+
+    if (relevantRanges.length > 0) {
+      queryStartUtc = relevantRanges.reduce(
+        (min, r) => (r.range.startUtc < min ? r.range.startUtc : min),
+        relevantRanges[0].range.startUtc
+      );
+      queryEndUtc = relevantRanges.reduce(
+        (max, r) => (r.range.endUtc > max ? r.range.endUtc : max),
+        relevantRanges[0].range.endUtc
+      );
+    } else {
+      const fallbackRange = resolveAccountDateRange(datePreset, "America/Sao_Paulo");
+      queryStartUtc = fallbackRange.startUtc;
+      queryEndUtc = fallbackRange.endUtc;
+    }
+
+    // effectiveStartDate = MAX(platformConnectedAt, queryStartUtc)
+    let effectiveStartDate = queryStartUtc;
+    if (platformConnectedAt) {
+      const coDate = new Date(platformConnectedAt);
+      if (coDate > new Date(queryStartUtc)) {
+        effectiveStartDate = coDate.toISOString();
+      }
+    }
+
+    // 5. Busca vendas aprovadas NO PERÍODO HARMONIZADO (usando effectiveStartDate e queryEndUtc)
     const { data: allPurchases } = await supabase
       .from("events")
       .select("id, event_name, meta_response, created_at")
@@ -244,7 +210,7 @@ export async function GET(request: NextRequest) {
       .eq("event_name", "Purchase")
       .eq("status", "accepted")
       .gte("created_at", effectiveStartDate)
-      .lte("created_at", endDate)
+      .lte("created_at", queryEndUtc)
       .order("created_at", { ascending: false });
 
     // 6. Busca vendas pendentes (PIX/Boleto aguardando pagamento) no período
@@ -255,7 +221,7 @@ export async function GET(request: NextRequest) {
       .eq("event_name", "Purchase")
       .eq("status", "pending")
       .gte("created_at", effectiveStartDate)
-      .lte("created_at", endDate);
+      .lte("created_at", queryEndUtc);
 
     // Busca regras de impostos e taxas configuradas pelo usuário para esta loja
     const { data: storeTaxesAndDuties } = await supabase

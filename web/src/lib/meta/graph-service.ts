@@ -78,6 +78,8 @@ function parseRawAccount(raw: any, defaultBmId?: string, defaultBmName?: string)
 
   const businessName = defaultBmName || raw.business_name || null;
   const businessId = defaultBmId || (businessName ? `bm_${businessName.toLowerCase().replace(/[^a-z0-9]/g, "_")}` : null);
+  const timezone_name = raw.timezone_name || null;
+  const timezone_offset_hours_utc = raw.timezone_offset_hours_utc !== undefined ? Number(raw.timezone_offset_hours_utc) : null;
 
   return {
     id: cleanId,
@@ -88,6 +90,8 @@ function parseRawAccount(raw: any, defaultBmId?: string, defaultBmName?: string)
     amountSpent,
     businessId,
     businessName,
+    timezone_name,
+    timezone_offset_hours_utc,
   };
 }
 
@@ -130,7 +134,7 @@ export async function discoverFullMetaHierarchy(
 
   // 1. Consulta /me/adaccounts (Usa campos seguros e universais)
   try {
-    const accUrl = `${GRAPH_BASE_URL}/me/adaccounts?fields=id,account_id,name,account_status,currency,amount_spent,business_name&access_token=${accessToken}&limit=100`;
+    const accUrl = `${GRAPH_BASE_URL}/me/adaccounts?fields=id,account_id,name,account_status,currency,amount_spent,business_name,timezone_name,timezone_offset_hours_utc&access_token=${accessToken}&limit=100`;
     const accRes = await fetch(accUrl, { cache: "no-store" });
     if (accRes.ok) {
       const accData = await accRes.json();
@@ -159,8 +163,8 @@ export async function discoverFullMetaHierarchy(
           // Para cada BM, busca owned_ad_accounts e client_ad_accounts
           try {
             const [ownedRes, clientRes] = await Promise.all([
-              fetch(`${GRAPH_BASE_URL}/${bmId}/owned_ad_accounts?fields=id,account_id,name,account_status,currency,amount_spent,business_name&access_token=${accessToken}&limit=100`, { cache: "no-store" }),
-              fetch(`${GRAPH_BASE_URL}/${bmId}/client_ad_accounts?fields=id,account_id,name,account_status,currency,amount_spent,business_name&access_token=${accessToken}&limit=100`, { cache: "no-store" }),
+              fetch(`${GRAPH_BASE_URL}/${bmId}/owned_ad_accounts?fields=id,account_id,name,account_status,currency,amount_spent,business_name,timezone_name,timezone_offset_hours_utc&access_token=${accessToken}&limit=100`, { cache: "no-store" }),
+              fetch(`${GRAPH_BASE_URL}/${bmId}/client_ad_accounts?fields=id,account_id,name,account_status,currency,amount_spent,business_name,timezone_name,timezone_offset_hours_utc&access_token=${accessToken}&limit=100`, { cache: "no-store" }),
             ]);
 
             if (ownedRes.ok) {

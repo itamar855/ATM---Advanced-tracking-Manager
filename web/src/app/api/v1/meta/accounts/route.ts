@@ -128,15 +128,17 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const body = await request.json();
     const {
       store_id,
       access_token,
       profile_name,
       ad_account_ids,
+      ad_accounts_metadata,
       selected_bm_ids,
       pixel_id,
       test_event_code,
-    } = await request.json();
+    } = body;
 
     if (!store_id) {
       return NextResponse.json({ ok: false, error: "store_id is required" }, { status: 400 });
@@ -234,6 +236,7 @@ export async function POST(request: NextRequest) {
         profile_name: resolvedProfileName,
         selected_bm_ids: normalizedBmIds,
         ad_account_ids: normalizedAccounts,
+        ad_accounts_metadata: ad_accounts_metadata !== undefined ? ad_accounts_metadata : (existing?.config?.ad_accounts_metadata || {}),
         test_event_code: test_event_code ? test_event_code.trim() : undefined,
         updated_at: new Date().toISOString(),
       },

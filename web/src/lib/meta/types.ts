@@ -12,6 +12,8 @@ export interface MetaAdAccount {
   amountSpent: number; // Em unidades monetárias reais (ex: 1250.50)
   businessId?: string | null;
   businessName?: string | null;
+  timezone_name?: string | null;
+  timezone_offset_hours_utc?: number | null;
 }
 
 export interface MetaBusinessManager {
