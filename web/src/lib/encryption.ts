@@ -100,6 +100,32 @@ export function hashEmail(email: string): string {
 }
 
 /**
+ * Mapa canônico de estados brasileiros (nome por extenso → sigla ISO 2 letras lowercase).
+ * Fonte única da verdade usada por event-builder, queue-engine e identity-stitcher.
+ */
+export const BRAZIL_STATES: Record<string, string> = {
+  acre: "ac", alagoas: "al", amapa: "ap", amazonas: "am", bahia: "ba",
+  ceara: "ce", "distrito federal": "df", "espirito santo": "es", goias: "go",
+  maranhao: "ma", "mato grosso": "mt", "mato grosso do sul": "ms", "minas gerais": "mg",
+  para: "pa", paraiba: "pb", parana: "pr", pernambuco: "pe", piaui: "pi",
+  "rio de janeiro": "rj", "rio grande do norte": "rn", "rio grande do sul": "rs",
+  rondonia: "ro", roraima: "rr", "santa catarina": "sc", "sao paulo": "sp",
+  sergipe: "se", tocantins: "to",
+};
+
+/**
+ * Normaliza e hasheia estado/província para Meta CAPI.
+ * Aceita tanto o nome por extenso ("São Paulo") quanto a sigla ("SP").
+ * Sempre retorna SHA-256 do código de 2 letras em lowercase.
+ */
+export function hashState(value: string): string {
+  const clean = value.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const uf = BRAZIL_STATES[clean] || clean.replace(/[^a-z]/g, "").slice(0, 2);
+  return sha256Hash(uf);
+}
+
+
+/**
  * Generate a new encryption key (for setup purposes).
  * Call this once to generate the ATM_ENCRYPTION_KEY env var.
  */

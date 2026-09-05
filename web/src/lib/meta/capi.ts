@@ -14,7 +14,8 @@ export interface MetaEvent {
     ct?: string[];          // city — SHA-256 (lowercase, sem acentos)
     st?: string[];          // state — SHA-256 (código 2 letras lowercase)
     zp?: string[];          // zip/CEP — SHA-256 (somente dígitos)
-    co?: string[];          // country — SHA-256 (ISO 2 letras lowercase)
+    country?: string[];     // country code — SHA-256 (ISO 2 letras lowercase, especificação oficial Meta CAPI)
+    co?: string[];          // country code — SHA-256 (alias compatibilidade)
     db?: string[];          // date of birth — SHA-256 (formato YYYYMMDD)
     ge?: string[];          // gender — SHA-256 ("m" ou "f")
     external_id?: string[]; // customer ID estável — SHA-256

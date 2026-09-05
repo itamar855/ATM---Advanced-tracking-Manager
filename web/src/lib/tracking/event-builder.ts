@@ -1,4 +1,4 @@
-import { sha256Hash, hashEmail, hashPhone } from "../encryption";
+import { sha256Hash, hashEmail, hashPhone, hashState } from "../encryption";
 import { NormalizedOrder } from "../types";
 import { MetaEvent } from "../meta/capi";
 
@@ -36,13 +36,7 @@ function hashCity(value: string): string {
   );
 }
 
-/**
- * Normaliza e hasheia estado/província.
- * Meta exige código de 2 letras em lowercase (ex: "sp", "rj").
- */
-function hashState(value: string): string {
-  return sha256Hash(value.trim().toLowerCase().replace(/[^a-z]/g, "").slice(0, 2));
-}
+// hashState é importado de encryption.ts (fonte única da verdade para estados brasileiros)
 
 /**
  * Normaliza e hasheia CEP/ZIP.
@@ -57,7 +51,11 @@ function hashZip(value: string): string {
  * Meta exige código ISO 2 letras em lowercase (ex: "br", "us").
  */
 function hashCountry(value: string): string {
-  return sha256Hash(value.trim().toLowerCase().slice(0, 2));
+  const clean = value.trim().toLowerCase().replace(/[^a-z]/g, "");
+  if (clean === "brasil" || clean === "brazil" || clean === "br") {
+    return sha256Hash("br");
+  }
+  return sha256Hash(clean.slice(0, 2));
 }
 
 /**
@@ -181,34 +179,62 @@ export function buildMetaPurchaseEvent(
   const user_data: MetaEvent["user_data"] = {};
 
   // ── PII com hash SHA-256 ──
-  if (order.customer.email) {
+  if (order.customer.email && order.customer.email.trim()) {
     const h = hashEmail(order.customer.email);
     if (h) user_data.em = [h];
   }
-  if (order.customer.phone) {
-    const h = hashPhone(order.customer.phone);
-    if (h) user_data.ph = [h];
+
+  // Telefone: normaliza para padrão internacional (E.164 com DDI 55 para Brasil)
+  if (order.customer.phone && order.customer.phone.trim()) {
+    const digits = order.customer.phone.replace(/\D/g, "");
+    if (digits) {
+      const hashes: string[] = [];
+      const primary = (digits.length === 10 || digits.length === 11) ? `55${digits}` : digits;
+      hashes.push(sha256Hash(primary));
+      if (primary !== digits) {
+        hashes.push(sha256Hash(digits));
+      }
+      user_data.ph = hashes;
+    }
   }
-  if (order.customer.firstName) {
-    user_data.fn = [hashName(order.customer.firstName)];
+
+  // Primeiro Nome (fn): isola estritamente a primeira palavra
+  const rawFirstName = (order.customer.firstName || "").trim().split(/\s+/)[0];
+  if (rawFirstName) {
+    user_data.fn = [hashName(rawFirstName)];
   }
-  const lastNameToUse = order.customer.lastName || order.customer.firstName || "";
-  if (lastNameToUse) {
-    user_data.ln = [hashName(lastNameToUse)];
+
+  // Sobrenome (ln): NÃO criar dados fictícios. Só envia se realmente existir sobrenome distinto do primeiro nome
+  const rawLastName = (order.customer.lastName || "").trim();
+  if (rawLastName && rawLastName.toLowerCase() !== rawFirstName.toLowerCase()) {
+    user_data.ln = [hashName(rawLastName)];
   }
-  if (order.address.city) {
+
+  // Cidade (ct)
+  if (order.address?.city && order.address.city.trim()) {
     user_data.ct = [hashCity(order.address.city)];
   }
-  if (order.address.state) {
+
+  // Estado (st): código de 2 letras em lowercase
+  if (order.address?.state && order.address.state.trim()) {
     user_data.st = [hashState(order.address.state)];
   }
-  if (order.address.zip) {
+
+  // CEP (zp): apenas números
+  if (order.address?.zip && order.address.zip.trim()) {
     user_data.zp = [hashZip(order.address.zip)];
   }
-  
-  // País sempre garantido (padrão Brasil BR)
-  const countryToUse = order.address.country || "BR";
-  user_data.co = [hashCountry(countryToUse)];
+
+  // País (country e co): Meta Conversions API exige "country", pixels usam "co". Enviamos ambos.
+  if (order.address?.country && order.address.country.trim()) {
+    const countryHash = hashCountry(order.address.country);
+    user_data.country = [countryHash];
+    user_data.co = [countryHash];
+  } else if (order.address?.city || order.address?.state || order.address?.zip) {
+    const brHash = hashCountry("br");
+    user_data.country = [brHash];
+    user_data.co = [brHash];
+  }
 
   // External ID universal garantido em 100% das compras
   const stableId =
@@ -290,9 +316,15 @@ export function buildBrowserEvent(
     const h = hashEmail(userData.email);
     if (h) user_data.em = [h];
   }
+  // Telefone: mesma normalização E.164 + dual-hash do buildMetaPurchaseEvent
   if (userData.phone) {
-    const h = hashPhone(userData.phone);
-    if (h) user_data.ph = [h];
+    const digits = userData.phone.replace(/\D/g, "");
+    if (digits) {
+      const primary = (digits.length === 10 || digits.length === 11) ? `55${digits}` : digits;
+      const phHashes: string[] = [sha256Hash(primary)];
+      if (primary !== digits) phHashes.push(sha256Hash(digits));
+      user_data.ph = phHashes;
+    }
   }
   if (userData.firstName) {
     user_data.fn = [hashName(userData.firstName)];
@@ -310,7 +342,9 @@ export function buildBrowserEvent(
     user_data.zp = [hashZip(userData.zip)];
   }
   if (userData.country) {
-    user_data.co = [hashCountry(userData.country)];
+    const cHash = hashCountry(userData.country);
+    user_data.country = [cHash];
+    user_data.co = [cHash];
   }
   if (userData.dateOfBirth) {
     user_data.db = [hashDateOfBirth(userData.dateOfBirth)];

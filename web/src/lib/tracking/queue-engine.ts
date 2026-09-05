@@ -1,6 +1,6 @@
 import { createAdminClient } from "../supabase/server";
 import { sendMetaCAPIEvent, MetaEvent } from "../meta/capi";
-import { decrypt, hashEmail, hashPhone, sha256Hash } from "../encryption";
+import { decrypt, hashEmail, hashPhone, hashState, sha256Hash } from "../encryption";
 import { getVisitorIdentity, normalizeEmail, normalizePhone } from "./identity-stitcher";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rridxhzbkitgcodzyctu.supabase.co";
@@ -150,11 +150,12 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
       user_data.ct = [sha256Hash(orderDetails.customer_city.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
     }
     if (orderDetails.customer_state) {
-      user_data.st = [sha256Hash(orderDetails.customer_state.toLowerCase().slice(0, 2))];
+      user_data.st = [hashState(orderDetails.customer_state)];
     }
     if (orderDetails.customer_zip) {
       user_data.zp = [sha256Hash(orderDetails.customer_zip.replace(/\D/g, ""))];
     }
+    user_data.country = [sha256Hash("br")];
     user_data.co = [sha256Hash("br")];
 
     if (rawEmail) {

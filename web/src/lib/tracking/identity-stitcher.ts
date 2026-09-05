@@ -1,7 +1,7 @@
 import { createAdminClient } from "../supabase/server";
 import { sendMetaCAPIEvent, MetaEvent } from "../meta/capi";
 import { resolveMetaAccessToken } from "../meta/token";
-import { hashEmail, hashPhone, sha256Hash } from "../encryption";
+import { hashEmail, hashPhone, hashState, sha256Hash } from "../encryption";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rridxhzbkitgcodzyctu.supabase.co";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyaWR4aHpia2l0Z2NvZHp5Y3R1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzcxNTUzMCwiZXhwIjoyMTAzMjkxNTMwfQ.gGxjPtKXABAYM4r6RsHcebVwwHsdpMD-RyRnxJn3QxE";
@@ -295,8 +295,9 @@ export async function enrichAndFlushBufferedEvents(
       user_data.ln = [sha256Hash(pii.lastName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
     }
     if (pii.city) user_data.ct = [sha256Hash(pii.city.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
-    if (pii.state) user_data.st = [sha256Hash(pii.state.toLowerCase().slice(0, 2))];
+    if (pii.state) user_data.st = [hashState(pii.state)];
     if (pii.zip) user_data.zp = [sha256Hash(pii.zip.replace(/\D/g, ""))];
+    user_data.country = [sha256Hash("br")];
     user_data.co = [sha256Hash("br")];
 
     if (email) {
@@ -540,11 +541,12 @@ export async function retroactivelyEnrichCompletedEvents(
             user_data.ct = [sha256Hash(pii.city.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
           }
           if (pii.state) {
-            user_data.st = [sha256Hash(pii.state.toLowerCase().slice(0, 2))];
+            user_data.st = [hashState(pii.state)];
           }
           if (pii.zip) {
             user_data.zp = [sha256Hash(pii.zip.replace(/\D/g, ""))];
           }
+          user_data.country = [sha256Hash("br")];
           user_data.co = [sha256Hash("br")];
 
           if (email) {
