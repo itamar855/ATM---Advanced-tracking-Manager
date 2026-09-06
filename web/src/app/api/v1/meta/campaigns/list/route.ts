@@ -331,8 +331,8 @@ export async function GET(request: NextRequest) {
       const adStatusFilter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED"] }]));
 
       const campUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time&filtering=${campStatusFilter}&access_token=${token}&limit=100`;
-      const adsetUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id&filtering=${adsetStatusFilter}&access_token=${token}&limit=100`;
-      const adUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id&filtering=${adStatusFilter}&access_token=${token}&limit=100`;
+      const adsetUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id&filtering=${adsetStatusFilter}&access_token=${token}&limit=250`;
+      const adUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id&filtering=${adStatusFilter}&access_token=${token}&limit=250`;
 
       // ── Insights em lote por nível usando time_range={since, until} ──
       const campInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=campaign&time_range=${timeRangeParam}&fields=campaign_id,spend,impressions,clicks,actions&access_token=${token}&limit=100`;
@@ -447,9 +447,11 @@ export async function GET(request: NextRequest) {
                 allData.push(...json.data);
               }
 
-              // Segue o cursor retornado pela Meta para a próxima página
+              // Segue o cursor retornado pela Meta para a próxima página com micro-pausa de cortesia
               if (json.paging?.next && Array.isArray(json.data) && json.data.length > 0) {
                 currentUrl = json.paging.next;
+                // Micro pausa entre 80ms e 120ms (100ms) para evitar throttling da Meta
+                await new Promise((r) => setTimeout(r, 100));
               } else {
                 currentUrl = null;
               }
