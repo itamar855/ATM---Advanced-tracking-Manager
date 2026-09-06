@@ -48,6 +48,21 @@ export interface AccountItem {
   last_update: string;
 }
 
+export interface BudgetHistorySnapshot {
+  previous_budget: number | null;
+  new_budget: number | null;
+  sales: number | null;
+  revenue: number | null;
+  spend: number | null;
+  profit: number | null;
+  roas: number | null;
+  cpa: number | null;
+  user_email: string | null;
+  source: string;
+  metadata?: any;
+  updated_at: string;
+}
+
 export interface CampaignItem {
   id: string;
   name: string;
@@ -69,6 +84,7 @@ export interface CampaignItem {
   margin: number;
   roi: number;
   last_update: string;
+  budget_history?: BudgetHistorySnapshot | null;
 }
 
 export interface AdsetItem {
@@ -93,6 +109,7 @@ export interface AdsetItem {
   margin: number;
   roi: number;
   last_update: string;
+  budget_history?: BudgetHistorySnapshot | null;
 }
 
 export interface AdItem {
@@ -150,7 +167,13 @@ export function UtmifyCampaignManager({
   // Estado da Aba Ativa
   const [activeTab, setActiveTab] = useState<TabType>("accounts");
 
-  // Filtros de Drill-Down
+  // ── Árvore Hierárquica (Fonte de Verdade para Filtro de Navegação) ──
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>([]);
+  const [selectedAdsetIds, setSelectedAdsetIds] = useState<string[]>([]);
+  const [selectedAdIds, setSelectedAdIds] = useState<string[]>([]);
+
+  // ── Foco Visual / Breadcrumb (Preservados conforme Regra 1) ──
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [selectedAdsetId, setSelectedAdsetId] = useState<string | null>(null);
@@ -217,24 +240,90 @@ export function UtmifyCampaignManager({
   const [bulkBudgetValue, setBulkBudgetValue] = useState("");
   const [mobileViewMode, setMobileViewMode] = useState<"cards" | "table">("cards");
 
-  // ── Navegação & Drill-Down ───────────────────────────────────────────────
+  // ── Navegação & Drill-Down (Atualiza Árvore Hierárquica + Foco Visual) ──
 
   const handleSelectAccount = (accId: string) => {
+    setSelectedAccountIds([accId]);
     setSelectedAccountId(accId);
+    setSelectedCampaignIds([]);
     setSelectedCampaignId(null);
+    setSelectedAdsetIds([]);
     setSelectedAdsetId(null);
+    setSelectedAdIds([]);
+    setSelectedRowIds([]);
     setActiveTab("campaigns");
   };
 
   const handleSelectCampaign = (campId: string) => {
+    setSelectedCampaignIds([campId]);
     setSelectedCampaignId(campId);
+    setSelectedAdsetIds([]);
     setSelectedAdsetId(null);
+    setSelectedAdIds([]);
+    setSelectedRowIds([]);
     setActiveTab("adsets");
   };
 
   const handleSelectAdset = (adsetId: string) => {
+    setSelectedAdsetIds([adsetId]);
     setSelectedAdsetId(adsetId);
+    setSelectedAdIds([]);
+    setSelectedRowIds([]);
     setActiveTab("ads");
+  };
+
+  // ── Remoção em Cascata de Filtros Hierárquicos ───────────────────────────
+
+  const removeAccountFromFilter = (accId: string) => {
+    setSelectedAccountIds(prev => prev.filter(id => id !== accId));
+    if (selectedAccountId === accId) setSelectedAccountId(null);
+    
+    // Remove campanhas dessa conta
+    const campsOfAcc = campaigns.filter(c => c.account_id === accId).map(c => c.id);
+    setSelectedCampaignIds(prev => prev.filter(id => !campsOfAcc.includes(id)));
+    if (selectedCampaignId && campsOfAcc.includes(selectedCampaignId)) setSelectedCampaignId(null);
+
+    // Remove adsets dessa conta
+    const adsetsOfAcc = adsets.filter(as => as.account_id === accId || campsOfAcc.includes(as.campaign_id)).map(as => as.id);
+    setSelectedAdsetIds(prev => prev.filter(id => !adsetsOfAcc.includes(id)));
+    if (selectedAdsetId && adsetsOfAcc.includes(selectedAdsetId)) setSelectedAdsetId(null);
+
+    // Remove ads dessa conta
+    const adsOfAcc = ads.filter(ad => ad.account_id === accId || campsOfAcc.includes(ad.campaign_id) || adsetsOfAcc.includes(ad.adset_id)).map(ad => ad.id);
+    setSelectedAdIds(prev => prev.filter(id => !adsOfAcc.includes(id)));
+  };
+
+  const removeCampaignFromFilter = (campId: string) => {
+    setSelectedCampaignIds(prev => prev.filter(id => id !== campId));
+    if (selectedCampaignId === campId) setSelectedCampaignId(null);
+
+    // Remove adsets dessa campanha
+    const adsetsOfCamp = adsets.filter(as => as.campaign_id === campId).map(as => as.id);
+    setSelectedAdsetIds(prev => prev.filter(id => !adsetsOfCamp.includes(id)));
+    if (selectedAdsetId && adsetsOfCamp.includes(selectedAdsetId)) setSelectedAdsetId(null);
+
+    // Remove ads dessa campanha
+    const adsOfCamp = ads.filter(ad => ad.campaign_id === campId || adsetsOfCamp.includes(ad.adset_id)).map(ad => ad.id);
+    setSelectedAdIds(prev => prev.filter(id => !adsOfCamp.includes(id)));
+  };
+
+  const removeAdsetFromFilter = (adsetId: string) => {
+    setSelectedAdsetIds(prev => prev.filter(id => id !== adsetId));
+    if (selectedAdsetId === adsetId) setSelectedAdsetId(null);
+
+    // Remove ads desse adset
+    const adsOfAdset = ads.filter(ad => ad.adset_id === adsetId).map(ad => ad.id);
+    setSelectedAdIds(prev => prev.filter(id => !adsOfAdset.includes(id)));
+  };
+
+  const clearAllHierarchicalFilters = () => {
+    setSelectedAccountIds([]);
+    setSelectedAccountId(null);
+    setSelectedCampaignIds([]);
+    setSelectedCampaignId(null);
+    setSelectedAdsetIds([]);
+    setSelectedAdsetId(null);
+    setSelectedAdIds([]);
   };
 
   // ── Ação de Toggle Switch (Play/Pause) ───────────────────────────────────
@@ -571,7 +660,9 @@ export function UtmifyCampaignManager({
         .filter((camp) => {
           const campName = String(camp.name || "").toLowerCase();
           const campId = String(camp.id || "").toLowerCase();
-          const matchAcc = !selectedAccountId || camp.account_id === selectedAccountId;
+          
+          // Hierarquia: se selectedAccountIds possuir itens, filtra por elas. Se vazio, mostra todas.
+          const matchAcc = selectedAccountIds.length === 0 || selectedAccountIds.includes(camp.account_id);
           const matchAccSelect = filterAccountSelect === "all" || camp.account_id === filterAccountSelect;
           const matchName = campName.includes(term) || campId.includes(term);
           const matchStatus = statusFilter === "all" || camp.status === statusFilter;
@@ -585,12 +676,22 @@ export function UtmifyCampaignManager({
         .filter((as) => {
           const asName = String(as.name || "").toLowerCase();
           const asId = String(as.id || "").toLowerCase();
-          const matchCamp = !selectedCampaignId || as.campaign_id === selectedCampaignId;
-          const matchAcc = !selectedAccountId || as.account_id === selectedAccountId;
+          
+          // Hierarquia:
+          // 1. Se selectedCampaignIds possuir itens: mostrar somente adsets dessas campanhas
+          // 2. Se vazio, mas selectedAccountIds possuir itens: mostrar somente adsets das contas selecionadas
+          // 3. Se vazio: mostrar todos
+          let matchHierarchy = true;
+          if (selectedCampaignIds.length > 0) {
+            matchHierarchy = selectedCampaignIds.includes(as.campaign_id);
+          } else if (selectedAccountIds.length > 0) {
+            matchHierarchy = selectedAccountIds.includes(as.account_id);
+          }
+
           const matchAccSelect = filterAccountSelect === "all" || as.account_id === filterAccountSelect;
           const matchName = asName.includes(term) || asId.includes(term);
           const matchStatus = statusFilter === "all" || as.status === statusFilter;
-          return matchCamp && matchAcc && matchAccSelect && matchName && matchStatus;
+          return matchHierarchy && matchAccSelect && matchName && matchStatus;
         })
         .sort(sortByActiveProfit);
     }
@@ -600,13 +701,25 @@ export function UtmifyCampaignManager({
         .filter((ad) => {
           const adName = String(ad.name || "").toLowerCase();
           const adId = String(ad.id || "").toLowerCase();
-          const matchAdset = !selectedAdsetId || ad.adset_id === selectedAdsetId;
-          const matchCamp = !selectedCampaignId || ad.campaign_id === selectedCampaignId;
-          const matchAcc = !selectedAccountId || ad.account_id === selectedAccountId;
+
+          // Hierarquia:
+          // 1. Se selectedAdsetIds possuir itens: mostrar somente ads desses conjuntos
+          // 2. Senão, se selectedCampaignIds possuir itens: mostrar somente ads dessas campanhas
+          // 3. Senão, se selectedAccountIds possuir itens: mostrar somente ads dessas contas
+          // 4. Senão: mostrar todos
+          let matchHierarchy = true;
+          if (selectedAdsetIds.length > 0) {
+            matchHierarchy = selectedAdsetIds.includes(ad.adset_id);
+          } else if (selectedCampaignIds.length > 0) {
+            matchHierarchy = selectedCampaignIds.includes(ad.campaign_id);
+          } else if (selectedAccountIds.length > 0) {
+            matchHierarchy = selectedAccountIds.includes(ad.account_id);
+          }
+
           const matchAccSelect = filterAccountSelect === "all" || ad.account_id === filterAccountSelect;
           const matchName = adName.includes(term) || adId.includes(term);
           const matchStatus = statusFilter === "all" || ad.status === statusFilter;
-          return matchAdset && matchCamp && matchAcc && matchAccSelect && matchName && matchStatus;
+          return matchHierarchy && matchAccSelect && matchName && matchStatus;
         })
         .sort(sortByActiveProfit);
     }
@@ -621,6 +734,10 @@ export function UtmifyCampaignManager({
     searchTerm,
     statusFilter,
     filterAccountSelect,
+    selectedAccountIds,
+    selectedCampaignIds,
+    selectedAdsetIds,
+    selectedAdIds,
     selectedAccountId,
     selectedCampaignId,
     selectedAdsetId,
@@ -663,9 +780,9 @@ export function UtmifyCampaignManager({
     return `R$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  const selectedAccountObj = accounts.find((a) => a.id === selectedAccountId);
-  const selectedCampaignObj = campaigns.find((c) => c.id === selectedCampaignId);
-  const selectedAdsetObj = adsets.find((as) => as.id === selectedAdsetId);
+  const selectedAccountObj = accounts.find((a) => (selectedAccountIds.length > 0 ? selectedAccountIds.includes(a.id) : a.id === selectedAccountId));
+  const selectedCampaignObj = campaigns.find((c) => (selectedCampaignIds.length > 0 ? selectedCampaignIds.includes(c.id) : c.id === selectedCampaignId));
+  const selectedAdsetObj = adsets.find((as) => (selectedAdsetIds.length > 0 ? selectedAdsetIds.includes(as.id) : as.id === selectedAdsetId));
 
   return (
     <div className="space-y-4 text-zinc-200 fade-in select-none">
@@ -702,12 +819,10 @@ export function UtmifyCampaignManager({
         <button
           onClick={() => {
             setActiveTab("accounts");
-            setSelectedAccountId(null);
-            setSelectedCampaignId(null);
-            setSelectedAdsetId(null);
+            setSelectedRowIds([]);
           }}
           className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-xs font-bold transition-all border-b-2",
+            "flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-xs font-bold transition-all border-b-2 cursor-pointer",
             activeTab === "accounts"
               ? "bg-blue-500/10 text-blue-400 border-blue-500"
               : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 border-transparent"
@@ -715,13 +830,32 @@ export function UtmifyCampaignManager({
         >
           <Folder size={14} className={activeTab === "accounts" ? "text-blue-400" : "text-zinc-500"} />
           <span>Contas</span>
+          {selectedAccountIds.length > 0 && (
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                clearAllHierarchicalFilters();
+              }}
+              className="ml-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] flex items-center gap-1 hover:bg-blue-500/40"
+              title="Limpar seleção de contas"
+            >
+              {selectedAccountIds.length} selec. <X size={10} />
+            </span>
+          )}
         </button>
 
         {/* Tab 2: Campanhas */}
         <button
-          onClick={() => setActiveTab("campaigns")}
+          onClick={() => {
+            if (activeTab === "accounts" && selectedRowIds.length > 0) {
+              setSelectedAccountIds([...selectedRowIds]);
+              setSelectedAccountId(selectedRowIds[0]);
+              setSelectedRowIds([]);
+            }
+            setActiveTab("campaigns");
+          }}
           className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-xs font-bold transition-all border-b-2",
+            "flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-xs font-bold transition-all border-b-2 cursor-pointer",
             activeTab === "campaigns"
               ? "bg-blue-500/10 text-blue-400 border-blue-500"
               : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 border-transparent"
@@ -729,71 +863,127 @@ export function UtmifyCampaignManager({
         >
           <Layers size={14} className={activeTab === "campaigns" ? "text-blue-400" : "text-zinc-500"} />
           <span>Campanhas</span>
-          {selectedAccountId && (
+          {selectedAccountIds.length > 0 && (
             <span
               onClick={(e) => {
                 e.stopPropagation();
-                setSelectedAccountId(null);
+                clearAllHierarchicalFilters();
               }}
               className="ml-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] flex items-center gap-1 hover:bg-blue-500/40"
               title="Limpar filtro de conta"
             >
-              {selectedAccountObj?.name || "1 conta"} <X size={10} />
+              {selectedAccountIds.length === 1 ? (selectedAccountObj?.name || "1 conta") : `${selectedAccountIds.length} contas`} <X size={10} />
             </span>
           )}
         </button>
 
         {/* Tab 3: CJs (Conjuntos de Anúncios) */}
         <button
-          onClick={() => setActiveTab("adsets")}
+          onClick={() => {
+            if (activeTab === "campaigns" && selectedRowIds.length > 0) {
+              setSelectedCampaignIds([...selectedRowIds]);
+              setSelectedCampaignId(selectedRowIds[0]);
+              setSelectedRowIds([]);
+            }
+            setActiveTab("adsets");
+          }}
           className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-xs font-bold transition-all border-b-2",
+            "flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-xs font-bold transition-all border-b-2 cursor-pointer",
             activeTab === "adsets"
               ? "bg-blue-500/10 text-blue-400 border-blue-500"
               : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 border-transparent"
           )}
         >
           <LayoutGrid size={14} className={activeTab === "adsets" ? "text-blue-400" : "text-zinc-500"} />
-          <span>CJs {selectedCampaignId ? `de 1 campanha` : ""}</span>
-          {selectedCampaignId && (
+          <span>CJs</span>
+          {selectedCampaignIds.length > 0 ? (
             <span
               onClick={(e) => {
                 e.stopPropagation();
+                setSelectedCampaignIds([]);
                 setSelectedCampaignId(null);
+                setSelectedAdsetIds([]);
+                setSelectedAdsetId(null);
+                setSelectedAdIds([]);
               }}
               className="ml-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] flex items-center gap-1 hover:bg-blue-500/40"
-              title="Limpar filtro de campanha"
+              title="Limpar filtro de campanhas"
             >
-              {selectedCampaignObj?.name.slice(0, 15) || "1 camp."}... <X size={10} />
+              {selectedCampaignIds.length === 1 ? (selectedCampaignObj?.name.slice(0, 15) || "1 camp.") : `${selectedCampaignIds.length} camps`} <X size={10} />
             </span>
-          )}
+          ) : selectedAccountIds.length > 0 ? (
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                clearAllHierarchicalFilters();
+              }}
+              className="ml-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] flex items-center gap-1 hover:bg-blue-500/40"
+              title="Limpar filtro de contas"
+            >
+              {selectedAccountIds.length === 1 ? (selectedAccountObj?.name || "1 conta") : `${selectedAccountIds.length} contas`} <X size={10} />
+            </span>
+          ) : null}
         </button>
 
         {/* Tab 4: ADs (Criativos) */}
         <button
-          onClick={() => setActiveTab("ads")}
+          onClick={() => {
+            if (activeTab === "adsets" && selectedRowIds.length > 0) {
+              setSelectedAdsetIds([...selectedRowIds]);
+              setSelectedAdsetId(selectedRowIds[0]);
+              setSelectedRowIds([]);
+            }
+            setActiveTab("ads");
+          }}
           className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-xs font-bold transition-all border-b-2",
+            "flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-xs font-bold transition-all border-b-2 cursor-pointer",
             activeTab === "ads"
               ? "bg-blue-500/10 text-blue-400 border-blue-500"
               : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 border-transparent"
           )}
         >
           <ImageIcon size={14} className={activeTab === "ads" ? "text-blue-400" : "text-zinc-500"} />
-          <span>ADs {selectedAdsetId ? `do conjunto` : selectedCampaignId ? `da campanha` : ""}</span>
-          {(selectedAdsetId || selectedCampaignId) && (
+          <span>ADs</span>
+          {selectedAdsetIds.length > 0 ? (
             <span
               onClick={(e) => {
                 e.stopPropagation();
+                setSelectedAdsetIds([]);
                 setSelectedAdsetId(null);
-                setSelectedCampaignId(null);
+                setSelectedAdIds([]);
               }}
               className="ml-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] flex items-center gap-1 hover:bg-blue-500/40"
-              title="Limpar filtros e ver todos os anúncios"
+              title="Limpar filtro de conjuntos"
             >
-              {selectedAdsetObj?.name.slice(0, 12) || selectedCampaignObj?.name.slice(0, 12) || "Filtrado"} <X size={10} />
+              {selectedAdsetIds.length === 1 ? (selectedAdsetObj?.name.slice(0, 15) || "1 conj.") : `${selectedAdsetIds.length} conjs`} <X size={10} />
             </span>
-          )}
+          ) : selectedCampaignIds.length > 0 ? (
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedCampaignIds([]);
+                setSelectedCampaignId(null);
+                setSelectedAdsetIds([]);
+                setSelectedAdsetId(null);
+                setSelectedAdIds([]);
+              }}
+              className="ml-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] flex items-center gap-1 hover:bg-blue-500/40"
+              title="Limpar filtro de campanhas"
+            >
+              {selectedCampaignIds.length === 1 ? (selectedCampaignObj?.name.slice(0, 15) || "1 camp.") : `${selectedCampaignIds.length} camps`} <X size={10} />
+            </span>
+          ) : selectedAccountIds.length > 0 ? (
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                clearAllHierarchicalFilters();
+              }}
+              className="ml-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] flex items-center gap-1 hover:bg-blue-500/40"
+              title="Limpar filtro de contas"
+            >
+              {selectedAccountIds.length === 1 ? (selectedAccountObj?.name || "1 conta") : `${selectedAccountIds.length} contas`} <X size={10} />
+            </span>
+          ) : null}
         </button>
       </div>
 
@@ -850,8 +1040,56 @@ export function UtmifyCampaignManager({
               <SlidersHorizontal size={14} />
             </button>
 
+            {selectedRowIds.length > 0 && activeTab === "accounts" && (
+              <button
+                onClick={() => {
+                  setSelectedAccountIds([...selectedRowIds]);
+                  setSelectedAccountId(selectedRowIds[0]);
+                  setSelectedRowIds([]);
+                  setActiveTab("campaigns");
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-semibold text-xs border border-indigo-500/30 transition-all cursor-pointer"
+                title="Filtrar campanhas das contas selecionadas"
+              >
+                <Layers size={13} />
+                <span>Ver Campanhas ({selectedRowIds.length})</span>
+              </button>
+            )}
+
             {selectedRowIds.length > 0 && activeTab !== "accounts" && (
               <>
+                {activeTab === "campaigns" && (
+                  <button
+                    onClick={() => {
+                      setSelectedCampaignIds([...selectedRowIds]);
+                      setSelectedCampaignId(selectedRowIds[0]);
+                      setSelectedRowIds([]);
+                      setActiveTab("adsets");
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-semibold text-xs border border-indigo-500/30 transition-all cursor-pointer"
+                    title="Filtrar conjuntos das campanhas selecionadas"
+                  >
+                    <LayoutGrid size={13} />
+                    <span>Ver CJs ({selectedRowIds.length})</span>
+                  </button>
+                )}
+
+                {activeTab === "adsets" && (
+                  <button
+                    onClick={() => {
+                      setSelectedAdsetIds([...selectedRowIds]);
+                      setSelectedAdsetId(selectedRowIds[0]);
+                      setSelectedRowIds([]);
+                      setActiveTab("ads");
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-semibold text-xs border border-indigo-500/30 transition-all cursor-pointer"
+                    title="Filtrar anúncios dos conjuntos selecionados"
+                  >
+                    <ImageIcon size={13} />
+                    <span>Ver ADs ({selectedRowIds.length})</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => handleBulkStatus("active")}
                   disabled={isBulkActionRunning}
@@ -1212,8 +1450,18 @@ export function UtmifyCampaignManager({
             );
           })
         ) : (
-          <div className="p-8 text-center bg-[#11141E] border border-zinc-800/80 rounded-2xl text-zinc-400 text-xs">
-            Nenhum item encontrado com os filtros atuais.
+          <div className="p-8 text-center bg-[#11141E] border border-zinc-800/80 rounded-2xl text-zinc-400 text-xs space-y-2">
+            <p>Nenhum item encontrado com os filtros atuais.</p>
+            {(selectedCampaignIds.length > 0 || selectedAdsetIds.length > 0 || selectedAccountIds.length > 0 || selectedCampaignId || selectedAdsetId || selectedAccountId) && (
+              <button
+                type="button"
+                onClick={clearAllHierarchicalFilters}
+                className="px-3 py-1.5 rounded-lg bg-blue-600/20 text-blue-400 font-semibold border border-blue-500/30 text-xs inline-flex items-center gap-1 cursor-pointer"
+              >
+                <X size={12} />
+                <span>Limpar filtros hierárquicos</span>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1252,7 +1500,7 @@ export function UtmifyCampaignManager({
                 {activeTab !== "accounts" && (
                   <>
                     <th className="py-3 px-2 text-right">ORÇAMENTO</th>
-                    <th className="py-3 px-2 text-center">ÚLT. ATUALIZAÇÃO</th>
+                    <th className="py-3 px-2 text-center min-w-[130px]">ÚLT. ATUALIZAÇÃO</th>
                   </>
                 )}
 
@@ -1548,8 +1796,47 @@ export function UtmifyCampaignManager({
                           </td>
 
                           {/* Última Atualização */}
-                          <td className="py-2.5 px-2 text-center text-zinc-400 font-mono text-[10px]">
-                            {row.last_update}
+                          <td className="py-2.5 px-2 text-center min-w-[130px]">
+                            {(row as any).budget_history ? (
+                              <div
+                                className="inline-flex flex-col items-center justify-center text-center cursor-help group/hist"
+                                title={`Alterado em: ${new Date((row as any).budget_history.updated_at).toLocaleString("pt-BR")}\nResponsável: ${(row as any).budget_history.user_email || "ATM (Usuário)"}\nOrçamento: R$ ${(row as any).budget_history.previous_budget !== null ? (row as any).budget_history.previous_budget.toFixed(2) : "N/A"} ➔ R$ ${(row as any).budget_history.new_budget?.toFixed(2)}\n${(row as any).budget_history.sales !== null ? `Métricas no momento da alteração:\n• ROAS: ${Number((row as any).budget_history.roas || 0).toFixed(2)}x\n• Vendas: ${(row as any).budget_history.sales}\n• CPA: ${fmtBrl((row as any).budget_history.cpa || 0)}\n• Faturamento: ${fmtBrl((row as any).budget_history.revenue || 0)}\n• Lucro Líquido: ${fmtBrl((row as any).budget_history.profit || 0)}` : "Métricas detalhadas não disponíveis no snapshot"}`}
+                              >
+                                {/* Data / Hora */}
+                                <span className="text-[10px] text-zinc-400 font-mono leading-tight">
+                                  {new Date((row as any).budget_history.updated_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}{" "}
+                                  {new Date((row as any).budget_history.updated_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+
+                                {/* Orçamento: R$ X → R$ Y */}
+                                <div className="flex items-center gap-1 font-mono text-[10.5px] font-bold mt-0.5">
+                                  <span className="text-zinc-400">
+                                    {(row as any).budget_history.previous_budget !== null ? `R$${Math.round((row as any).budget_history.previous_budget)}` : "—"}
+                                  </span>
+                                  <span className={Number((row as any).budget_history.new_budget) >= Number((row as any).budget_history.previous_budget) ? "text-emerald-400" : "text-amber-400"}>
+                                    →
+                                  </span>
+                                  <span className={Number((row as any).budget_history.new_budget) >= Number((row as any).budget_history.previous_budget) ? "text-emerald-400 font-black" : "text-amber-400 font-black"}>
+                                    R${Math.round((row as any).budget_history.new_budget)}
+                                  </span>
+                                </div>
+
+                                {/* Performance: ROAS, Vendas, CPA */}
+                                {(row as any).budget_history.sales !== null ? (
+                                  <span className="text-[9.5px] font-mono text-zinc-400 mt-0.5">
+                                    <strong className="text-blue-400">{Number((row as any).budget_history.roas || 0).toFixed(1)}x</strong> • {(row as any).budget_history.sales}v • {fmtBrl((row as any).budget_history.cpa || 0)}
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-mono text-zinc-500 mt-0.5">
+                                    {(row as any).budget_history.source}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-zinc-400 font-mono text-[10px] block" title="Data reportada pela Meta Ads">
+                                {row.last_update}
+                              </span>
+                            )}
                           </td>
                         </>
                       )}
@@ -1632,16 +1919,13 @@ export function UtmifyCampaignManager({
                   <td colSpan={15} className="py-12 text-center text-zinc-500">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <p className="text-xs">Nenhum registro encontrado para os filtros selecionados.</p>
-                      {(selectedCampaignId || selectedAdsetId) && (
+                      {(selectedCampaignIds.length > 0 || selectedAdsetIds.length > 0 || selectedAccountIds.length > 0 || selectedCampaignId || selectedAdsetId || selectedAccountId) && (
                         <button
-                          onClick={() => {
-                            setSelectedCampaignId(null);
-                            setSelectedAdsetId(null);
-                          }}
+                          onClick={clearAllHierarchicalFilters}
                           className="px-3.5 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 text-xs font-semibold border border-blue-500/30 transition-all inline-flex items-center gap-1.5 cursor-pointer"
                         >
                           <X size={12} />
-                          <span>Limpar filtros e ver tudo em {activeTab === "campaigns" ? "Campanhas" : activeTab === "adsets" ? "Conjuntos" : "Anúncios"}</span>
+                          <span>Limpar filtros e ver tudo em {activeTab === "campaigns" ? "Campanhas" : activeTab === "adsets" ? "Conjuntos" : activeTab === "ads" ? "Anúncios" : "Contas"}</span>
                         </button>
                       )}
                     </div>

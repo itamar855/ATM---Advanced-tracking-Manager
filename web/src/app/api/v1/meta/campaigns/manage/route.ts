@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
 import { getUsdBrlRate } from "@/lib/currency";
-import { clearCampaignsMemoryCache } from "../list/route";
+import { clearCampaignsMemoryCache, getCachedEntityMetrics } from "../list/route";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +32,18 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createAdminClient();
+
+    // Identificação do Usuário Autenticado
+    let userId: string | null = null;
+    let userEmail: string | null = null;
+    try {
+      const userClient = await createClient();
+      const { data: { user } } = await userClient.auth.getUser();
+      if (user) {
+        userId = user.id;
+        userEmail = user.email || null;
+      }
+    } catch {}
 
     // 1. Busca token da Meta da loja selecionada com fallback
     let { data: integration } = await supabase
@@ -68,6 +80,14 @@ export async function POST(request: NextRequest) {
     let method = "POST";
     let payload: Record<string, any> = {};
 
+    // Variáveis de snapshot para auditoria de orçamento
+    let budgetSnapshot: ReturnType<typeof getCachedEntityMetrics> = null;
+    let snapshotSource: "cache" | "none" = "none";
+    let datePresetUsed: string | null = null;
+    let timezoneUsed: string | null = null;
+    let entityName: string | null = null;
+    let previousBudget: number | null = null;
+
     if (action === "status") {
       payload = { status: value === "active" || value === "ACTIVE" ? "ACTIVE" : "PAUSED" };
     } else if (action === "name" || action === "rename") {
@@ -85,6 +105,38 @@ export async function POST(request: NextRequest) {
           { ok: false, error: "Valor de orçamento inválido. Informe um número válido maior que zero." },
           { status: 400 }
         );
+      }
+
+      // Captura segura de métricas antes da alteração na Meta (100% backend)
+      if (level === "campaign" || level === "adset") {
+        budgetSnapshot = getCachedEntityMetrics(store_id, id, level);
+        if (budgetSnapshot) {
+          snapshotSource = "cache";
+          datePresetUsed = budgetSnapshot.date_preset;
+          timezoneUsed = budgetSnapshot.timezone;
+          entityName = budgetSnapshot.name;
+          previousBudget = budgetSnapshot.budget;
+        } else {
+          // Fallback seguro: se cache não estiver disponível, obtém dados básicos da Meta sem gravar métricas zeradas silenciosamente
+          try {
+            const infoRes = await fetch(
+              `https://graph.facebook.com/v23.0/${id}?fields=name,daily_budget,lifetime_budget&access_token=${token}`,
+              { signal: AbortSignal.timeout(3500) }
+            );
+            if (infoRes.ok) {
+              const info = await infoRes.json();
+              entityName = info.name || null;
+              const rawB = info.daily_budget
+                ? Number(info.daily_budget) / 100
+                : info.lifetime_budget
+                ? Number(info.lifetime_budget) / 100
+                : null;
+              if (rawB !== null) {
+                previousBudget = curr === "USD" ? rawB * usdBrlRate : rawB;
+              }
+            }
+          } catch {}
+        }
       }
 
       // Se a conta for USD e o usuário digitou em BRL, converte para USD
@@ -191,6 +243,41 @@ export async function POST(request: NextRequest) {
       }
       
       return NextResponse.json({ ok: false, error: errMsg }, { status: 400 });
+    }
+
+    // Persistência do histórico de decisões operacionais na tabela meta_entity_history
+    // SOMENTE após validação de sucesso pela Meta Graph API
+    if (action === "budget") {
+      try {
+        const normalizedValue = String(value ?? "").replace(",", ".").trim();
+        await supabase.from("meta_entity_history").insert({
+          store_id,
+          user_id: userId,
+          user_email: userEmail,
+          source: "atm_user",
+          action: "budget",
+          entity_id: id,
+          entity_type: level,
+          entity_name: entityName,
+          previous_budget: previousBudget !== null ? Number(previousBudget.toFixed(2)) : null,
+          new_budget: Number(normalizedValue),
+          sales_at_update: budgetSnapshot ? budgetSnapshot.sales : null,
+          revenue_at_update: budgetSnapshot ? Number(budgetSnapshot.revenue.toFixed(2)) : null,
+          spend_at_update: budgetSnapshot ? Number(budgetSnapshot.spend.toFixed(2)) : null,
+          profit_at_update: budgetSnapshot ? Number(budgetSnapshot.profit.toFixed(2)) : null,
+          roas_at_update: budgetSnapshot ? Number(budgetSnapshot.roas.toFixed(2)) : null,
+          cpa_at_update: budgetSnapshot ? Number(budgetSnapshot.cpa.toFixed(2)) : null,
+          metadata: {
+            snapshot_source: snapshotSource,
+            date_preset: datePresetUsed,
+            timezone: timezoneUsed,
+            currency: curr,
+            usd_rate: usdBrlRate,
+          },
+        });
+      } catch (histErr) {
+        console.warn("[Meta Entity History Insert Warning]:", histErr);
+      }
     }
 
     clearCampaignsMemoryCache(store_id);

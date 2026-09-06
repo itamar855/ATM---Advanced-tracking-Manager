@@ -88,21 +88,23 @@ function CampaignsContent() {
           setApiError(data.warning || data.notice);
         }
 
-        // Persiste no cache do navegador para próximas navegações instantâneas
-        try {
-          const cacheKey = `atm_camp_cache_${activeStore.id}_${datePreset}`;
-          sessionStorage.setItem(
-            cacheKey,
-            JSON.stringify({
-              accounts: accs,
-              campaigns: camps,
-              adsets: adsetsList,
-              ads: adsList,
-              untracked_sales_count: untracked,
-              timestamp: Date.now(),
-            })
-          );
-        } catch {}
+        // Persiste no cache do navegador apenas se não houve erros ou dados corrompidos
+        if (accs.length > 0 && !data.warning && (!data.account_errors || data.account_errors.length === 0)) {
+          try {
+            const cacheKey = `atm_camp_cache_${activeStore.id}_${datePreset}`;
+            sessionStorage.setItem(
+              cacheKey,
+              JSON.stringify({
+                accounts: accs,
+                campaigns: camps,
+                adsets: adsetsList,
+                ads: adsList,
+                untracked_sales_count: untracked,
+                timestamp: Date.now(),
+              })
+            );
+          } catch {}
+        }
       } else {
         setApiError(data.error || "Não foi possível carregar os dados das Campanhas.");
       }
@@ -146,7 +148,15 @@ function CampaignsContent() {
         untrackedSalesCount={untrackedSalesCount}
         datePreset={datePreset}
         setDatePreset={setDatePreset}
-        onRefresh={() => loadData(true)}
+        onRefresh={() => {
+          try {
+            if (activeStore?.id) {
+              const cacheKey = `atm_camp_cache_${activeStore.id}_${datePreset}`;
+              sessionStorage.removeItem(cacheKey);
+            }
+          } catch {}
+          loadData(true);
+        }}
         isRefreshing={isRefreshing}
         apiError={apiError}
       />

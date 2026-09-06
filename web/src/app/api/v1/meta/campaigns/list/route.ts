@@ -10,6 +10,8 @@ export const dynamic = "force-dynamic";
 interface CacheEntry {
   timestamp: number;
   data: any;
+  datePreset?: string;
+  timezoneName?: string;
 }
 const MEMORY_CACHE = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 60000; // 60 segundos (carregamento ultra-rápido < 50ms)
@@ -24,6 +26,36 @@ export function clearCampaignsMemoryCache(storeId?: string) {
       MEMORY_CACHE.delete(key);
     }
   }
+}
+
+/**
+ * Retorna o snapshot operacional recente de uma entidade Meta (Campanha ou AdSet)
+ * a partir do cache em memória com mesma timezone, janela temporal e atribuição.
+ */
+export function getCachedEntityMetrics(storeId: string, entityId: string, level: "campaign" | "adset") {
+  for (const [key, entry] of MEMORY_CACHE.entries()) {
+    if (key.startsWith(`${storeId}_`)) {
+      const items = level === "campaign" ? entry.data?.campaigns : entry.data?.adsets;
+      const found = items?.find((item: any) => item.id === entityId);
+      if (found) {
+        const acc = entry.data?.accounts?.find((a: any) => a.id === found.account_id);
+        return {
+          name: found.name || "",
+          budget: Number(found.budget || 0),
+          sales: Number(found.sales || 0),
+          revenue: Number(found.revenue || 0),
+          spend: Number(found.spend || 0),
+          profit: Number(found.profit || 0),
+          roas: Number(found.roas || 0),
+          cpa: Number(found.cpa || 0),
+          date_preset: entry.datePreset || "today",
+          timezone: acc?.timezone_name || entry.timezoneName || "America/Sao_Paulo",
+          snapshot_source: "cache" as const,
+        };
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -267,6 +299,15 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false })
       .limit(2000);
 
+    const entityHistoryPromise = supabase
+      .from("meta_entity_history")
+      .select("entity_id, action, previous_budget, new_budget, sales_at_update, revenue_at_update, spend_at_update, profit_at_update, roas_at_update, cpa_at_update, user_email, created_at, source, metadata")
+      .eq("store_id", storeId)
+      .eq("action", "budget")
+      .order("created_at", { ascending: false });
+
+    let hasGlobalFetchFailure = false;
+
     const fetchPromises = accountsMeta.map(async (acc) => {
       const { cleanAccId, rawAcc, accData, dateRange } = acc;
 
@@ -274,11 +315,17 @@ export async function GET(request: NextRequest) {
         JSON.stringify({ since: dateRange.since, until: dateRange.until })
       );
 
-      // Filtra por ACTIVE e PAUSED para não puxar lixo histórico deletado ou arquivado
-      const statusFilter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED"] }]));
-      const campUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time&filtering=${statusFilter}&access_token=${token}&limit=100`;
-      const adsetUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id&filtering=${statusFilter}&access_token=${token}&limit=150`;
-      const adUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id&filtering=${statusFilter}&access_token=${token}&limit=150`;
+      // Filtros de status por nível:
+      // 1. Campanhas: ACTIVE e PAUSED
+      const campStatusFilter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED"] }]));
+      // 2. AdSets: inclui também CAMPAIGN_PAUSED (conjuntos cuja campanha pai está pausada)
+      const adsetStatusFilter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED"] }]));
+      // 3. Ads: inclui também CAMPAIGN_PAUSED e ADSET_PAUSED
+      const adStatusFilter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED"] }]));
+
+      const campUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time&filtering=${campStatusFilter}&access_token=${token}&limit=100`;
+      const adsetUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id&filtering=${adsetStatusFilter}&access_token=${token}&limit=200`;
+      const adUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id&filtering=${adStatusFilter}&access_token=${token}&limit=250`;
 
       // ── Insights em lote por nível usando time_range={since, until} ──
       const campInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=campaign&time_range=${timeRangeParam}&fields=campaign_id,spend,impressions,clicks,actions&access_token=${token}&limit=200`;
@@ -286,81 +333,133 @@ export async function GET(request: NextRequest) {
       const adInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=ad&time_range=${timeRangeParam}&fields=ad_id,spend,impressions,clicks,actions&access_token=${token}&limit=250`;
       const accInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=account&time_range=${timeRangeParam}&fields=spend,impressions,clicks,actions&access_token=${token}`;
 
-      const [campRes, adsetRes, adRes, cInsRes, asInsRes, aInsRes, acInsRes] = await Promise.all([
-        fetch(campUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-        fetch(adsetUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-        fetch(adUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-        fetch(campInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-        fetch(adsetInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-        fetch(adInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-        fetch(accInsightsUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) }).catch(() => null),
-      ]);
+      let accountHasFailure = false;
+      const fetchWithResilience = async (url: string, label: string, timeoutMs = 12000) => {
+        try {
+          const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(timeoutMs) });
+          if (!res.ok) {
+            accountHasFailure = true;
+            hasGlobalFetchFailure = true;
+            const errSnippet = await res.text().catch(() => "");
+            console.warn(`[Meta API Error] ${label} (${cleanAccId}) status ${res.status}: ${errSnippet.slice(0, 200)}`);
+          }
+          return res;
+        } catch (err: any) {
+          accountHasFailure = true;
+          hasGlobalFetchFailure = true;
+          console.warn(`[Meta API Network/Timeout Error] ${label} (${cleanAccId}): ${err?.message || err}`);
+          return null;
+        }
+      };
 
-      let rawCampaigns: any[] = [];
-      let rawAdsets: any[] = [];
-      let rawAds: any[] = [];
+      // Função de busca paginada por cursor na Meta Graph API (paging.next)
+      const fetchMetaPaged = async (
+        initialUrl: string,
+        label: string,
+        maxPages = 25,
+        maxItems = 10000,
+        timeoutMs = 12000
+      ): Promise<{ data: any[]; hasFailure: boolean; error?: string }> => {
+        let allData: any[] = [];
+        let currentUrl: string | null = initialUrl;
+        let page = 0;
+        let hasFailure = false;
+        let lastError: string | undefined;
 
-      try {
-        if (campRes && campRes.ok) {
-          const campData = await campRes.json();
-          if (campData.error) {
-            accountErrors.push({ id: cleanAccId, error: campData.error.message || "Erro ao buscar campanhas" });
-          } else {
-            rawCampaigns = Array.isArray(campData.data) ? campData.data : [];
+        while (currentUrl && page < maxPages && allData.length < maxItems) {
+          page++;
+          try {
+            const res: Response = await fetch(currentUrl, {
+              cache: "no-store",
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+
+            if (!res.ok) {
+              hasFailure = true;
+              const errSnippet = await res.text().catch(() => "");
+              lastError = `Status ${res.status}: ${errSnippet.slice(0, 150)}`;
+              console.warn(`[Meta API Error] ${label} (${cleanAccId}) page ${page}: ${lastError}`);
+              break;
+            }
+
+            const json: any = await res.json();
+            if (json.error) {
+              hasFailure = true;
+              lastError = json.error.message || "Erro na Meta API";
+              console.warn(`[Meta API Error] ${label} (${cleanAccId}) page ${page}: ${lastError}`);
+              break;
+            }
+
+            if (Array.isArray(json.data)) {
+              allData.push(...json.data);
+            }
+
+            // Segue o cursor retornado pela Meta para a próxima página
+            if (json.paging?.next && Array.isArray(json.data) && json.data.length > 0) {
+              currentUrl = json.paging.next;
+            } else {
+              currentUrl = null;
+            }
+          } catch (err: any) {
+            hasFailure = true;
+            lastError = err?.message || String(err);
+            console.warn(`[Meta API Timeout/Network Error] ${label} (${cleanAccId}) page ${page}: ${lastError}`);
+            break;
           }
         }
-      } catch {}
 
-      try {
-        if (adsetRes && adsetRes.ok) {
-          const adsetData = await adsetRes.json();
-          rawAdsets = Array.isArray(adsetData.data) ? adsetData.data : [];
+        if (hasFailure) {
+          accountHasFailure = true;
+          hasGlobalFetchFailure = true;
         }
-      } catch {}
 
-      try {
-        if (adRes && adRes.ok) {
-          const adData = await adRes.json();
-          rawAds = Array.isArray(adData.data) ? adData.data : [];
+        if (page > 1) {
+          console.log(`[Meta API Cursor] ${label} (${cleanAccId}): ${allData.length} itens coletados em ${page} páginas.`);
         }
-      } catch {}
+
+        return { data: allData, hasFailure, error: lastError };
+      };
+
+      const [campResult, adsetResult, adResult, cInsResult, asInsResult, aInsResult, acInsRes] = await Promise.all([
+        fetchMetaPaged(campUrl, "campaigns", 20, 5000, 12000),
+        fetchMetaPaged(adsetUrl, "adsets", 25, 10000, 12000),
+        fetchMetaPaged(adUrl, "ads", 25, 10000, 12000),
+        fetchMetaPaged(campInsightsUrl, "campInsights", 20, 5000, 10000),
+        fetchMetaPaged(adsetInsightsUrl, "adsetInsights", 25, 10000, 10000),
+        fetchMetaPaged(adInsightsUrl, "adInsights", 25, 10000, 10000),
+        fetchWithResilience(accInsightsUrl, "accInsights", 10000),
+      ]);
+
+      let rawCampaigns: any[] = campResult.data;
+      if (campResult.error) {
+        accountErrors.push({ id: cleanAccId, error: campResult.error });
+      }
+
+      let rawAdsets: any[] = adsetResult.data;
+      if (adsetResult.error) {
+        accountErrors.push({ id: cleanAccId, error: adsetResult.error });
+      }
+
+      let rawAds: any[] = adResult.data;
+      if (adResult.error) {
+        accountErrors.push({ id: cleanAccId, error: adResult.error });
+      }
 
       // Mapeamento de Insights
       const campaignInsightsMap = new Map<string, any>();
-      try {
-        if (cInsRes && cInsRes.ok) {
-          const cInsData = await cInsRes.json();
-          if (Array.isArray(cInsData.data)) {
-            cInsData.data.forEach((ins: any) => {
-              if (ins.campaign_id) campaignInsightsMap.set(ins.campaign_id, ins);
-            });
-          }
-        }
-      } catch {}
+      cInsResult.data.forEach((ins: any) => {
+        if (ins.campaign_id) campaignInsightsMap.set(ins.campaign_id, ins);
+      });
 
       const adsetInsightsMap = new Map<string, any>();
-      try {
-        if (asInsRes && asInsRes.ok) {
-          const asInsData = await asInsRes.json();
-          if (Array.isArray(asInsData.data)) {
-            asInsData.data.forEach((ins: any) => {
-              if (ins.adset_id) adsetInsightsMap.set(ins.adset_id, ins);
-            });
-          }
-        }
-      } catch {}
+      asInsResult.data.forEach((ins: any) => {
+        if (ins.adset_id) adsetInsightsMap.set(ins.adset_id, ins);
+      });
 
       const adInsightsMap = new Map<string, any>();
-      try {
-        if (aInsRes && aInsRes.ok) {
-          const aInsData = await aInsRes.json();
-          if (Array.isArray(aInsData.data)) {
-            aInsData.data.forEach((ins: any) => {
-              if (ins.ad_id) adInsightsMap.set(ins.ad_id, ins);
-            });
-          }
-        }
-      } catch {}
+      aInsResult.data.forEach((ins: any) => {
+        if (ins.ad_id) adInsightsMap.set(ins.ad_id, ins);
+      });
 
       let accountInsight: any = {};
       try {
@@ -393,12 +492,22 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    const [dbEventsResult] = await Promise.all([
+    const [dbEventsResult, entityHistoryResult] = await Promise.all([
       dbEventsPromise,
+      entityHistoryPromise,
       Promise.all(fetchPromises),
     ]);
 
     const dbEvents = dbEventsResult.data || [];
+
+    const budgetHistoryMap = new Map<string, any>();
+    if (Array.isArray(entityHistoryResult.data)) {
+      for (const h of entityHistoryResult.data) {
+        if (!budgetHistoryMap.has(h.entity_id)) {
+          budgetHistoryMap.set(h.entity_id, h);
+        }
+      }
+    }
 
     // 6. Estrutura normalizada de eventos com UTMs extraídas em cascata
     interface ParsedEvent {
@@ -830,6 +939,8 @@ export async function GET(request: NextRequest) {
         const convertedBudget = convertToBrl(rawBudget, currency, usdBrlRate);
         const isActive = camp.effective_status === "ACTIVE" || (camp.effective_status === undefined && camp.status === "ACTIVE");
 
+        const cHist = budgetHistoryMap.get(camp.id);
+
         allCampaigns.push({
           id: camp.id,
           name: camp.name,
@@ -852,6 +963,20 @@ export async function GET(request: NextRequest) {
           margin: cMargin,
           roi: cRoi,
           last_update: camp.updated_time ? new Date(camp.updated_time).toLocaleString("pt-BR") : "Hoje",
+          budget_history: cHist ? {
+            previous_budget: cHist.previous_budget !== null ? Number(cHist.previous_budget) : null,
+            new_budget: cHist.new_budget !== null ? Number(cHist.new_budget) : null,
+            sales: cHist.sales_at_update,
+            revenue: cHist.revenue_at_update !== null ? Number(cHist.revenue_at_update) : null,
+            spend: cHist.spend_at_update !== null ? Number(cHist.spend_at_update) : null,
+            profit: cHist.profit_at_update !== null ? Number(cHist.profit_at_update) : null,
+            roas: cHist.roas_at_update !== null ? Number(cHist.roas_at_update) : null,
+            cpa: cHist.cpa_at_update !== null ? Number(cHist.cpa_at_update) : null,
+            user_email: cHist.user_email,
+            source: cHist.source,
+            metadata: cHist.metadata,
+            updated_at: cHist.created_at,
+          } : null,
         });
       });
 
@@ -881,6 +1006,8 @@ export async function GET(request: NextRequest) {
         const asIc = Math.max(metaAdsetIc, fpAdsetIc);
         const asCpi = asIc > 0 ? asSpend / asIc : 0;
 
+        const asHist = budgetHistoryMap.get(as.id);
+
         allAdsets.push({
           id: as.id,
           name: as.name,
@@ -904,6 +1031,20 @@ export async function GET(request: NextRequest) {
           margin: asMargin,
           roi: asRoi,
           last_update: as.updated_time ? new Date(as.updated_time).toLocaleString("pt-BR") : "Hoje",
+          budget_history: asHist ? {
+            previous_budget: asHist.previous_budget !== null ? Number(asHist.previous_budget) : null,
+            new_budget: asHist.new_budget !== null ? Number(asHist.new_budget) : null,
+            sales: asHist.sales_at_update,
+            revenue: asHist.revenue_at_update !== null ? Number(asHist.revenue_at_update) : null,
+            spend: asHist.spend_at_update !== null ? Number(asHist.spend_at_update) : null,
+            profit: asHist.profit_at_update !== null ? Number(asHist.profit_at_update) : null,
+            roas: asHist.roas_at_update !== null ? Number(asHist.roas_at_update) : null,
+            cpa: asHist.cpa_at_update !== null ? Number(asHist.cpa_at_update) : null,
+            user_email: asHist.user_email,
+            source: asHist.source,
+            metadata: asHist.metadata,
+            updated_at: asHist.created_at,
+          } : null,
         });
       });
 
@@ -1002,7 +1143,17 @@ export async function GET(request: NextRequest) {
       ads: allAds,
     };
 
-    MEMORY_CACHE.set(cacheKey, { timestamp: nowMs, data: finalResponse });
+    // 8. Impede que erros temporários de rede/API gravem dados incompletos ou vazios no cache
+    if (!hasGlobalFetchFailure && accountErrors.length === 0) {
+      MEMORY_CACHE.set(cacheKey, {
+        timestamp: nowMs,
+        data: finalResponse,
+        datePreset,
+        timezoneName: accountsMeta[0]?.timezoneName || "America/Sao_Paulo",
+      });
+    } else {
+      console.warn(`[Campaigns API] Cache em memória NÃO gravado para ${cacheKey} devido a falhas temporárias na Meta API.`);
+    }
     return NextResponse.json(finalResponse, {
       headers: {
         "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
