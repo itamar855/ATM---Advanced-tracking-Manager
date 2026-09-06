@@ -251,6 +251,7 @@ export function UtmifyCampaignManager({
     setSelectedAdsetId(null);
     setSelectedAdIds([]);
     setSelectedRowIds([]);
+    setSearchTerm("");
     setActiveTab("campaigns");
   };
 
@@ -261,6 +262,7 @@ export function UtmifyCampaignManager({
     setSelectedAdsetId(null);
     setSelectedAdIds([]);
     setSelectedRowIds([]);
+    setSearchTerm("");
     setActiveTab("adsets");
   };
 
@@ -269,6 +271,7 @@ export function UtmifyCampaignManager({
     setSelectedAdsetId(adsetId);
     setSelectedAdIds([]);
     setSelectedRowIds([]);
+    setSearchTerm("");
     setActiveTab("ads");
   };
 
@@ -851,6 +854,7 @@ export function UtmifyCampaignManager({
               setSelectedAccountIds([...selectedRowIds]);
               setSelectedAccountId(selectedRowIds[0]);
               setSelectedRowIds([]);
+              setSearchTerm("");
             }
             setActiveTab("campaigns");
           }}
@@ -884,6 +888,7 @@ export function UtmifyCampaignManager({
               setSelectedCampaignIds([...selectedRowIds]);
               setSelectedCampaignId(selectedRowIds[0]);
               setSelectedRowIds([]);
+              setSearchTerm("");
             }
             setActiveTab("adsets");
           }}
@@ -932,6 +937,7 @@ export function UtmifyCampaignManager({
               setSelectedAdsetIds([...selectedRowIds]);
               setSelectedAdsetId(selectedRowIds[0]);
               setSelectedRowIds([]);
+              setSearchTerm("");
             }
             setActiveTab("ads");
           }}
@@ -1046,13 +1052,14 @@ export function UtmifyCampaignManager({
                   setSelectedAccountIds([...selectedRowIds]);
                   setSelectedAccountId(selectedRowIds[0]);
                   setSelectedRowIds([]);
+                  setSearchTerm("");
                   setActiveTab("campaigns");
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-semibold text-xs border border-indigo-500/30 transition-all cursor-pointer"
                 title="Filtrar campanhas das contas selecionadas"
               >
                 <Layers size={13} />
-                <span>Ver Campanhas ({selectedRowIds.length})</span>
+                <span>Ver Campanhas ({selectedRowIds.length === 1 ? "1 conta" : `${selectedRowIds.length} contas`})</span>
               </button>
             )}
 
@@ -1064,13 +1071,14 @@ export function UtmifyCampaignManager({
                       setSelectedCampaignIds([...selectedRowIds]);
                       setSelectedCampaignId(selectedRowIds[0]);
                       setSelectedRowIds([]);
+                      setSearchTerm("");
                       setActiveTab("adsets");
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-semibold text-xs border border-indigo-500/30 transition-all cursor-pointer"
                     title="Filtrar conjuntos das campanhas selecionadas"
                   >
                     <LayoutGrid size={13} />
-                    <span>Ver CJs ({selectedRowIds.length})</span>
+                    <span>Ver CJs ({selectedRowIds.length === 1 ? "1 camp." : `${selectedRowIds.length} camps.`})</span>
                   </button>
                 )}
 
@@ -1080,13 +1088,14 @@ export function UtmifyCampaignManager({
                       setSelectedAdsetIds([...selectedRowIds]);
                       setSelectedAdsetId(selectedRowIds[0]);
                       setSelectedRowIds([]);
+                      setSearchTerm("");
                       setActiveTab("ads");
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-semibold text-xs border border-indigo-500/30 transition-all cursor-pointer"
                     title="Filtrar anúncios dos conjuntos selecionados"
                   >
                     <ImageIcon size={13} />
-                    <span>Ver ADs ({selectedRowIds.length})</span>
+                    <span>Ver ADs ({selectedRowIds.length === 1 ? "1 conj." : `${selectedRowIds.length} conjs.`})</span>
                   </button>
                 )}
 

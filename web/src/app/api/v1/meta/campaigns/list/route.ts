@@ -287,6 +287,7 @@ export async function GET(request: NextRequest) {
       accountInsight: any;
     }> = [];
     const accountErrors: Array<{ id: string; error: string }> = [];
+    const accountRestoredFromCache = new Map<string, any>();
 
     const dbEventsPromise = supabase
       .from("events")
@@ -308,7 +309,8 @@ export async function GET(request: NextRequest) {
 
     let hasGlobalFetchFailure = false;
 
-    const fetchPromises = accountsMeta.map(async (acc) => {
+    // Processamento sequencial por conta para eliminar estouro de concorrência no token da Meta
+    for (const acc of accountsMeta) {
       const { cleanAccId, rawAcc, accData, dateRange } = acc;
 
       const timeRangeParam = encodeURIComponent(
@@ -324,13 +326,13 @@ export async function GET(request: NextRequest) {
       const adStatusFilter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED"] }]));
 
       const campUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time&filtering=${campStatusFilter}&access_token=${token}&limit=100`;
-      const adsetUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id&filtering=${adsetStatusFilter}&access_token=${token}&limit=200`;
-      const adUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id&filtering=${adStatusFilter}&access_token=${token}&limit=250`;
+      const adsetUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id&filtering=${adsetStatusFilter}&access_token=${token}&limit=100`;
+      const adUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id&filtering=${adStatusFilter}&access_token=${token}&limit=100`;
 
       // ── Insights em lote por nível usando time_range={since, until} ──
-      const campInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=campaign&time_range=${timeRangeParam}&fields=campaign_id,spend,impressions,clicks,actions&access_token=${token}&limit=200`;
-      const adsetInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=adset&time_range=${timeRangeParam}&fields=adset_id,spend,impressions,clicks,actions&access_token=${token}&limit=250`;
-      const adInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=ad&time_range=${timeRangeParam}&fields=ad_id,spend,impressions,clicks,actions&access_token=${token}&limit=250`;
+      const campInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=campaign&time_range=${timeRangeParam}&fields=campaign_id,spend,impressions,clicks,actions&access_token=${token}&limit=100`;
+      const adsetInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=adset&time_range=${timeRangeParam}&fields=adset_id,spend,impressions,clicks,actions&access_token=${token}&limit=100`;
+      const adInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=ad&time_range=${timeRangeParam}&fields=ad_id,spend,impressions,clicks,actions&access_token=${token}&limit=100`;
       const accInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=account&time_range=${timeRangeParam}&fields=spend,impressions,clicks,actions&access_token=${token}`;
 
       let accountHasFailure = false;
@@ -353,6 +355,7 @@ export async function GET(request: NextRequest) {
       };
 
       // Função de busca paginada por cursor na Meta Graph API (paging.next)
+      // com backoff controlado para OAuthException Code 17 (máximo 1 retry, sem loops)
       const fetchMetaPaged = async (
         initialUrl: string,
         label: string,
@@ -368,42 +371,96 @@ export async function GET(request: NextRequest) {
 
         while (currentUrl && page < maxPages && allData.length < maxItems) {
           page++;
-          try {
-            const res: Response = await fetch(currentUrl, {
-              cache: "no-store",
-              signal: AbortSignal.timeout(timeoutMs),
-            });
+          const targetUrl: string = currentUrl;
+          let attempts = 0;
+          const maxAttempts = 2; // Tentativa inicial + no máximo 1 retry controlado
+          let success = false;
 
-            if (!res.ok) {
+          while (attempts < maxAttempts && !success) {
+            attempts++;
+            try {
+              const res: Response = await fetch(targetUrl, {
+                cache: "no-store",
+                signal: AbortSignal.timeout(timeoutMs),
+              });
+
+              if (!res.ok) {
+                const errText = await res.text().catch(() => "");
+                let isCode17 = res.status === 429;
+                let parsedErrorMsg = `Status ${res.status}: ${errText.slice(0, 150)}`;
+
+                try {
+                  const errJson = JSON.parse(errText);
+                  if (
+                    errJson.error?.code === 17 ||
+                    errJson.error?.type === "OAuthException" ||
+                    errJson.error?.is_transient === true
+                  ) {
+                    isCode17 = true;
+                    parsedErrorMsg = errJson.error.message || parsedErrorMsg;
+                  }
+                } catch {}
+
+                // Se for Code 17 ou erro transitório e for a 1ª tentativa, aplica backoff controlado e repete no máximo 1 vez
+                if (isCode17 && attempts < maxAttempts) {
+                  const backoffMs = 2000;
+                  console.warn(`[Meta API Code 17] ${label} (${cleanAccId}) pág ${page}. Backoff controlado de ${backoffMs}ms antes da única retentativa...`);
+                  await new Promise((r) => setTimeout(r, backoffMs));
+                  continue;
+                }
+
+                hasFailure = true;
+                lastError = parsedErrorMsg;
+                console.warn(`[Meta API Error] ${label} (${cleanAccId}) page ${page}: ${lastError}`);
+                break;
+              }
+
+              const json: any = await res.json();
+              if (json.error) {
+                const isCode17 =
+                  json.error.code === 17 ||
+                  json.error.type === "OAuthException" ||
+                  json.error.is_transient === true;
+
+                if (isCode17 && attempts < maxAttempts) {
+                  const backoffMs = 2000;
+                  console.warn(`[Meta API Code 17] ${label} (${cleanAccId}) pág ${page}. Backoff controlado de ${backoffMs}ms antes da única retentativa...`);
+                  await new Promise((r) => setTimeout(r, backoffMs));
+                  continue;
+                }
+
+                hasFailure = true;
+                lastError = json.error.message || "Erro na Meta API";
+                console.warn(`[Meta API Error] ${label} (${cleanAccId}) page ${page}: ${lastError}`);
+                break;
+              }
+
+              if (Array.isArray(json.data)) {
+                allData.push(...json.data);
+              }
+
+              // Segue o cursor retornado pela Meta para a próxima página
+              if (json.paging?.next && Array.isArray(json.data) && json.data.length > 0) {
+                currentUrl = json.paging.next;
+              } else {
+                currentUrl = null;
+              }
+              success = true;
+            } catch (err: any) {
+              if (attempts < maxAttempts) {
+                const backoffMs = 2000;
+                console.warn(`[Meta API Timeout] ${label} (${cleanAccId}) tentativa ${attempts}/${maxAttempts}. Aguardando ${backoffMs}ms...`);
+                await new Promise((r) => setTimeout(r, backoffMs));
+                continue;
+              }
               hasFailure = true;
-              const errSnippet = await res.text().catch(() => "");
-              lastError = `Status ${res.status}: ${errSnippet.slice(0, 150)}`;
-              console.warn(`[Meta API Error] ${label} (${cleanAccId}) page ${page}: ${lastError}`);
+              lastError = err?.message || String(err);
+              console.warn(`[Meta API Timeout/Network Error] ${label} (${cleanAccId}) page ${page}: ${lastError}`);
               break;
             }
+          }
 
-            const json: any = await res.json();
-            if (json.error) {
-              hasFailure = true;
-              lastError = json.error.message || "Erro na Meta API";
-              console.warn(`[Meta API Error] ${label} (${cleanAccId}) page ${page}: ${lastError}`);
-              break;
-            }
-
-            if (Array.isArray(json.data)) {
-              allData.push(...json.data);
-            }
-
-            // Segue o cursor retornado pela Meta para a próxima página
-            if (json.paging?.next && Array.isArray(json.data) && json.data.length > 0) {
-              currentUrl = json.paging.next;
-            } else {
-              currentUrl = null;
-            }
-          } catch (err: any) {
-            hasFailure = true;
-            lastError = err?.message || String(err);
-            console.warn(`[Meta API Timeout/Network Error] ${label} (${cleanAccId}) page ${page}: ${lastError}`);
+          if (!success) {
             break;
           }
         }
@@ -420,10 +477,15 @@ export async function GET(request: NextRequest) {
         return { data: allData, hasFailure, error: lastError };
       };
 
-      const [campResult, adsetResult, adResult, cInsResult, asInsResult, aInsResult, acInsRes] = await Promise.all([
+      // Fase 1: Busca a estrutura hierárquica básica (Campanhas, AdSets e Ads)
+      const [campResult, adsetResult, adResult] = await Promise.all([
         fetchMetaPaged(campUrl, "campaigns", 20, 5000, 12000),
         fetchMetaPaged(adsetUrl, "adsets", 25, 10000, 12000),
         fetchMetaPaged(adUrl, "ads", 25, 10000, 12000),
+      ]);
+
+      // Fase 2: Busca métricas de insights com concorrência escalonada
+      const [cInsResult, asInsResult, aInsResult, acInsRes] = await Promise.all([
         fetchMetaPaged(campInsightsUrl, "campInsights", 20, 5000, 10000),
         fetchMetaPaged(adsetInsightsUrl, "adsetInsights", 25, 10000, 10000),
         fetchMetaPaged(adInsightsUrl, "adInsights", 25, 10000, 10000),
@@ -431,18 +493,45 @@ export async function GET(request: NextRequest) {
       ]);
 
       let rawCampaigns: any[] = campResult.data;
-      if (campResult.error) {
-        accountErrors.push({ id: cleanAccId, error: campResult.error });
-      }
-
       let rawAdsets: any[] = adsetResult.data;
-      if (adsetResult.error) {
-        accountErrors.push({ id: cleanAccId, error: adsetResult.error });
+      let rawAds: any[] = adResult.data;
+
+      // Validação de consistência por entidade para esta conta
+      const accountHasStructuralFailure =
+        (rawCampaigns.length > 0 && adsetResult.hasFailure && rawAdsets.length === 0) ||
+        (rawAdsets.length > 0 && adResult.hasFailure && rawAds.length === 0);
+
+      let accountUsedCachedFallback = false;
+      if (accountHasStructuralFailure && cached?.data) {
+        const prevAdsets = cached.data.adsets?.filter((as: any) => as.account_id === cleanAccId) || [];
+        const prevAds = cached.data.ads?.filter((ad: any) => ad.account_id === cleanAccId) || [];
+
+        if (prevAdsets.length > 0) {
+          console.warn(`[Campaigns API] Preservando cache saudável anterior para a conta ${cleanAccId} (${prevAdsets.length} CJs, ${prevAds.length} ADs)`);
+          accountUsedCachedFallback = true;
+          accountRestoredFromCache.set(cleanAccId, {
+            account: cached.data.accounts?.find((a: any) => a.id === cleanAccId),
+            campaigns: cached.data.campaigns?.filter((c: any) => c.account_id === cleanAccId) || [],
+            adsets: prevAdsets,
+            ads: prevAds,
+          });
+          accountErrors.push({
+            id: cleanAccId,
+            error: "Limite de requisições da Meta Ads (Code 17). Exibindo dados em cache para esta conta.",
+          });
+        }
       }
 
-      let rawAds: any[] = adResult.data;
-      if (adResult.error) {
-        accountErrors.push({ id: cleanAccId, error: adResult.error });
+      if (!accountUsedCachedFallback) {
+        if (campResult.error) {
+          accountErrors.push({ id: cleanAccId, error: campResult.error });
+        }
+        if (adsetResult.error) {
+          accountErrors.push({ id: cleanAccId, error: adsetResult.error });
+        }
+        if (adResult.error) {
+          accountErrors.push({ id: cleanAccId, error: adResult.error });
+        }
       }
 
       // Mapeamento de Insights
@@ -490,12 +579,11 @@ export async function GET(request: NextRequest) {
         adInsightsMap,
         accountInsight,
       });
-    });
+    }
 
     const [dbEventsResult, entityHistoryResult] = await Promise.all([
       dbEventsPromise,
       entityHistoryPromise,
-      Promise.all(fetchPromises),
     ]);
 
     const dbEvents = dbEventsResult.data || [];
@@ -837,6 +925,24 @@ export async function GET(request: NextRequest) {
         accountInsight,
       } = acc;
 
+      // Se a conta teve adsets/ads restaurados de um cache prévio saudável, usa as entidades preservadas
+      if (accountRestoredFromCache.has(accId)) {
+        const restored = accountRestoredFromCache.get(accId);
+        if (restored?.account && !formattedAccounts.some((a) => a.id === accId)) {
+          formattedAccounts.push(restored.account);
+        }
+        if (Array.isArray(restored?.campaigns)) {
+          allCampaigns.push(...restored.campaigns);
+        }
+        if (Array.isArray(restored?.adsets)) {
+          allAdsets.push(...restored.adsets);
+        }
+        if (Array.isArray(restored?.ads)) {
+          allAds.push(...restored.ads);
+        }
+        return;
+      }
+
       const currency = String(
         accData?.currency ||
         accCurrency ||
@@ -1143,8 +1249,15 @@ export async function GET(request: NextRequest) {
       ads: allAds,
     };
 
-    // 8. Impede que erros temporários de rede/API gravem dados incompletos ou vazios no cache
-    if (!hasGlobalFetchFailure && accountErrors.length === 0) {
+    // 8. Impede que erros temporários de rede/API ou inconsistências parciais gravem dados corrompidos no cache
+    // Validação por entidade: verifica se alguma conta teve campanhas mas ficou com adsets vazios (sem restauração)
+    const accountsWithStructuralLoss = accountsMeta.some((acc) => {
+      const camps = allCampaigns.filter((c) => c.account_id === acc.cleanAccId);
+      const adsets = allAdsets.filter((as) => as.account_id === acc.cleanAccId);
+      return camps.length > 0 && adsets.length === 0;
+    });
+
+    if (!accountsWithStructuralLoss && accountErrors.length === 0) {
       MEMORY_CACHE.set(cacheKey, {
         timestamp: nowMs,
         data: finalResponse,
@@ -1152,7 +1265,9 @@ export async function GET(request: NextRequest) {
         timezoneName: accountsMeta[0]?.timezoneName || "America/Sao_Paulo",
       });
     } else {
-      console.warn(`[Campaigns API] Cache em memória NÃO gravado para ${cacheKey} devido a falhas temporárias na Meta API.`);
+      console.warn(
+        `[Campaigns API] Cache em memória NÃO gravado para ${cacheKey}: accountsWithStructuralLoss=${accountsWithStructuralLoss}, accountErrors=${accountErrors.length}`
+      );
     }
     return NextResponse.json(finalResponse, {
       headers: {
