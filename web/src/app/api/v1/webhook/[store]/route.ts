@@ -24,44 +24,84 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const orderId = String(payload.id);
 
     const isPending = payload.financial_status === "pending" || payload.financial_status === "authorized";
+    const gatewayRaw = String(payload.payment_gateway_names?.[0] || payload.gateway || "").toLowerCase();
+    const isPixMethod = gatewayRaw.includes("pix");
 
-    // 1. Tratamento específico para criação de pedido pendente (PIX/Boleto aguardando pagamento)
+    const orderNoteAttributes = payload.note_attributes || [];
+    const hasPixAttribute = orderNoteAttributes.some((attr: any) => {
+      const name = String(attr?.name || "").toLowerCase();
+      const val = String(attr?.value || "").toLowerCase();
+      return name.includes("pix") || name.includes("qr") || val.includes("000201");
+    });
+
+    const hasPixData = Boolean(
+      payload.pix_code ||
+      payload.pix_qr_code ||
+      payload.qr_code ||
+      payload.qrcode ||
+      payload.payment_details?.pix ||
+      hasPixAttribute
+    );
+
+    const isAbandon = Boolean(
+      payload.cancelled_at ||
+      payload.cancel_reason
+    );
+
+    const isRealPix = isPixMethod && !isAbandon && isPending && hasPixData;
+    const isBoleto = gatewayRaw.includes("boleto");
+    const hasBoletoData = Boolean(
+      payload.boleto_url ||
+      payload.boleto_barcode ||
+      orderNoteAttributes.some((attr: any) => String(attr?.name || "").toLowerCase().includes("boleto"))
+    );
+    const isBoletoPending = isBoleto && !isAbandon && isPending && hasBoletoData;
+
+    const shouldNotify = (isRealPix || isBoletoPending);
+
+    console.log("[PIX_PENDING_CHECK]", {
+      eventType: topicHeader || "",
+      status: String(payload.financial_status || ""),
+      paymentMethod: gatewayRaw,
+      hasPixData,
+      isAbandon,
+      shouldNotify,
+    });
+
+    // 1. Tratamento específico para criação de pedido pendente (PIX/Boleto com cobrança ativa)
     // Não adquire lock de Purchase para permitir que orders/paid seja processado quando o pagamento for aprovado
     if (topicHeader === "orders/create" && isPending) {
-      const gatewayRaw = String(payload.payment_gateway_names?.[0] || payload.gateway || "").toLowerCase();
-      let cleanPaymentMethod = "PEDIDO";
-      if (gatewayRaw.includes("pix")) cleanPaymentMethod = "PIX";
-      else if (gatewayRaw.includes("boleto")) cleanPaymentMethod = "BOLETO";
-      else if (gatewayRaw.includes("card") || gatewayRaw.includes("cartao") || gatewayRaw.includes("credit")) cleanPaymentMethod = "CARTÃO";
-      else if (gatewayRaw) cleanPaymentMethod = gatewayRaw.toUpperCase();
-      const customerName = `${payload.customer?.first_name || ""} ${payload.customer?.last_name || ""}`.trim() || "Cliente";
+      if (shouldNotify) {
+        const cleanPaymentMethod = isRealPix ? "PIX" : "BOLETO";
+        const customerName = `${payload.customer?.first_name || ""} ${payload.customer?.last_name || ""}`.trim() || "Cliente";
 
-      console.log("[NOTIFICATION_PENDING_TRIGGER]", {
-        orderId,
-        paymentMethod: cleanPaymentMethod,
-        status: payload.financial_status,
-        storeId,
-      });
-
-      try {
-        const { dispatchOrderNotification } = await import("@/lib/notifications/notification-service");
-        await dispatchOrderNotification({
-          storeId,
+        console.log("[NOTIFICATION_PENDING_TRIGGER]", {
           orderId,
-          type: "pending",
-          value: Number(payload.total_price || 0),
-          currency: payload.currency || "BRL",
           paymentMethod: cleanPaymentMethod,
-          customerName,
-          itemsSummary: payload.line_items?.[0]?.title,
+          status: payload.financial_status,
+          storeId,
         });
-      } catch (e: any) {
-        console.warn("[Shopify Webhook Pending Notification Error]:", e?.message);
+
+        try {
+          const { dispatchOrderNotification } = await import("@/lib/notifications/notification-service");
+          await dispatchOrderNotification({
+            storeId,
+            orderId,
+            type: "pending",
+            value: Number(payload.total_price || 0),
+            currency: payload.currency || "BRL",
+            paymentMethod: cleanPaymentMethod,
+            customerName,
+            itemsSummary: payload.line_items?.[0]?.title,
+          });
+        } catch (e: any) {
+          console.warn("[Shopify Webhook Pending Notification Error]:", e?.message);
+        }
       }
 
       return NextResponse.json({
         ok: true,
-        message: "Pedido pendente registrado e notificado com sucesso",
+        message: shouldNotify ? "Pedido pendente registrado e notificado com sucesso" : "Pedido pendente registrado (sem notificação antecipada)",
         order_id: orderId,
         type: "pending",
       }, { status: 200 });

@@ -39,32 +39,94 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const isCard = paymentMethodRaw.includes("card") || paymentMethodRaw.includes("cartao") || paymentMethodRaw.includes("credit");
 
     const eventStr = `${eventType} ${status}`.toLowerCase();
-    const isPendingOrder = eventStr.includes("pending") || eventStr.includes("waiting") || eventStr.includes("aguardando") || eventType === "ORDER_CREATED";
 
-    // Identificação direta de pendente: status pendente + método PIX ou Boleto
-    const isPixPending = isPendingOrder && isPix;
-    const isBoletoPending = isPendingOrder && isBoleto;
+    // Validação estrita de abandono / checkout iniciado
+    const isAbandon =
+      eventStr.includes("abandon") ||
+      eventStr.includes("carrinho_abandonado") ||
+      eventStr.includes("checkout_started") ||
+      eventStr.includes("initiate_checkout") ||
+      eventType === "checkout_started" ||
+      eventType === "initiatecheckout";
 
-    let metaEventName: "Purchase" | "InitiateCheckout" | "AddPaymentInfo" = "Purchase";
-    let isTrackable = false;
+    // Evidência real de dados de cobrança PIX gerada
+    const hasPixData = Boolean(
+      payload.pix_code ||
+      payload.pix_qr_code ||
+      payload.qr_code ||
+      payload.qrcode ||
+      payload.qrCode ||
+      payload.pix?.code ||
+      payload.pix?.qrcode ||
+      payload.pix?.qr_code ||
+      payload.payment?.pix?.qrcode ||
+      payload.payment?.pix?.code ||
+      payload.billet_or_pix_url ||
+      payload.pix_url ||
+      payload.qr_code_url ||
+      payload.charges?.[0]?.last_transaction?.qr_code ||
+      payload.charges?.[0]?.last_transaction?.pix_code
+    );
 
-    if (
+    const isExplicitPixEvent =
+      eventType === "pix_generated" ||
+      eventType === "pix_gerado" ||
+      eventType === "PIX_GENERATED";
+
+    const isWaitingPayment =
+      eventStr.includes("waiting") ||
+      eventStr.includes("aguardando") ||
+      eventStr.includes("pending");
+
+    // Identificação de PIX realmente gerado (nunca em abandono, e nunca em order_created sem dados reais de PIX)
+    const isPixPending = isPix && !isAbandon && (
+      isExplicitPixEvent ||
+      (isWaitingPayment && hasPixData)
+    );
+
+    // Boleto pendente: somente com evidência real e fora de abandono
+    const hasBoletoData = Boolean(
+      payload.boleto_url ||
+      payload.boleto_barcode ||
+      payload.barcode ||
+      payload.boleto?.barcode ||
+      payload.boleto?.url ||
+      payload.billet_or_pix_url
+    );
+    const isBoletoPending = isBoleto && !isAbandon && isWaitingPayment && hasBoletoData;
+
+    const isApproved =
       eventStr.includes("paid") ||
       eventStr.includes("approved") ||
       eventStr.includes("aprovad") ||
       eventStr.includes("pago") ||
       eventStr.includes("purchase") ||
-      eventStr.includes("venda_aprovada")
-    ) {
+      eventStr.includes("venda_aprovada");
+
+    const shouldNotify = (isPixPending || isBoletoPending) && !isApproved;
+
+    console.log("[PIX_PENDING_CHECK]", {
+      eventType,
+      status,
+      paymentMethod: paymentMethodRaw,
+      hasPixData,
+      isAbandon,
+      shouldNotify,
+    });
+
+    let metaEventName: "Purchase" | "InitiateCheckout" | "AddPaymentInfo" = "Purchase";
+    let isTrackable = false;
+
+    if (isApproved) {
       metaEventName = "Purchase";
       isTrackable = true;
     } else if (isPixPending || isBoletoPending) {
       metaEventName = "AddPaymentInfo";
       isTrackable = true;
     } else if (
-      eventStr.includes("abandon") ||
-      eventStr.includes("carrinho_abandonado") ||
-      isPendingOrder
+      isAbandon ||
+      eventStr.includes("pending") ||
+      eventType === "order_created"
     ) {
       metaEventName = "InitiateCheckout";
       isTrackable = true;
@@ -136,8 +198,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const earlyCustomerName = `${(customer.name || customer.first_name || payload.name || "").split(" ")[0]} ${(customer.name || customer.first_name || payload.name || "").split(" ").slice(1).join(" ") || customer.last_name || ""}`.trim() || "Cliente";
 
-    // Disparo antecipado de notificação para pedidos pendentes (desacoplado da Meta CAPI)
-    if (isPixPending || isBoletoPending) {
+    // Disparo antecipado de notificação para pedidos pendentes com cobrança confirmada
+    if (shouldNotify) {
       const cleanPendingMethod = isPixPending ? "PIX" : "BOLETO";
       console.log("[NOTIFICATION_PENDING_TRIGGER]", {
         orderId,

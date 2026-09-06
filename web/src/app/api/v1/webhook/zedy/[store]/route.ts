@@ -46,9 +46,78 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const isBoleto = paymentMethodRaw.includes("boleto");
     const isCard = paymentMethodRaw.includes("card") || paymentMethodRaw.includes("cartao") || paymentMethodRaw.includes("credit");
 
-    // Identificação direta de pendente: status pendente + método PIX ou Boleto
-    const isPixPending = isPending && isPix;
-    const isBoletoPending = isPending && isBoleto;
+    // Validação estrita de abandono / checkout iniciado
+    const eventLower = (eventType || "").toLowerCase();
+    const statusLower = (status || "").toLowerCase();
+    const combinedEventStatus = `${eventLower} ${statusLower}`;
+
+    const isAbandon =
+      combinedEventStatus.includes("abandon") ||
+      combinedEventStatus.includes("carrinho_abandonado") ||
+      combinedEventStatus.includes("checkout_started") ||
+      combinedEventStatus.includes("initiate_checkout") ||
+      eventLower === "checkout_started" ||
+      eventLower === "initiatecheckout";
+
+    // Evidência real de dados de cobrança PIX gerada
+    const hasPixData = Boolean(
+      payload.pix_code ||
+      payload.pix_qr_code ||
+      payload.qr_code ||
+      payload.qrcode ||
+      payload.qrCode ||
+      payload.pix?.code ||
+      payload.pix?.qrcode ||
+      payload.pix?.qr_code ||
+      payload.payment?.pix?.qrcode ||
+      payload.payment?.pix?.code ||
+      payload.billet_or_pix_url ||
+      payload.pix_url ||
+      payload.qr_code_url ||
+      payload.charges?.[0]?.last_transaction?.qr_code ||
+      payload.charges?.[0]?.last_transaction?.pix_code ||
+      payload.point_of_interaction?.transaction_data?.qr_code
+    );
+
+    const isExplicitPixEvent =
+      eventLower === "pix_generated" ||
+      eventLower === "pix_gerado" ||
+      eventType === "PIX_GENERATED";
+
+    const isWaitingPayment =
+      statusLower === "waiting_payment" ||
+      statusLower === "aguardando_pagamento" ||
+      statusLower === "pending";
+
+    // Identificação de PIX realmente gerado (nunca em abandono, e nunca em order_created sem dados reais de PIX)
+    const isRealPix = isPix && !isAbandon && (
+      isExplicitPixEvent ||
+      (isWaitingPayment && hasPixData)
+    );
+
+    const isPixPending = isRealPix;
+
+    // Boleto pendente: somente com evidência real e fora de abandono
+    const hasBoletoData = Boolean(
+      payload.boleto_url ||
+      payload.boleto_barcode ||
+      payload.barcode ||
+      payload.boleto?.barcode ||
+      payload.boleto?.url ||
+      payload.billet_or_pix_url
+    );
+    const isBoletoPending = isBoleto && !isAbandon && isPending && hasBoletoData;
+
+    const shouldNotify = (isPixPending || isBoletoPending) && !isApproved;
+
+    console.log("[PIX_PENDING_CHECK]", {
+      eventType,
+      status,
+      paymentMethod: paymentMethodRaw,
+      hasPixData,
+      isAbandon,
+      shouldNotify,
+    });
 
     // Normalização inicial do cliente e valor para notificação antecipada
     const customer = payload.customer || {};
@@ -66,8 +135,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       (payload.commission?.paymentMethod) ||
       "";
 
-    // Disparo antecipado de notificação para pedidos pendentes (desacoplado da Meta CAPI)
-    if (isPixPending || isBoletoPending) {
+    // Disparo antecipado de notificação para pedidos pendentes com cobrança confirmada
+    if (shouldNotify) {
       const cleanPendingMethod = isPixPending ? "PIX" : "BOLETO";
       console.log("[NOTIFICATION_PENDING_TRIGGER]", {
         orderId,
