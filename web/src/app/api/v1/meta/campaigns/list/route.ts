@@ -74,6 +74,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "store_id is required" }, { status: 400 });
     }
 
+    const isObservabilityEnabled = process.env.META_OBSERVABILITY_ENABLED === "true";
+    const obsStartTime = Date.now();
+    let obsPagesFetched = 0;
+    let obsRetriesCode17 = 0;
+
     const cacheKey = `${storeId}_${datePreset}_${searchParams.get("account_id") || "all"}`;
     const nowMs = Date.now();
     const cached = MEMORY_CACHE.get(cacheKey);
@@ -371,6 +376,7 @@ export async function GET(request: NextRequest) {
 
         while (currentUrl && page < maxPages && allData.length < maxItems) {
           page++;
+          obsPagesFetched++;
           const targetUrl: string = currentUrl;
           let attempts = 0;
           const maxAttempts = 2; // Tentativa inicial + no máximo 1 retry controlado
@@ -403,6 +409,7 @@ export async function GET(request: NextRequest) {
 
                 // Se for Code 17 ou erro transitório e for a 1ª tentativa, aplica backoff controlado e repete no máximo 1 vez
                 if (isCode17 && attempts < maxAttempts) {
+                  obsRetriesCode17++;
                   const backoffMs = 2000;
                   console.warn(`[Meta API Code 17] ${label} (${cleanAccId}) pág ${page}. Backoff controlado de ${backoffMs}ms antes da única retentativa...`);
                   await new Promise((r) => setTimeout(r, backoffMs));
@@ -423,6 +430,7 @@ export async function GET(request: NextRequest) {
                   json.error.is_transient === true;
 
                 if (isCode17 && attempts < maxAttempts) {
+                  obsRetriesCode17++;
                   const backoffMs = 2000;
                   console.warn(`[Meta API Code 17] ${label} (${cleanAccId}) pág ${page}. Backoff controlado de ${backoffMs}ms antes da única retentativa...`);
                   await new Promise((r) => setTimeout(r, backoffMs));
@@ -1269,6 +1277,25 @@ export async function GET(request: NextRequest) {
         `[Campaigns API] Cache em memória NÃO gravado para ${cacheKey}: accountsWithStructuralLoss=${accountsWithStructuralLoss}, accountErrors=${accountErrors.length}`
       );
     }
+    if (isObservabilityEnabled) {
+      console.log(
+        JSON.stringify({
+          event: "meta_ads_observability",
+          duration_ms: Date.now() - obsStartTime,
+          accounts_processed: accountsMeta.length,
+          pages_fetched: obsPagesFetched,
+          retries_code17: obsRetriesCode17,
+          account_errors: accountErrors.length,
+          entities_loaded: {
+            accounts: formattedAccounts.length,
+            campaigns: allCampaigns.length,
+            adsets: allAdsets.length,
+            ads: allAds.length,
+          },
+        })
+      );
+    }
+
     return NextResponse.json(finalResponse, {
       headers: {
         "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
