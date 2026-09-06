@@ -19,6 +19,9 @@ function CampaignsContent() {
   const [datePreset, setDatePreset] = useState("today");
   const { activeStore } = useStore();
   const loadingRef = useRef(false);
+  const inFlightCampaignsRef = useRef<Set<string>>(new Set());
+  const inFlightAdsetsRef = useRef<Set<string>>(new Set());
+  const [entityErrors, setEntityErrors] = useState<Record<string, string>>({});
 
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
@@ -129,59 +132,109 @@ function CampaignsContent() {
     }
   };
 
-  // Carregamento sob demanda: Ao selecionar Campanha, busca seus AdSets
+  // Carregamento sob demanda: Ao selecionar Campanha, busca seus AdSets (Fase 2 e Fase 3)
   const loadAdsetsForCampaign = async (campaignId: string) => {
     if (!activeStore?.id) return;
+    if (inFlightCampaignsRef.current.has(campaignId)) {
+      return; // Bloqueia duplo clique / requisição em voo
+    }
+    inFlightCampaignsRef.current.add(campaignId);
+
     try {
       const url = `/api/v1/meta/campaigns/list?campaign_id=${campaignId}&store_id=${activeStore.id}&date_preset=${datePreset}`;
       const res = await fetch(url, { cache: "no-store" });
       const data = await res.json();
-      if (data.ok && Array.isArray(data.adsets) && data.adsets.length > 0) {
-        setAdsets((prev) => {
-          const filtered = prev.filter((as) => as.campaign_id !== campaignId);
-          const next = [...filtered, ...data.adsets];
-          try {
-            const cacheKey = `atm_camp_cache_${activeStore.id}_${datePreset}`;
-            const cachedRaw = sessionStorage.getItem(cacheKey);
-            if (cachedRaw) {
-              const cached = JSON.parse(cachedRaw);
-              cached.adsets = next;
-              sessionStorage.setItem(cacheKey, JSON.stringify(cached));
-            }
-          } catch {}
+      if (data.ok) {
+        // Sucesso: remove erro anterior desta campanha
+        setEntityErrors((prev) => {
+          const next = { ...prev };
+          delete next[campaignId];
           return next;
         });
+
+        if (Array.isArray(data.adsets) && data.adsets.length > 0) {
+          setAdsets((prev) => {
+            const filtered = prev.filter((as) => as.campaign_id !== campaignId);
+            const next = [...filtered, ...data.adsets];
+            try {
+              const cacheKey = `atm_camp_cache_${activeStore.id}_${datePreset}`;
+              const cachedRaw = sessionStorage.getItem(cacheKey);
+              if (cachedRaw) {
+                const cached = JSON.parse(cachedRaw);
+                cached.adsets = next;
+                sessionStorage.setItem(cacheKey, JSON.stringify(cached));
+              }
+            } catch {}
+            return next;
+          });
+        }
+      } else {
+        // Falha semântica da Meta
+        setEntityErrors((prev) => ({
+          ...prev,
+          [campaignId]: data.error_message || "Falha temporária ao consultar Meta Ads para esta campanha.",
+        }));
       }
     } catch (err) {
-      console.error(`[Campaigns Page] Erro ao carregar adsets para a campanha ${campaignId}:`, err);
+      console.error(`[Campaigns Page] Erro de rede ao carregar adsets da campanha ${campaignId}:`, err);
+      setEntityErrors((prev) => ({
+        ...prev,
+        [campaignId]: "Erro de conexão com a Meta Ads para esta campanha.",
+      }));
+    } finally {
+      inFlightCampaignsRef.current.delete(campaignId);
     }
   };
 
-  // Carregamento sob demanda: Ao selecionar AdSet, busca seus Ads
+  // Carregamento sob demanda: Ao selecionar AdSet, busca seus Ads (Fase 2 e Fase 3)
   const loadAdsForAdset = async (adsetId: string) => {
     if (!activeStore?.id) return;
+    if (inFlightAdsetsRef.current.has(adsetId)) {
+      return; // Bloqueia duplo clique / requisição em voo
+    }
+    inFlightAdsetsRef.current.add(adsetId);
+
     try {
       const url = `/api/v1/meta/campaigns/list?adset_id=${adsetId}&store_id=${activeStore.id}&date_preset=${datePreset}`;
       const res = await fetch(url, { cache: "no-store" });
       const data = await res.json();
-      if (data.ok && Array.isArray(data.ads) && data.ads.length > 0) {
-        setAds((prev) => {
-          const filtered = prev.filter((ad) => ad.adset_id !== adsetId);
-          const next = [...filtered, ...data.ads];
-          try {
-            const cacheKey = `atm_camp_cache_${activeStore.id}_${datePreset}`;
-            const cachedRaw = sessionStorage.getItem(cacheKey);
-            if (cachedRaw) {
-              const cached = JSON.parse(cachedRaw);
-              cached.ads = next;
-              sessionStorage.setItem(cacheKey, JSON.stringify(cached));
-            }
-          } catch {}
+      if (data.ok) {
+        setEntityErrors((prev) => {
+          const next = { ...prev };
+          delete next[adsetId];
           return next;
         });
+
+        if (Array.isArray(data.ads) && data.ads.length > 0) {
+          setAds((prev) => {
+            const filtered = prev.filter((ad) => ad.adset_id !== adsetId);
+            const next = [...filtered, ...data.ads];
+            try {
+              const cacheKey = `atm_camp_cache_${activeStore.id}_${datePreset}`;
+              const cachedRaw = sessionStorage.getItem(cacheKey);
+              if (cachedRaw) {
+                const cached = JSON.parse(cachedRaw);
+                cached.ads = next;
+                sessionStorage.setItem(cacheKey, JSON.stringify(cached));
+              }
+            } catch {}
+            return next;
+          });
+        }
+      } else {
+        setEntityErrors((prev) => ({
+          ...prev,
+          [adsetId]: data.error_message || "Falha temporária ao consultar Meta Ads para este conjunto.",
+        }));
       }
     } catch (err) {
-      console.error(`[Campaigns Page] Erro ao carregar ads para o adset ${adsetId}:`, err);
+      console.error(`[Campaigns Page] Erro de rede ao carregar ads do adset ${adsetId}:`, err);
+      setEntityErrors((prev) => ({
+        ...prev,
+        [adsetId]: "Erro de conexão com a Meta Ads para este conjunto.",
+      }));
+    } finally {
+      inFlightAdsetsRef.current.delete(adsetId);
     }
   };
 
@@ -226,6 +279,7 @@ function CampaignsContent() {
         }}
         onLoadAdsets={loadAdsetsForCampaign}
         onLoadAds={loadAdsForAdset}
+        entityErrors={entityErrors}
         isRefreshing={isRefreshing}
         apiError={apiError}
       />

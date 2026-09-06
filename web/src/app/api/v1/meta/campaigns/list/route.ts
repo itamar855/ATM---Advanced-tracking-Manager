@@ -106,9 +106,32 @@ export async function GET(request: NextRequest) {
     }
 
     const isObservabilityEnabled = process.env.META_OBSERVABILITY_ENABLED === "true";
+    const isLazyObsEnabled = process.env.META_LAZY_OBSERVABILITY_ENABLED === "true" || isObservabilityEnabled;
     const obsStartTime = Date.now();
     let obsPagesFetched = 0;
     let obsRetriesCode17 = 0;
+
+    const logLazyObservability = (
+      mode: "initial" | "campaign" | "adset",
+      entityId: string | null,
+      durationMs: number,
+      itemsLoaded: number,
+      success: boolean,
+      errorType: string | null = null
+    ) => {
+      if (!isLazyObsEnabled) return;
+      console.log(
+        JSON.stringify({
+          event: "meta_lazy_load",
+          mode,
+          entity_id: entityId,
+          duration_ms: durationMs,
+          items_loaded: itemsLoaded,
+          success,
+          error_type: errorType,
+        })
+      );
+    };
 
     const requestedCampaignId = searchParams.get("campaign_id");
     const requestedAdsetId = searchParams.get("adset_id");
@@ -489,14 +512,42 @@ export async function GET(request: NextRequest) {
       let rawAdsets: any[] = campData?.adsets?.data || [];
       const asInsData: any[] = campData?.insights?.data || [];
 
-      // Proteção contra falha: se falhou e tiver cache anterior, usa o cache existente
-      if ((!campNestedRes || !campNestedRes.ok || rawAdsets.length === 0) && cached && cached.data?.adsets?.length > 0) {
-        console.warn(
-          `[Campaigns Lazy] Falha na Meta API para campanha ${requestedCampaignId}. Preservando cache saudável anterior.`
-        );
-        return NextResponse.json(cached.data, {
-          headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" },
-        });
+      // Tratamento de Falhas da Meta (Fase 1 e Fase 3)
+      if (!campNestedRes || !campNestedRes.ok) {
+        const status = campNestedRes?.status || 500;
+        const errSnippet = campNestedRes ? await campNestedRes.text().catch(() => "") : "";
+        let errorType = "meta_error";
+        if (status === 429 || errSnippet.includes("limit") || errSnippet.includes("2446079") || errSnippet.includes("17")) {
+          errorType = "rate_limit";
+        } else if (status === 408 || status === 504 || errSnippet.includes("timeout")) {
+          errorType = "timeout";
+        } else if (status === 404) {
+          errorType = "not_found";
+        }
+
+        logLazyObservability("campaign", requestedCampaignId, Date.now() - obsStartTime, 0, false, errorType);
+
+        if (cached && cached.data?.adsets?.length > 0) {
+          console.warn(
+            `[Campaigns Lazy] Falha na Meta API (${errorType}) para campanha ${requestedCampaignId}. Preservando cache saudável.`
+          );
+          return NextResponse.json({
+            ...cached.data,
+            warning: "Falha temporária ao consultar a Meta Ads. Exibindo dados em cache.",
+            error_type: errorType,
+          }, {
+            headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" },
+          });
+        }
+
+        return NextResponse.json({
+          ok: false,
+          campaign_id: requestedCampaignId,
+          adsets: [],
+          ads: [],
+          error_type: errorType,
+          error_message: "Falha temporária ao consultar Meta Ads para esta campanha.",
+        }, { status: 200 });
       }
 
       const { parsedPurchases, parsedICs } = parseDbEvents(dbEventsResult.data || []);
@@ -646,10 +697,15 @@ export async function GET(request: NextRequest) {
         return Number(b.spend || 0) - Number(a.spend || 0);
       });
 
+      logLazyObservability("campaign", requestedCampaignId, Date.now() - obsStartTime, allAdsets.length, true, null);
+
       const responsePayload = {
         ok: true,
+        mode: "campaign",
         campaign_id: requestedCampaignId,
         adsets: allAdsets,
+        ads: [],
+        error_type: null,
       };
 
       if (allAdsets.length > 0) {
@@ -722,14 +778,42 @@ export async function GET(request: NextRequest) {
       let rawAds: any[] = adsetData?.ads?.data || [];
       const aInsData: any[] = adsetData?.insights?.data || [];
 
-      // Proteção contra falha: se falhou e tiver cache anterior, usa o cache existente
-      if ((!adsetNestedRes || !adsetNestedRes.ok || rawAds.length === 0) && cached && cached.data?.ads?.length > 0) {
-        console.warn(
-          `[Campaigns Lazy] Falha na Meta API para adset ${requestedAdsetId}. Preservando cache saudável anterior.`
-        );
-        return NextResponse.json(cached.data, {
-          headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" },
-        });
+      // Tratamento de Falhas da Meta (Fase 1 e Fase 3)
+      if (!adsetNestedRes || !adsetNestedRes.ok) {
+        const status = adsetNestedRes?.status || 500;
+        const errSnippet = adsetNestedRes ? await adsetNestedRes.text().catch(() => "") : "";
+        let errorType = "meta_error";
+        if (status === 429 || errSnippet.includes("limit") || errSnippet.includes("2446079") || errSnippet.includes("17")) {
+          errorType = "rate_limit";
+        } else if (status === 408 || status === 504 || errSnippet.includes("timeout")) {
+          errorType = "timeout";
+        } else if (status === 404) {
+          errorType = "not_found";
+        }
+
+        logLazyObservability("adset", requestedAdsetId, Date.now() - obsStartTime, 0, false, errorType);
+
+        if (cached && cached.data?.ads?.length > 0) {
+          console.warn(
+            `[Campaigns Lazy] Falha na Meta API (${errorType}) para adset ${requestedAdsetId}. Preservando cache saudável.`
+          );
+          return NextResponse.json({
+            ...cached.data,
+            warning: "Falha temporária ao consultar a Meta Ads. Exibindo dados em cache.",
+            error_type: errorType,
+          }, {
+            headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" },
+          });
+        }
+
+        return NextResponse.json({
+          ok: false,
+          adset_id: requestedAdsetId,
+          adsets: [],
+          ads: [],
+          error_type: errorType,
+          error_message: "Falha temporária ao consultar Meta Ads para este conjunto de anúncios.",
+        }, { status: 200 });
       }
 
       const { parsedPurchases, parsedICs } = parseDbEvents(dbEventsResult.data || []);
@@ -850,10 +934,15 @@ export async function GET(request: NextRequest) {
         return Number(b.spend || 0) - Number(a.spend || 0);
       });
 
+      logLazyObservability("adset", requestedAdsetId, Date.now() - obsStartTime, allAds.length, true, null);
+
       const responsePayload = {
         ok: true,
+        mode: "adset",
         adset_id: requestedAdsetId,
+        adsets: [],
         ads: allAds,
+        error_type: null,
       };
 
       if (allAds.length > 0) {
@@ -1374,6 +1463,7 @@ export async function GET(request: NextRequest) {
 
     const finalResponse = {
       ok: true,
+      mode: "initial",
       lazy_loading: true,
       usdBrlRate,
       untracked_sales_count: untrackedSalesCount,
@@ -1382,6 +1472,7 @@ export async function GET(request: NextRequest) {
       campaigns: allCampaigns,
       adsets: [],
       ads: [],
+      error_type: null,
     };
 
     // Cacheia se tiver campanhas e contas sem erros graves
@@ -1393,6 +1484,8 @@ export async function GET(request: NextRequest) {
         timezoneName: accountsMeta[0]?.timezoneName || "America/Sao_Paulo",
       });
     }
+
+    logLazyObservability("initial", null, Date.now() - obsStartTime, allCampaigns.length, true, null);
 
     if (isObservabilityEnabled) {
       console.log(

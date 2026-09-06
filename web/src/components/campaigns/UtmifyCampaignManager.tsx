@@ -150,6 +150,7 @@ interface UtmifyCampaignManagerProps {
   onLoadAds?: (adsetId: string) => Promise<void>;
   isRefreshing?: boolean;
   apiError?: string | null;
+  entityErrors?: Record<string, string>;
 }
 
 export function UtmifyCampaignManager({
@@ -165,6 +166,7 @@ export function UtmifyCampaignManager({
   onLoadAds,
   isRefreshing = false,
   apiError = null,
+  entityErrors = {},
 }: UtmifyCampaignManagerProps) {
   const { activeStore } = useStore();
 
@@ -184,6 +186,22 @@ export function UtmifyCampaignManager({
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [selectedAdsetId, setSelectedAdsetId] = useState<string | null>(null);
+
+  // Erro semântico da Meta Ads para a entidade atualmente selecionada (Fase 3)
+  const currentEntityError = useMemo(() => {
+    if (activeTab === "adsets") {
+      const campId = selectedCampaignId || (selectedCampaignIds.length === 1 ? selectedCampaignIds[0] : null);
+      if (campId && entityErrors?.[campId]) {
+        return { entityId: campId, type: "campaign" as const, message: entityErrors[campId] };
+      }
+    } else if (activeTab === "ads") {
+      const asId = selectedAdsetId || (selectedAdsetIds.length === 1 ? selectedAdsetIds[0] : null);
+      if (asId && entityErrors?.[asId]) {
+        return { entityId: asId, type: "adset" as const, message: entityErrors[asId] };
+      }
+    }
+    return null;
+  }, [activeTab, selectedCampaignId, selectedCampaignIds, selectedAdsetId, selectedAdsetIds, entityErrors]);
 
   // Filtros de Barra Superior
   const [searchTerm, setSearchTerm] = useState("");
@@ -1518,17 +1536,49 @@ export function UtmifyCampaignManager({
             );
           })
         ) : (
-          <div className="p-8 text-center bg-[#11141E] border border-zinc-800/80 rounded-2xl text-zinc-400 text-xs space-y-2">
-            <p>Nenhum item encontrado com os filtros atuais.</p>
-            {(selectedCampaignIds.length > 0 || selectedAdsetIds.length > 0 || selectedAccountIds.length > 0 || selectedCampaignId || selectedAdsetId || selectedAccountId) && (
-              <button
-                type="button"
-                onClick={clearAllHierarchicalFilters}
-                className="px-3 py-1.5 rounded-lg bg-blue-600/20 text-blue-400 font-semibold border border-blue-500/30 text-xs inline-flex items-center gap-1 cursor-pointer"
-              >
-                <X size={12} />
-                <span>Limpar filtros hierárquicos</span>
-              </button>
+          <div className="p-8 text-center bg-[#11141E] border border-zinc-800/80 rounded-2xl text-zinc-400 text-xs space-y-3">
+            {currentEntityError ? (
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-1.5 text-amber-400 font-semibold">
+                  <AlertTriangle size={15} />
+                  <span>Falha ao consultar a Meta Ads</span>
+                </div>
+                <p className="text-zinc-400 text-xs">{currentEntityError.message}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (currentEntityError.type === "campaign" && onLoadAdsets) {
+                      onLoadAdsets(currentEntityError.entityId);
+                    } else if (currentEntityError.type === "adset" && onLoadAds) {
+                      onLoadAds(currentEntityError.entityId);
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold border border-amber-500/30 text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCw size={12} />
+                  <span>Tentar novamente</span>
+                </button>
+              </div>
+            ) : (
+              <>
+                <p>
+                  {activeTab === "adsets" && (selectedCampaignId || selectedCampaignIds.length === 1)
+                    ? "Esta campanha não possui conjuntos de anúncios."
+                    : activeTab === "ads" && (selectedAdsetId || selectedAdsetIds.length === 1)
+                    ? "Este conjunto não possui anúncios."
+                    : "Nenhum item encontrado com os filtros atuais."}
+                </p>
+                {(selectedCampaignIds.length > 0 || selectedAdsetIds.length > 0 || selectedAccountIds.length > 0 || selectedCampaignId || selectedAdsetId || selectedAccountId) && (
+                  <button
+                    type="button"
+                    onClick={clearAllHierarchicalFilters}
+                    className="px-3 py-1.5 rounded-lg bg-blue-600/20 text-blue-400 font-semibold border border-blue-500/30 text-xs inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <X size={12} />
+                    <span>Limpar filtros hierárquicos</span>
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1986,15 +2036,47 @@ export function UtmifyCampaignManager({
                 <tr>
                   <td colSpan={15} className="py-12 text-center text-zinc-500">
                     <div className="flex flex-col items-center justify-center gap-2">
-                      <p className="text-xs">Nenhum registro encontrado para os filtros selecionados.</p>
-                      {(selectedCampaignIds.length > 0 || selectedAdsetIds.length > 0 || selectedAccountIds.length > 0 || selectedCampaignId || selectedAdsetId || selectedAccountId) && (
-                        <button
-                          onClick={clearAllHierarchicalFilters}
-                          className="px-3.5 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 text-xs font-semibold border border-blue-500/30 transition-all inline-flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <X size={12} />
-                          <span>Limpar filtros e ver tudo em {activeTab === "campaigns" ? "Campanhas" : activeTab === "adsets" ? "Conjuntos" : activeTab === "ads" ? "Anúncios" : "Contas"}</span>
-                        </button>
+                      {currentEntityError ? (
+                        <div className="space-y-2 flex flex-col items-center">
+                          <div className="inline-flex items-center gap-1.5 text-amber-400 font-semibold text-xs">
+                            <AlertTriangle size={15} />
+                            <span>Falha temporária ao consultar a Meta Ads</span>
+                          </div>
+                          <p className="text-xs text-zinc-400 max-w-md">{currentEntityError.message}</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (currentEntityError.type === "campaign" && onLoadAdsets) {
+                                onLoadAdsets(currentEntityError.entityId);
+                              } else if (currentEntityError.type === "adset" && onLoadAds) {
+                                onLoadAds(currentEntityError.entityId);
+                              }
+                            }}
+                            className="px-3.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/30 transition-all inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <RotateCw size={12} />
+                            <span>Tentar novamente</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-xs">
+                            {activeTab === "adsets" && (selectedCampaignId || selectedCampaignIds.length === 1)
+                              ? "Esta campanha não possui conjuntos de anúncios."
+                              : activeTab === "ads" && (selectedAdsetId || selectedAdsetIds.length === 1)
+                              ? "Este conjunto não possui anúncios."
+                              : "Nenhum registro encontrado para os filtros selecionados."}
+                          </p>
+                          {(selectedCampaignIds.length > 0 || selectedAdsetIds.length > 0 || selectedAccountIds.length > 0 || selectedCampaignId || selectedAdsetId || selectedAccountId) && (
+                            <button
+                              onClick={clearAllHierarchicalFilters}
+                              className="px-3.5 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 text-xs font-semibold border border-blue-500/30 transition-all inline-flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <X size={12} />
+                              <span>Limpar filtros e ver tudo em {activeTab === "campaigns" ? "Campanhas" : activeTab === "adsets" ? "Conjuntos" : activeTab === "ads" ? "Anúncios" : "Contas"}</span>
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </td>

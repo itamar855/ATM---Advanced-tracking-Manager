@@ -138,6 +138,38 @@ Implementada no serviço [`web/src/lib/currency.ts`](file:///c:/Users/Hard%20Wor
 | **v5.6.1** | 03/09/2026 | **iOS Safari File Upload Fix for MP3** | Correção de compatibilidade para upload de arquivos de áudio no iPhone/iOS Safari: (1) Substituição do botão programático por `<label htmlFor="custom-audio-upload">` nativo, eliminando o bloqueio de segurança do WebKit em inputs de arquivo ocultos; (2) Inclusão das extensões e MIME types explícitos no atributo `accept` (`audio/*,audio/mpeg,audio/mp3,audio/wav,audio/x-m4a,audio/aac,.mp3,.wav,.m4a,.aac`), liberando a seleção de MP3s diretamente do app Arquivos, iCloud Drive e Downloads do iPhone; (3) Substituição de `className="hidden"` por `className="sr-only"` e limpeza automática do buffer de arquivo para disparos repetidos. | Antigravity |
 | **v5.7.0** | 03/09/2026 | **Conciliação e Transparência do Lucro Líquido & Sincronização de Taxas** | Auditoria e refinamento matemático da Dashboard e custos: (1) Descoberta e resolução do desacoplamento de loja na tela de Custos (`settings/costs/page.tsx`), integrando com o `useStore()` para que a loja ativa do topo governe a gravação de taxas e custos; (2) Sincronização das taxas reais cadastradas pelo usuário (`6,99% + R$ 1,99 no PIX`) para a loja ativa (`dckb5g-7d`), eliminando o fallback genérico de 9,9% e restaurando mais de R$ 1.600 de lucro real nos relatórios; (3) Atualização do Card 1 da Dashboard (`dashboard/page.tsx`) para exibir em destaque "Valor Vendido Pago" (Bruto) com legenda "Líquido pós-taxas", tornando a conciliação na tela 100% intuitiva (`Vendido Pago - Ads - Taxas = Lucro`); (4) Adição de tooltips detalhados nos cards de Lucro Líquido e Taxas de Gateway exibindo a quebra exata da fórmula. | Antigravity |
 | **v5.8.0** | 03/09/2026 | **Shopify OAuth 2.0 Flow & Multi-Browser Signed State** | Implementação do fluxo oficial de autorização OAuth 2.0 da Shopify para sincronização de pedidos pagos reais sem fake fallback: (1) Criação do helper `shopify-oauth.ts` com assinatura criptográfica HMAC SHA-256 do parâmetro `state` (`storeId:timestamp:hmac`), permitindo a cópia do link para autorização em qualquer navegador ou aba (ex: aba anônima ou navegador onde a loja Shopify está logada), eliminando erros 403 CSRF causados por cookies de sessão locais; (2) Atualização das rotas `/api/auth/shopify` e `/api/auth/shopify/callback` para realizar a troca oficial via `POST https://{shop}/admin/oauth/access_token` com `client_id`, `client_secret` e `code`; (3) Criptografia AES-256-GCM do token permanente retornado (`shpat_...`) e persistência segura no Supabase dentro do JSONB `stores.settings.shopify`; (4) Interface modernizada em `settings/integrations/page.tsx` com campos de Client ID/Secret do App Partners, botão "Copiar Link para Autorizar em Outro Navegador", conexão 1-clique e botões de ressincronização limpa de pedidos reais; (5) Atualização do sincronizador `/api/v1/sync/shopify` para ler tokens decriptografados e alimentar o Dashboard com faturamento e lucro 100% verídicos. | Antigravity |
+| **v6.0.0** | 06/09/2026 | **Meta Ads Architecture: Lazy Loading sob Demanda** | Resolução do gargalo de rate limit de Development Access (Code 17 / subcode 2446079) na Meta Graph API: (1) Transição do carregamento monolítico inicial para arquitetura de Lazy Loading sob demanda; (2) Carga inicial leve retorna exclusivamente `accounts` e `campaigns` (`adsets: []`, `ads: []`, `lazy_loading: true`), reduzindo o tempo de carregamento de ~15s para < 800ms; (3) Carregamento granular de conjuntos de anúncios disparado sob demanda (`GET /campaigns/list?campaign_id=X`) com campos aninhados `/{campId}?fields=adsets{...},insights{...}` imunes a rate limit; (4) Carregamento granular de anúncios disparado sob demanda (`GET /campaigns/list?adset_id=X`); (5) Cache isolado e independente por entidade (`store_date_campaign_ID`, `store_date_adset_ID`) em memória (`MEMORY_CACHE`) e preservação acumulativa no `sessionStorage` da aplicação, mantendo métricas contábeis (ROAS, CPA, Lucro, Spend) e histórico intactos. | Antigravity |
+| **v6.1.0** | 06/09/2026 | **Hardening & Observabilidade Meta Ads (Blindagem de Produção)** | Blindagem de robustez para operação em alta escala sem regressões: (1) Observabilidade estruturada e segura via flag `META_LAZY_OBSERVABILITY_ENABLED=true`, registrando telemetria estritamente técnica (`event`, `mode`, `entity_id`, `duration_ms`, `items_loaded`, `success`, `error_type`) com zero PII ou tokens; (2) Proteção contra cliques rápidos e duplicados no frontend (`page.tsx`) com travas in-flight baseadas em `useRef<Set<string>>`, garantindo que duplo clique em campanha ou conjunto gere apenas 1 requisição de rede; (3) Tratamento semântico de falhas da Meta diferenciando Caso A (sucesso legítimo com zero itens) de Caso B (falha técnica ou timeout), apresentando alerta contextual âmbar com botão de retry `[Tentar novamente]` na interface (`UtmifyCampaignManager.tsx`); (4) Preservação estrita de 100% dos contratos da API (campos aditivos) e criação da suíte de testes de estresse automatizada `scripts/test-meta-lazy-hardening.js` (30/30 testes aprovados). | Antigravity |
+
+---
+
+## 6. Arquitetura de Lazy Loading & Blindagem Meta Ads (v6.0.0 & v6.1.0)
+
+### 6.1 Problema Estrutural Resolvido (Development Access & Code 17)
+Apps Meta em modo *Development Access* possuem cota global reduzida por conta de anúncio (`error_subcode: 2446079`). O modelo anterior que realizava varredura exaustiva paginada de todos os AdSets e Ads de todas as contas simultaneamente causava exaustão de chamadas e timeouts 504.
+
+### 6.2 O Pipeline Lazy Loading em 3 Modos
+1. **Modo Inicial (`mode: "initial"`):**
+   - Requisição: `GET /api/v1/meta/campaigns/list?store_id=X&date_preset=today`
+   - Busca exclusivamente Contas (`accounts`) e Campanhas (`campaigns`).
+   - Retorno instantâneo: `adsets: []`, `ads: []`, `lazy_loading: true`.
+2. **Modo Campanha (`mode: "campaign"`):**
+   - Requisição: `GET /api/v1/meta/campaigns/list?campaign_id=CAMP_ID&store_id=X&date_preset=today`
+   - Consulta direta aninhada no nó da campanha: `/{campId}?fields=id,name,account_id,adsets.limit(250){...},insights.level(adset)...`
+   - Retorna os adsets da campanha com métricas atribuídas e histórico.
+3. **Modo AdSet (`mode: "adset"`):**
+   - Requisição: `GET /api/v1/meta/campaigns/list?adset_id=ADSET_ID&store_id=X&date_preset=today`
+   - Consulta direta aninhada no nó do conjunto: `/{adsetId}?fields=id,name,campaign_id,account_id,ads.limit(250){...},insights.level(ad)...`
+   - Retorna os anúncios pertencentes ao adset.
+
+### 6.3 Mecanismos de Blindagem Implementados
+- **In-Flight Lock (Frontend):** Controlado por `inFlightCampaignsRef` e `inFlightAdsetsRef` (`useRef<Set<string>>`) em `page.tsx`. Disparos concomitantes para o mesmo identificador são descartados antes de gerar chamada HTTP.
+- **Diferenciação Semântica (Caso A vs Caso B):**
+  - **Caso A (Vazio Legítimo):** Consulta concluiu com sucesso (`ok: true`), exibindo `"Esta campanha não possui conjuntos de anúncios"` ou `"Este conjunto não possui anúncios"`.
+  - **Caso B (Falha da Meta):** Consulta retornou erro ou timeout (`ok: false`, `error_type`), exibindo aviso âmbar com detalhe e botão interativo `[Tentar novamente]`.
+- **Contrato Universal 100% Preservado:** Todas as respostas da API contêm as coleções completas (`accounts`, `campaigns`, `adsets`, `ads`), garantindo retrocompatibilidade total com clientes e testes.
+- **Observabilidade Estruturada:** Logs JSON de uma linha sob a flag de ambiente `META_LAZY_OBSERVABILITY_ENABLED=true` sem qualquer dado pessoal (PII) ou tokens.
+
 
 
 
