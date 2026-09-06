@@ -58,10 +58,41 @@ export function getCachedEntityMetrics(storeId: string, entityId: string, level:
   return null;
 }
 
+interface ParsedEvent {
+  id: string;
+  isPurchase: boolean;
+  isIC: boolean;
+  val: number;
+  campId: string;
+  campName: string;
+  adsetId: string;
+  adsetName: string;
+  adId: string;
+  adName: string;
+  rawCampaign: string;
+  rawMedium: string;
+  rawContent: string;
+  rawSource: string;
+  fee: number;
+}
+
+const extractMetaIc = (actions: any[]): number => {
+  if (!Array.isArray(actions)) return 0;
+  const act = actions.find(
+    (a: any) =>
+      a.action_type === "initiate_checkout" ||
+      a.action_type === "omni_initiated_checkout" ||
+      a.action_type === "offsite_conversion.fb_pixel_initiate_checkout"
+  );
+  return act ? Number(act.value || 0) : 0;
+};
+
 /**
  * GET /api/v1/meta/campaigns/list
- * Retorna dados estruturados em 4 níveis (Contas, Campanhas, Conjuntos/AdSets, Anúncios/Ads)
- * enriquecidos com Ciclo de cobrança, Cartão de crédito, Métricas de Lucro, ROAS, IC, CPI e Margem.
+ * Suporta Lazy Loading:
+ * - Sem parâmetros: Retorna Accounts e Campaigns com adsets: [] e ads: [] (lazy_loading: true).
+ * - campaign_id=X: Retorna somente os AdSets daquela campanha com métricas completas e histórico.
+ * - adset_id=X: Retorna somente os Ads daquele adset com métricas completas.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -79,10 +110,21 @@ export async function GET(request: NextRequest) {
     let obsPagesFetched = 0;
     let obsRetriesCode17 = 0;
 
-    const cacheKey = `${storeId}_${datePreset}_${searchParams.get("account_id") || "all"}`;
+    const requestedCampaignId = searchParams.get("campaign_id");
+    const requestedAdsetId = searchParams.get("adset_id");
+    const requestedAccountId = searchParams.get("account_id");
+
+    // Cache isolado por entidade conforme regra do usuário:
+    // store_date_campaign_ID / store_date_adset_ID / store_date_account_all
+    const cacheKey = requestedCampaignId
+      ? `${storeId}_${datePreset}_campaign_${requestedCampaignId}`
+      : requestedAdsetId
+      ? `${storeId}_${datePreset}_adset_${requestedAdsetId}`
+      : `${storeId}_${datePreset}_${requestedAccountId || "all"}`;
+
     const nowMs = Date.now();
     const cached = MEMORY_CACHE.get(cacheKey);
-    if (!isRefresh && cached && (nowMs - cached.timestamp < CACHE_TTL_MS)) {
+    if (!isRefresh && cached && nowMs - cached.timestamp < CACHE_TTL_MS) {
       return NextResponse.json(cached.data, {
         headers: {
           "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
@@ -92,7 +134,7 @@ export async function GET(request: NextRequest) {
 
     const supabase = createAdminClient();
 
-    // 1. Executa consultas independentes em paralelo (integração, cotação USD/BRL e taxas)
+    // 1. Executa consultas base no banco em paralelo
     const [storeIntResult, usdBrlRate, storeTaxesResult] = await Promise.all([
       supabase
         .from("integrations")
@@ -103,14 +145,11 @@ export async function GET(request: NextRequest) {
         .limit(1)
         .maybeSingle(),
       getUsdBrlRate(),
-      supabase
-        .from("taxes_and_duties")
-        .select("*")
-        .eq("store_id", storeId),
+      supabase.from("taxes_and_duties").select("*").eq("store_id", storeId),
     ]);
 
     const storeInt = storeIntResult.data;
-    const storeTaxesAndDuties = storeTaxesResult.data;
+    const storeTaxesAndDuties = storeTaxesResult.data || [];
 
     let integration = storeInt;
     if (!integration) {
@@ -125,26 +164,722 @@ export async function GET(request: NextRequest) {
       integration = fallbackInt;
     }
 
-    let token = resolveMetaAccessToken(integration?.access_token_enc) || resolveMetaAccessToken(process.env.META_ACCESS_TOKEN) || "";
+    const token =
+      resolveMetaAccessToken(integration?.access_token_enc) ||
+      resolveMetaAccessToken(process.env.META_ACCESS_TOKEN) ||
+      "";
 
     if (!token) {
       return NextResponse.json({
         ok: false,
         error: "Token da Meta não configurado. Acesse Integrações e conecte sua conta do Facebook.",
-        accounts: [], campaigns: [], adsets: [], ads: [],
+        accounts: [],
+        campaigns: [],
+        adsets: [],
+        ads: [],
       });
     }
 
-    // 3. Busca contas vinculadas ao token via /me/adaccounts e /me/businesses
-    // Campos seguros: sem funding_source_details e spend_cap (campos privilegiados
-    // que causam falha silenciosa ou erro em contas de parceiros/BMs de clientes)
-    // 3. Resolve contas a processar
+    // Funções utilitárias resilientes para chamadas Meta Graph API
+    const fetchWithResilience = async (url: string, label: string, timeoutMs = 12000) => {
+      try {
+        const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(timeoutMs) });
+        if (!res.ok) {
+          const errSnippet = await res.text().catch(() => "");
+          console.warn(`[Meta API Error] ${label} status ${res.status}: ${errSnippet.slice(0, 200)}`);
+        }
+        return res;
+      } catch (err: any) {
+        console.warn(`[Meta API Network/Timeout Error] ${label}: ${err?.message || err}`);
+        return null;
+      }
+    };
+
+    const fetchMetaPaged = async (
+      initialUrl: string,
+      label: string,
+      maxPages = 25,
+      maxItems = 10000,
+      timeoutMs = 12000
+    ): Promise<{ data: any[]; hasFailure: boolean; error?: string }> => {
+      let allData: any[] = [];
+      let currentUrl: string | null = initialUrl;
+      let page = 0;
+      let hasFailure = false;
+      let lastError: string | undefined;
+
+      while (currentUrl && page < maxPages && allData.length < maxItems) {
+        page++;
+        obsPagesFetched++;
+        const targetUrl: string = currentUrl;
+        let attempts = 0;
+        const maxAttempts = 2; // Tentativa inicial + no máximo 1 retry controlado
+        let success = false;
+
+        while (attempts < maxAttempts && !success) {
+          attempts++;
+          try {
+            const res: Response = await fetch(targetUrl, {
+              cache: "no-store",
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+
+            if (!res.ok) {
+              const errText = await res.text().catch(() => "");
+              let isCode17 = res.status === 429;
+              let parsedErrorMsg = `Status ${res.status}: ${errText.slice(0, 150)}`;
+
+              try {
+                const errJson = JSON.parse(errText);
+                if (
+                  errJson.error?.code === 17 ||
+                  errJson.error?.type === "OAuthException" ||
+                  errJson.error?.is_transient === true
+                ) {
+                  isCode17 = true;
+                  parsedErrorMsg = errJson.error.message || parsedErrorMsg;
+                }
+              } catch {}
+
+              if (isCode17 && attempts < maxAttempts) {
+                obsRetriesCode17++;
+                const backoffMs = 6000;
+                console.warn(
+                  `[Meta API Code 17] ${label} pág ${page}. Backoff controlado de ${backoffMs}ms antes da retentativa...`
+                );
+                await new Promise((r) => setTimeout(r, backoffMs));
+                continue;
+              }
+
+              hasFailure = true;
+              lastError = parsedErrorMsg;
+              console.warn(`[Meta API Error] ${label} page ${page}: ${lastError}`);
+              break;
+            }
+
+            const json: any = await res.json();
+            if (json.error) {
+              const isCode17 =
+                json.error.code === 17 ||
+                json.error.type === "OAuthException" ||
+                json.error.is_transient === true;
+
+              if (isCode17 && attempts < maxAttempts) {
+                obsRetriesCode17++;
+                const backoffMs = 6000;
+                console.warn(
+                  `[Meta API Code 17] ${label} pág ${page}. Backoff de ${backoffMs}ms antes da retentativa...`
+                );
+                await new Promise((r) => setTimeout(r, backoffMs));
+                continue;
+              }
+
+              hasFailure = true;
+              lastError = json.error.message || "Erro na Meta API";
+              console.warn(`[Meta API Error] ${label} page ${page}: ${lastError}`);
+              break;
+            }
+
+            if (Array.isArray(json.data)) {
+              allData.push(...json.data);
+            }
+
+            if (json.paging?.next && json.data?.length > 0) {
+              currentUrl = json.paging.next;
+              await new Promise((r) => setTimeout(r, 100)); // micro pausa de 100ms
+            } else {
+              currentUrl = null;
+            }
+            success = true;
+          } catch (err: any) {
+            if (attempts < maxAttempts) {
+              const backoffMs = 6000;
+              console.warn(`[Meta API Timeout] ${label} tentativa ${attempts}/${maxAttempts}. Aguardando ${backoffMs}ms...`);
+              await new Promise((r) => setTimeout(r, backoffMs));
+              continue;
+            }
+            hasFailure = true;
+            lastError = err?.message || String(err);
+            console.warn(`[Meta API Timeout Error] ${label} page ${page}: ${lastError}`);
+            break;
+          }
+        }
+
+        if (!success) {
+          break;
+        }
+      }
+
+      return { data: allData, hasFailure, error: lastError };
+    };
+
+    // Parser universal de eventos de conversão e taxas
+    const parseDbEvents = (events: any[]) => {
+      const parsedPurchases: ParsedEvent[] = [];
+      const parsedICs: ParsedEvent[] = [];
+
+      (events || []).forEach((ev) => {
+        const metaResp = ev.meta_response || {};
+        const orderDetails = metaResp.order_details || {};
+        const customData = metaResp.custom_data || {};
+        const tracking = orderDetails.tracking_params || {};
+
+        const isPurchase = ev.event_name === "Purchase";
+        const isIC = ev.event_name === "InitiateCheckout";
+
+        const method = String(
+          orderDetails.payment_method ||
+            customData.payment_method ||
+            customData.payment_type ||
+            orderDetails.payment_type ||
+            metaResp.payment_method ||
+            ""
+        ).toLowerCase();
+
+        const isCard =
+          method.includes("card") ||
+          method.includes("cartao") ||
+          method.includes("credit") ||
+          method.includes("visa") ||
+          method.includes("master");
+        const isPix = method.includes("pix") || method === "";
+        const isBoleto = method.includes("boleto");
+
+        const val = Number(customData.value || orderDetails.value || 0);
+        let fee = 0;
+        if (val > 0 && isPurchase) {
+          const hasCustomRules = (storeTaxesAndDuties || []).length > 0;
+          if (hasCustomRules) {
+            (storeTaxesAndDuties || [])
+              .filter((t: any) => t.type === "tax")
+              .forEach((t: any) => {
+                fee += val * (Number(t.value || 0) / 100);
+              });
+            (storeTaxesAndDuties || [])
+              .filter((t: any) => t.type === "duty")
+              .forEach((t: any) => {
+                const matchMethod =
+                  t.payment_method === "all" ||
+                  (isPix && t.payment_method === "pix") ||
+                  (isCard && t.payment_method === "credit_card") ||
+                  (isBoleto && t.payment_method === "boleto");
+
+                if (matchMethod) {
+                  if (t.value_type === "percentage") {
+                    fee += val * (Number(t.value || 0) / 100);
+                  } else {
+                    fee += Number(t.value || 0);
+                  }
+                }
+              });
+          } else {
+            fee = isCard ? val * 0.15 : val * 0.099;
+          }
+        }
+
+        const rawCampaign = String(
+          customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || ""
+        ).trim();
+        const rawMedium = String(
+          customData.utm_medium || orderDetails.utm_medium || tracking.utm_medium || ""
+        ).trim();
+        const rawContent = String(
+          customData.utm_content || orderDetails.utm_content || tracking.utm_content || ""
+        ).trim();
+        const rawSource = String(
+          customData.utm_source || orderDetails.utm_source || tracking.utm_source || ""
+        ).trim();
+
+        const campId = rawCampaign.includes("|") ? rawCampaign.split("|")[1].trim() : rawCampaign;
+        const campName = rawCampaign.includes("|") ? rawCampaign.split("|")[0].trim() : rawCampaign;
+
+        const adsetId = rawMedium.includes("|") ? rawMedium.split("|")[1].trim() : rawMedium;
+        const adsetName = rawMedium.includes("|") ? rawMedium.split("|")[0].trim() : rawMedium;
+
+        const cleanContent = rawContent.includes("::") ? rawContent.split("::")[0].trim() : rawContent;
+        const adId = cleanContent.includes("|") ? cleanContent.split("|")[1].trim() : cleanContent;
+        const adName = cleanContent.includes("|") ? cleanContent.split("|")[0].trim() : cleanContent;
+
+        const parsed: ParsedEvent = {
+          id: ev.id,
+          isPurchase,
+          isIC,
+          val,
+          campId,
+          campName,
+          adsetId,
+          adsetName,
+          adId,
+          adName,
+          rawCampaign,
+          rawMedium,
+          rawContent,
+          rawSource,
+          fee,
+        };
+
+        if (isPurchase) parsedPurchases.push(parsed);
+        else if (isIC) parsedICs.push(parsed);
+      });
+
+      return { parsedPurchases, parsedICs };
+    };
+
+    // =========================================================================
+    // CASO 1: CARREGAMENTO SOB DEMANDA DE ADSETS DE UMA CAMPANHA (campaign_id)
+    // =========================================================================
+    if (requestedCampaignId) {
+      let campMeta: any = null;
+      try {
+        const campMetaRes = await fetchWithResilience(
+          `https://graph.facebook.com/v23.0/${requestedCampaignId}?fields=id,name,account_id&access_token=${token}`,
+          `camp_meta_${requestedCampaignId}`,
+          6000
+        );
+        if (campMetaRes && campMetaRes.ok) {
+          campMeta = await campMetaRes.json();
+        }
+      } catch {}
+
+      const cleanAccId = campMeta?.account_id
+        ? campMeta.account_id.startsWith("act_")
+          ? campMeta.account_id
+          : `act_${campMeta.account_id}`
+        : "";
+
+      const tzName =
+        (cleanAccId && integration?.config?.ad_accounts_metadata?.[cleanAccId]?.timezone_name) ||
+        "America/Sao_Paulo";
+      const dateRange = resolveAccountDateRange(datePreset, tzName);
+      const timeRangeParam = encodeURIComponent(
+        JSON.stringify({ since: dateRange.since, until: dateRange.until })
+      );
+
+      // 1. Busca os metadados da campanha, adsets e insights em chamada direta resiliente (isenta de Code 17)
+      const fields = "id,name,account_id,adsets.limit(250){id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id},insights.level(adset).limit(250){adset_id,spend,impressions,clicks,actions}";
+      const nestedUrl = `https://graph.facebook.com/v23.0/${requestedCampaignId}?fields=${fields}&access_token=${token}`;
+
+      const [campNestedRes, dbEventsResult, entityHistoryResult] = await Promise.all([
+        fetchWithResilience(nestedUrl, `camp_nested_${requestedCampaignId}`, 10000),
+        supabase
+          .from("events")
+          .select("id, event_name, meta_response, created_at")
+          .eq("store_id", storeId)
+          .in("event_name", ["Purchase", "InitiateCheckout"])
+          .eq("status", "accepted")
+          .gte("created_at", dateRange.startUtc)
+          .lte("created_at", dateRange.endUtc)
+          .order("created_at", { ascending: false })
+          .limit(2000),
+        supabase
+          .from("meta_entity_history")
+          .select(
+            "entity_id, action, previous_budget, new_budget, sales_at_update, revenue_at_update, spend_at_update, profit_at_update, roas_at_update, cpa_at_update, user_email, created_at, source, metadata"
+          )
+          .eq("store_id", storeId)
+          .eq("action", "budget")
+          .order("created_at", { ascending: false }),
+      ]);
+
+      let campData: any = null;
+      if (campNestedRes && campNestedRes.ok) {
+        campData = await campNestedRes.json();
+      }
+
+      let rawAdsets: any[] = campData?.adsets?.data || [];
+      const asInsData: any[] = campData?.insights?.data || [];
+
+      // Proteção contra falha: se falhou e tiver cache anterior, usa o cache existente
+      if ((!campNestedRes || !campNestedRes.ok || rawAdsets.length === 0) && cached && cached.data?.adsets?.length > 0) {
+        console.warn(
+          `[Campaigns Lazy] Falha na Meta API para campanha ${requestedCampaignId}. Preservando cache saudável anterior.`
+        );
+        return NextResponse.json(cached.data, {
+          headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" },
+        });
+      }
+
+      const { parsedPurchases, parsedICs } = parseDbEvents(dbEventsResult.data || []);
+
+      const budgetHistoryMap = new Map<string, any>();
+      if (Array.isArray(entityHistoryResult.data)) {
+        for (const h of entityHistoryResult.data) {
+          if (!budgetHistoryMap.has(h.entity_id)) {
+            budgetHistoryMap.set(h.entity_id, h);
+          }
+        }
+      }
+
+      const adsetInsightsMap = new Map<string, any>();
+      asInsData.forEach((ins: any) => {
+        if (ins.adset_id) adsetInsightsMap.set(ins.adset_id, ins);
+      });
+
+      // Atribuição de compras nos adsets
+      const adsetAttribution = new Map<string, { grossRevenue: number; netRevenue: number; count: number }>();
+      const adsetIcAttribution = new Map<string, number>();
+
+      const normalizedAdsets = rawAdsets.map((as: any) => ({
+        id: String(as.id || ""),
+        name: String(as.name || ""),
+        cleanName: String(as.name || "").toLowerCase().replace(/[^a-z0-9]/g, ""),
+      }));
+
+      parsedPurchases.forEach((p) => {
+        const pAdsetNameClean = p.adsetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        let bestAdset = normalizedAdsets.find((as) => p.adsetId && as.id === p.adsetId);
+        if (!bestAdset && pAdsetNameClean) {
+          bestAdset = normalizedAdsets.find((as) => as.cleanName === pAdsetNameClean);
+        }
+        if (!bestAdset && pAdsetNameClean) {
+          bestAdset = normalizedAdsets.find(
+            (as) => as.cleanName && (as.cleanName.includes(pAdsetNameClean) || pAdsetNameClean.includes(as.cleanName))
+          );
+        }
+        if (bestAdset) {
+          const prev = adsetAttribution.get(bestAdset.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
+          adsetAttribution.set(bestAdset.id, {
+            grossRevenue: prev.grossRevenue + p.val,
+            netRevenue: prev.netRevenue + (p.val - p.fee),
+            count: prev.count + 1,
+          });
+        }
+      });
+
+      parsedICs.forEach((ic) => {
+        const pAdsetNameClean = ic.adsetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        let bestAdset = normalizedAdsets.find((as) => ic.adsetId && as.id === ic.adsetId);
+        if (!bestAdset && pAdsetNameClean) {
+          bestAdset = normalizedAdsets.find((as) => as.cleanName === pAdsetNameClean);
+        }
+        if (!bestAdset && pAdsetNameClean) {
+          bestAdset = normalizedAdsets.find(
+            (as) => as.cleanName && (as.cleanName.includes(pAdsetNameClean) || pAdsetNameClean.includes(as.cleanName))
+          );
+        }
+        if (bestAdset) {
+          adsetIcAttribution.set(bestAdset.id, (adsetIcAttribution.get(bestAdset.id) || 0) + 1);
+        }
+      });
+
+      const currency = "BRL";
+      const campName = campMeta?.name || requestedCampaignId;
+
+      const allAdsets = rawAdsets.map((as: any) => {
+        const asIns = adsetInsightsMap.get(as.id) || {};
+        const asRawSpend = Number(asIns.spend || 0);
+        const asSpend = convertToBrl(asRawSpend, currency, usdBrlRate);
+
+        const asAttr = adsetAttribution.get(as.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
+        const asGrossRevenue = asAttr.grossRevenue;
+        const asNetRevenue = asAttr.netRevenue;
+        const asSales = asAttr.count;
+        const asProfit = asNetRevenue - asSpend;
+        const asRoas = asSpend > 0 ? asGrossRevenue / asSpend : asGrossRevenue > 0 ? 99.9 : 0;
+        const asCpa = asSales > 0 ? asSpend / asSales : 0;
+        const asMargin = asNetRevenue > 0 ? (asProfit / asNetRevenue) * 100 : asSpend > 0 ? -100 : 0;
+        const asRoi = asSpend > 0 ? asProfit / asSpend : 0;
+
+        const asIsCBO = !as.daily_budget && !as.lifetime_budget;
+        const asRawBudget = as.daily_budget ? Number(as.daily_budget) / 100 : Number(as.lifetime_budget || 0) / 100;
+        const asConvertedBudget = convertToBrl(asRawBudget, currency, usdBrlRate);
+        const asIsActive =
+          as.effective_status === "ACTIVE" || (as.effective_status === undefined && as.status === "ACTIVE");
+
+        const metaAdsetIc = extractMetaIc(asIns.actions);
+        const fpAdsetIc = adsetIcAttribution.get(as.id) || 0;
+        const asIc = Math.max(metaAdsetIc, fpAdsetIc);
+        const asCpi = asIc > 0 ? asSpend / asIc : 0;
+
+        const asHist = budgetHistoryMap.get(as.id);
+
+        return {
+          id: as.id,
+          name: as.name,
+          campaign_id: as.campaign_id || requestedCampaignId,
+          campaign_name: campName,
+          account_id: cleanAccId,
+          account_name: `Conta ${cleanAccId.replace("act_", "")}`,
+          status: asIsActive ? "active" : "paused",
+          effective_status: as.effective_status || as.status,
+          budget: asConvertedBudget,
+          budget_type: asIsCBO ? "CBO" : as.daily_budget ? "Diário" : "Vitalício",
+          is_cbo: asIsCBO,
+          spend: asSpend,
+          revenue: asNetRevenue,
+          profit: asProfit,
+          roas: asRoas,
+          sales: asSales,
+          cpa: asCpa,
+          ic: asIc,
+          cpi: asCpi,
+          margin: asMargin,
+          roi: asRoi,
+          last_update: as.updated_time ? new Date(as.updated_time).toLocaleString("pt-BR") : "Hoje",
+          budget_history: asHist
+            ? {
+                previous_budget: asHist.previous_budget !== null ? Number(asHist.previous_budget) : null,
+                new_budget: asHist.new_budget !== null ? Number(asHist.new_budget) : null,
+                sales: asHist.sales_at_update,
+                revenue: asHist.revenue_at_update !== null ? Number(asHist.revenue_at_update) : null,
+                spend: asHist.spend_at_update !== null ? Number(asHist.spend_at_update) : null,
+                profit: asHist.profit_at_update !== null ? Number(asHist.profit_at_update) : null,
+                roas: asHist.roas_at_update !== null ? Number(asHist.roas_at_update) : null,
+                cpa: asHist.cpa_at_update !== null ? Number(asHist.cpa_at_update) : null,
+                user_email: asHist.user_email,
+                source: asHist.source,
+                metadata: asHist.metadata,
+                updated_at: asHist.created_at,
+              }
+            : null,
+        };
+      });
+
+      // Ordena por Ativos > Lucro > Spend
+      allAdsets.sort((a, b) => {
+        const aActive = a.status === "active" ? 1 : 0;
+        const bActive = b.status === "active" ? 1 : 0;
+        if (aActive !== bActive) return bActive - aActive;
+        const aProfit = Number(a.profit || 0);
+        const bProfit = Number(b.profit || 0);
+        if (bProfit !== aProfit) return bProfit - aProfit;
+        return Number(b.spend || 0) - Number(a.spend || 0);
+      });
+
+      const responsePayload = {
+        ok: true,
+        campaign_id: requestedCampaignId,
+        adsets: allAdsets,
+      };
+
+      if (allAdsets.length > 0) {
+        MEMORY_CACHE.set(cacheKey, {
+          timestamp: nowMs,
+          data: responsePayload,
+          datePreset,
+          timezoneName: tzName,
+        });
+      }
+
+      return NextResponse.json(responsePayload, {
+        headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" },
+      });
+    }
+
+    // =========================================================================
+    // CASO 2: CARREGAMENTO SOB DEMANDA DE ANÚNCIOS DE UM ADSET (adset_id)
+    // =========================================================================
+    if (requestedAdsetId) {
+      let adsetMeta: any = null;
+      try {
+        const adsetMetaRes = await fetchWithResilience(
+          `https://graph.facebook.com/v23.0/${requestedAdsetId}?fields=id,name,campaign_id,account_id&access_token=${token}`,
+          `adset_meta_${requestedAdsetId}`,
+          6000
+        );
+        if (adsetMetaRes && adsetMetaRes.ok) {
+          adsetMeta = await adsetMetaRes.json();
+        }
+      } catch {}
+
+      const cleanAccId = adsetMeta?.account_id
+        ? adsetMeta.account_id.startsWith("act_")
+          ? adsetMeta.account_id
+          : `act_${adsetMeta.account_id}`
+        : "";
+
+      const tzName =
+        (cleanAccId && integration?.config?.ad_accounts_metadata?.[cleanAccId]?.timezone_name) ||
+        "America/Sao_Paulo";
+      const dateRange = resolveAccountDateRange(datePreset, tzName);
+      const timeRangeParam = encodeURIComponent(
+        JSON.stringify({ since: dateRange.since, until: dateRange.until })
+      );
+
+      // 1. Busca os metadados do adset, anúncios e insights em chamada direta resiliente (isenta de Code 17)
+      const fields = "id,name,campaign_id,account_id,ads.limit(250){id,name,status,effective_status,updated_time,adset_id,campaign_id},insights.level(ad).limit(250){ad_id,spend,impressions,clicks,actions}";
+      const nestedUrl = `https://graph.facebook.com/v23.0/${requestedAdsetId}?fields=${fields}&access_token=${token}`;
+
+      const [adsetNestedRes, dbEventsResult] = await Promise.all([
+        fetchWithResilience(nestedUrl, `adset_nested_${requestedAdsetId}`, 10000),
+        supabase
+          .from("events")
+          .select("id, event_name, meta_response, created_at")
+          .eq("store_id", storeId)
+          .in("event_name", ["Purchase", "InitiateCheckout"])
+          .eq("status", "accepted")
+          .gte("created_at", dateRange.startUtc)
+          .lte("created_at", dateRange.endUtc)
+          .order("created_at", { ascending: false })
+          .limit(2000),
+      ]);
+
+      let adsetData: any = null;
+      if (adsetNestedRes && adsetNestedRes.ok) {
+        adsetData = await adsetNestedRes.json();
+      }
+
+      let rawAds: any[] = adsetData?.ads?.data || [];
+      const aInsData: any[] = adsetData?.insights?.data || [];
+
+      // Proteção contra falha: se falhou e tiver cache anterior, usa o cache existente
+      if ((!adsetNestedRes || !adsetNestedRes.ok || rawAds.length === 0) && cached && cached.data?.ads?.length > 0) {
+        console.warn(
+          `[Campaigns Lazy] Falha na Meta API para adset ${requestedAdsetId}. Preservando cache saudável anterior.`
+        );
+        return NextResponse.json(cached.data, {
+          headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" },
+        });
+      }
+
+      const { parsedPurchases, parsedICs } = parseDbEvents(dbEventsResult.data || []);
+
+      const adInsightsMap = new Map<string, any>();
+      aInsData.forEach((ins: any) => {
+        if (ins.ad_id) adInsightsMap.set(ins.ad_id, ins);
+      });
+
+      const adAttribution = new Map<string, { grossRevenue: number; netRevenue: number; count: number }>();
+      const adIcAttribution = new Map<string, number>();
+
+      const normalizedAds = rawAds.map((ad: any) => ({
+        id: String(ad.id || ""),
+        name: String(ad.name || ""),
+        cleanName: String(ad.name || "").toLowerCase().replace(/[^a-z0-9]/g, ""),
+      }));
+
+      parsedPurchases.forEach((p) => {
+        const pAdNameClean = p.adName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        let bestAd = normalizedAds.find((ad) => p.adId && ad.id === p.adId);
+        if (!bestAd && pAdNameClean) {
+          bestAd = normalizedAds.find((ad) => ad.cleanName === pAdNameClean);
+        }
+        if (!bestAd && pAdNameClean) {
+          bestAd = normalizedAds.find(
+            (ad) => ad.cleanName && (ad.cleanName.includes(pAdNameClean) || pAdNameClean.includes(ad.cleanName))
+          );
+        }
+        if (bestAd) {
+          const prev = adAttribution.get(bestAd.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
+          adAttribution.set(bestAd.id, {
+            grossRevenue: prev.grossRevenue + p.val,
+            netRevenue: prev.netRevenue + (p.val - p.fee),
+            count: prev.count + 1,
+          });
+        }
+      });
+
+      parsedICs.forEach((ic) => {
+        const pAdNameClean = ic.adName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        let bestAd = normalizedAds.find((ad) => ic.adId && ad.id === ic.adId);
+        if (!bestAd && pAdNameClean) {
+          bestAd = normalizedAds.find((ad) => ad.cleanName === pAdNameClean);
+        }
+        if (!bestAd && pAdNameClean) {
+          bestAd = normalizedAds.find(
+            (ad) => ad.cleanName && (ad.cleanName.includes(pAdNameClean) || pAdNameClean.includes(ad.cleanName))
+          );
+        }
+        if (bestAd) {
+          adIcAttribution.set(bestAd.id, (adIcAttribution.get(bestAd.id) || 0) + 1);
+        }
+      });
+
+      const currency = "BRL";
+      const adsetName = adsetMeta?.name || requestedAdsetId;
+      const campaignId = adsetMeta?.campaign_id || "";
+
+      const allAds = rawAds.map((ad: any) => {
+        const adIns = adInsightsMap.get(ad.id) || {};
+        const adRawSpend = Number(adIns.spend || 0);
+        const adSpend = convertToBrl(adRawSpend, currency, usdBrlRate);
+
+        const adAttr = adAttribution.get(ad.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
+        const adGrossRevenue = adAttr.grossRevenue;
+        const adNetRevenue = adAttr.netRevenue;
+        const adSales = adAttr.count;
+        const adProfit = adNetRevenue - adSpend;
+        const adRoas = adSpend > 0 ? adGrossRevenue / adSpend : adGrossRevenue > 0 ? 99.9 : 0;
+        const adCpa = adSales > 0 ? adSpend / adSales : 0;
+        const adMargin = adNetRevenue > 0 ? (adProfit / adNetRevenue) * 100 : adSpend > 0 ? -100 : 0;
+        const adRoi = adSpend > 0 ? adProfit / adSpend : 0;
+
+        const adIsActive =
+          ad.effective_status === "ACTIVE" || (ad.effective_status === undefined && ad.status === "ACTIVE");
+
+        const metaAdIc = extractMetaIc(adIns.actions);
+        const fpAdIc = adIcAttribution.get(ad.id) || 0;
+        const aIc = Math.max(metaAdIc, fpAdIc);
+        const aCpi = aIc > 0 ? adSpend / aIc : 0;
+
+        return {
+          id: ad.id,
+          name: ad.name,
+          adset_id: ad.adset_id || requestedAdsetId,
+          adset_name: adsetName,
+          campaign_id: ad.campaign_id || campaignId,
+          campaign_name: `Campanha ${campaignId}`,
+          account_id: cleanAccId,
+          account_name: `Conta ${cleanAccId.replace("act_", "")}`,
+          status: adIsActive ? "active" : "paused",
+          effective_status: ad.effective_status || ad.status,
+          budget: 0,
+          budget_type: "AdSet/Campanha",
+          spend: adSpend,
+          revenue: adNetRevenue,
+          profit: adProfit,
+          roas: adRoas,
+          sales: adSales,
+          cpa: adCpa,
+          ic: aIc,
+          cpi: aCpi,
+          margin: adMargin,
+          roi: adRoi,
+          last_update: ad.updated_time ? new Date(ad.updated_time).toLocaleString("pt-BR") : "Hoje",
+        };
+      });
+
+      // Ordena por Ativos > Lucro > Spend
+      allAds.sort((a, b) => {
+        const aActive = a.status === "active" ? 1 : 0;
+        const bActive = b.status === "active" ? 1 : 0;
+        if (aActive !== bActive) return bActive - aActive;
+        const aProfit = Number(a.profit || 0);
+        const bProfit = Number(b.profit || 0);
+        if (bProfit !== aProfit) return bProfit - aProfit;
+        return Number(b.spend || 0) - Number(a.spend || 0);
+      });
+
+      const responsePayload = {
+        ok: true,
+        adset_id: requestedAdsetId,
+        ads: allAds,
+      };
+
+      if (allAds.length > 0) {
+        MEMORY_CACHE.set(cacheKey, {
+          timestamp: nowMs,
+          data: responsePayload,
+          datePreset,
+          timezoneName: tzName,
+        });
+      }
+
+      return NextResponse.json(responsePayload, {
+        headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" },
+      });
+    }
+
+    // =========================================================================
+    // CASO 3: CARREGAMENTO INICIAL LEVE (Apenas Contas + Campanhas)
+    // =========================================================================
     const configuredAccountIds: string[] = integration?.config?.ad_account_ids || [];
-    const requestedAccountId = searchParams.get("account_id");
 
     let accountIdsToProcess: string[] = [];
     if (requestedAccountId) {
-      accountIdsToProcess = [requestedAccountId.startsWith("act_") ? requestedAccountId : `act_${requestedAccountId}`];
+      accountIdsToProcess = [
+        requestedAccountId.startsWith("act_") ? requestedAccountId : `act_${requestedAccountId}`,
+      ];
     } else if (configuredAccountIds.length > 0) {
       accountIdsToProcess = configuredAccountIds
         .map((id: string) => (id.startsWith("act_") ? id : `act_${id}`))
@@ -152,7 +887,6 @@ export async function GET(request: NextRequest) {
     }
 
     let metaAccountsRaw: any[] = [];
-    // Pula completamente varredura pesada de BMs se as contas já estiverem selecionadas/configuradas
     if (accountIdsToProcess.length === 0) {
       try {
         const accRes = await fetch(
@@ -197,27 +931,36 @@ export async function GET(request: NextRequest) {
         } catch {}
       }
 
-      const sortedBySpend = [...metaAccountsRaw].sort((a, b) => Number(b.amount_spent || 0) - Number(a.amount_spent || 0));
+      const sortedBySpend = [...metaAccountsRaw].sort(
+        (a, b) => Number(b.amount_spent || 0) - Number(a.amount_spent || 0)
+      );
       accountIdsToProcess = sortedBySpend.slice(0, 3).map((a: any) => a.id);
     }
 
     if (accountIdsToProcess.length === 0) {
       return NextResponse.json({
         ok: true,
+        lazy_loading: true,
         usdBrlRate,
         untracked_sales_count: 0,
         account_errors: [],
-        notice: "Nenhuma conta de anúncio selecionada para esta loja. Acesse Configurações -> Integrações e selecione as contas desejadas.",
-        accounts: [], campaigns: [], adsets: [], ads: [],
+        notice:
+          "Nenhuma conta de anúncio selecionada para esta loja. Acesse Configurações -> Integrações e selecione as contas desejadas.",
+        accounts: [],
+        campaigns: [],
+        adsets: [],
+        ads: [],
       });
     }
 
-    // 3. Resolve metadados e fuso horário de cada conta de anúncio
     const accountsMeta = await Promise.all(
       accountIdsToProcess.map(async (accId) => {
         const cleanAccId = accId.startsWith("act_") ? accId : `act_${accId}`;
         const rawAcc = metaAccountsRaw.find((a: any) => a.id === cleanAccId || a.id === accId) || {};
-        let tzName = integration?.config?.ad_accounts_metadata?.[cleanAccId]?.timezone_name || rawAcc.timezone_name || null;
+        let tzName =
+          integration?.config?.ad_accounts_metadata?.[cleanAccId]?.timezone_name ||
+          rawAcc.timezone_name ||
+          null;
         let accData: any = null;
 
         try {
@@ -258,7 +1001,6 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    // 4. Determina intervalo UTC unificado para carregar eventos no Supabase
     let queryStartUtc: string;
     let queryEndUtc: string;
 
@@ -277,22 +1019,16 @@ export async function GET(request: NextRequest) {
       queryEndUtc = fallbackRange.endUtc;
     }
 
-    // 5. Coleta estrutura e insights da Meta e eventos do Supabase em paralelo
     const accountRawResults: Array<{
       accId: string;
       accData: any;
       rawAcc: any;
       currency: string;
       rawCampaigns: any[];
-      rawAdsets: any[];
-      rawAds: any[];
       campaignInsightsMap: Map<string, any>;
-      adsetInsightsMap: Map<string, any>;
-      adInsightsMap: Map<string, any>;
       accountInsight: any;
     }> = [];
     const accountErrors: Array<{ id: string; error: string }> = [];
-    const accountRestoredFromCache = new Map<string, any>();
 
     const dbEventsPromise = supabase
       .from("events")
@@ -307,14 +1043,14 @@ export async function GET(request: NextRequest) {
 
     const entityHistoryPromise = supabase
       .from("meta_entity_history")
-      .select("entity_id, action, previous_budget, new_budget, sales_at_update, revenue_at_update, spend_at_update, profit_at_update, roas_at_update, cpa_at_update, user_email, created_at, source, metadata")
+      .select(
+        "entity_id, action, previous_budget, new_budget, sales_at_update, revenue_at_update, spend_at_update, profit_at_update, roas_at_update, cpa_at_update, user_email, created_at, source, metadata"
+      )
       .eq("store_id", storeId)
       .eq("action", "budget")
       .order("created_at", { ascending: false });
 
-    let hasGlobalFetchFailure = false;
-
-    // Processamento sequencial por conta para eliminar estouro de concorrência no token da Meta
+    // Processamento sequencial por conta: apenas Campanhas e Insights de Conta (Sem AdSets e Sem Ads)
     for (const acc of accountsMeta) {
       const { cleanAccId, rawAcc, accData, dateRange } = acc;
 
@@ -322,242 +1058,28 @@ export async function GET(request: NextRequest) {
         JSON.stringify({ since: dateRange.since, until: dateRange.until })
       );
 
-      // Filtros de status por nível:
-      // 1. Campanhas: ACTIVE e PAUSED
-      const campStatusFilter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED"] }]));
-      // 2. AdSets: inclui também CAMPAIGN_PAUSED (conjuntos cuja campanha pai está pausada)
-      const adsetStatusFilter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED"] }]));
-      // 3. Ads: inclui também CAMPAIGN_PAUSED e ADSET_PAUSED
-      const adStatusFilter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED"] }]));
+      const campStatusFilter = encodeURIComponent(
+        JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED"] }])
+      );
 
       const campUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time&filtering=${campStatusFilter}&access_token=${token}&limit=100`;
-      const adsetUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/adsets?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id&filtering=${adsetStatusFilter}&access_token=${token}&limit=250`;
-      const adUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/ads?fields=id,name,status,effective_status,updated_time,adset_id,campaign_id&filtering=${adStatusFilter}&access_token=${token}&limit=250`;
-
-      // ── Insights em lote por nível usando time_range={since, until} ──
       const campInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=campaign&time_range=${timeRangeParam}&fields=campaign_id,spend,impressions,clicks,actions&access_token=${token}&limit=100`;
-      const adsetInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=adset&time_range=${timeRangeParam}&fields=adset_id,spend,impressions,clicks,actions&access_token=${token}&limit=100`;
-      const adInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=ad&time_range=${timeRangeParam}&fields=ad_id,spend,impressions,clicks,actions&access_token=${token}&limit=100`;
       const accInsightsUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/insights?level=account&time_range=${timeRangeParam}&fields=spend,impressions,clicks,actions&access_token=${token}`;
 
-      let accountHasFailure = false;
-      const fetchWithResilience = async (url: string, label: string, timeoutMs = 12000) => {
-        try {
-          const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(timeoutMs) });
-          if (!res.ok) {
-            accountHasFailure = true;
-            hasGlobalFetchFailure = true;
-            const errSnippet = await res.text().catch(() => "");
-            console.warn(`[Meta API Error] ${label} (${cleanAccId}) status ${res.status}: ${errSnippet.slice(0, 200)}`);
-          }
-          return res;
-        } catch (err: any) {
-          accountHasFailure = true;
-          hasGlobalFetchFailure = true;
-          console.warn(`[Meta API Network/Timeout Error] ${label} (${cleanAccId}): ${err?.message || err}`);
-          return null;
-        }
-      };
+      // Busca somente campanhas e seus insights
+      const campResult = await fetchMetaPaged(campUrl, `campaigns_${cleanAccId}`, 20, 5000, 12000);
+      const cInsResult = await fetchMetaPaged(campInsightsUrl, `campInsights_${cleanAccId}`, 20, 5000, 10000);
+      const acInsRes = await fetchWithResilience(accInsightsUrl, `accInsights_${cleanAccId}`, 10000);
 
-      // Função de busca paginada por cursor na Meta Graph API (paging.next)
-      // com backoff controlado para OAuthException Code 17 (máximo 1 retry, sem loops)
-      const fetchMetaPaged = async (
-        initialUrl: string,
-        label: string,
-        maxPages = 25,
-        maxItems = 10000,
-        timeoutMs = 12000
-      ): Promise<{ data: any[]; hasFailure: boolean; error?: string }> => {
-        let allData: any[] = [];
-        let currentUrl: string | null = initialUrl;
-        let page = 0;
-        let hasFailure = false;
-        let lastError: string | undefined;
+      const rawCampaigns: any[] = campResult.data;
 
-        while (currentUrl && page < maxPages && allData.length < maxItems) {
-          page++;
-          obsPagesFetched++;
-          const targetUrl: string = currentUrl;
-          let attempts = 0;
-          const maxAttempts = 2; // Tentativa inicial + no máximo 1 retry controlado
-          let success = false;
-
-          while (attempts < maxAttempts && !success) {
-            attempts++;
-            try {
-              const res: Response = await fetch(targetUrl, {
-                cache: "no-store",
-                signal: AbortSignal.timeout(timeoutMs),
-              });
-
-              if (!res.ok) {
-                const errText = await res.text().catch(() => "");
-                let isCode17 = res.status === 429;
-                let parsedErrorMsg = `Status ${res.status}: ${errText.slice(0, 150)}`;
-
-                try {
-                  const errJson = JSON.parse(errText);
-                  if (
-                    errJson.error?.code === 17 ||
-                    errJson.error?.type === "OAuthException" ||
-                    errJson.error?.is_transient === true
-                  ) {
-                    isCode17 = true;
-                    parsedErrorMsg = errJson.error.message || parsedErrorMsg;
-                  }
-                } catch {}
-
-                // Se for Code 17 ou erro transitório e for a 1ª tentativa, aplica backoff controlado e repete no máximo 1 vez
-                if (isCode17 && attempts < maxAttempts) {
-                  obsRetriesCode17++;
-                  const backoffMs = 2000;
-                  console.warn(`[Meta API Code 17] ${label} (${cleanAccId}) pág ${page}. Backoff controlado de ${backoffMs}ms antes da única retentativa...`);
-                  await new Promise((r) => setTimeout(r, backoffMs));
-                  continue;
-                }
-
-                hasFailure = true;
-                lastError = parsedErrorMsg;
-                console.warn(`[Meta API Error] ${label} (${cleanAccId}) page ${page}: ${lastError}`);
-                break;
-              }
-
-              const json: any = await res.json();
-              if (json.error) {
-                const isCode17 =
-                  json.error.code === 17 ||
-                  json.error.type === "OAuthException" ||
-                  json.error.is_transient === true;
-
-                if (isCode17 && attempts < maxAttempts) {
-                  obsRetriesCode17++;
-                  const backoffMs = 2000;
-                  console.warn(`[Meta API Code 17] ${label} (${cleanAccId}) pág ${page}. Backoff controlado de ${backoffMs}ms antes da única retentativa...`);
-                  await new Promise((r) => setTimeout(r, backoffMs));
-                  continue;
-                }
-
-                hasFailure = true;
-                lastError = json.error.message || "Erro na Meta API";
-                console.warn(`[Meta API Error] ${label} (${cleanAccId}) page ${page}: ${lastError}`);
-                break;
-              }
-
-              if (Array.isArray(json.data)) {
-                allData.push(...json.data);
-              }
-
-              // Segue o cursor retornado pela Meta para a próxima página com micro-pausa de cortesia
-              if (json.paging?.next && Array.isArray(json.data) && json.data.length > 0) {
-                currentUrl = json.paging.next;
-                // Micro pausa entre 80ms e 120ms (100ms) para evitar throttling da Meta
-                await new Promise((r) => setTimeout(r, 100));
-              } else {
-                currentUrl = null;
-              }
-              success = true;
-            } catch (err: any) {
-              if (attempts < maxAttempts) {
-                const backoffMs = 2000;
-                console.warn(`[Meta API Timeout] ${label} (${cleanAccId}) tentativa ${attempts}/${maxAttempts}. Aguardando ${backoffMs}ms...`);
-                await new Promise((r) => setTimeout(r, backoffMs));
-                continue;
-              }
-              hasFailure = true;
-              lastError = err?.message || String(err);
-              console.warn(`[Meta API Timeout/Network Error] ${label} (${cleanAccId}) page ${page}: ${lastError}`);
-              break;
-            }
-          }
-
-          if (!success) {
-            break;
-          }
-        }
-
-        if (hasFailure) {
-          accountHasFailure = true;
-          hasGlobalFetchFailure = true;
-        }
-
-        if (page > 1) {
-          console.log(`[Meta API Cursor] ${label} (${cleanAccId}): ${allData.length} itens coletados em ${page} páginas.`);
-        }
-
-        return { data: allData, hasFailure, error: lastError };
-      };
-
-      // Fase 1: Busca a estrutura hierárquica básica (Campanhas, AdSets e Ads)
-      const [campResult, adsetResult, adResult] = await Promise.all([
-        fetchMetaPaged(campUrl, "campaigns", 20, 5000, 12000),
-        fetchMetaPaged(adsetUrl, "adsets", 25, 10000, 12000),
-        fetchMetaPaged(adUrl, "ads", 25, 10000, 12000),
-      ]);
-
-      // Fase 2: Busca métricas de insights com concorrência escalonada
-      const [cInsResult, asInsResult, aInsResult, acInsRes] = await Promise.all([
-        fetchMetaPaged(campInsightsUrl, "campInsights", 20, 5000, 10000),
-        fetchMetaPaged(adsetInsightsUrl, "adsetInsights", 25, 10000, 10000),
-        fetchMetaPaged(adInsightsUrl, "adInsights", 25, 10000, 10000),
-        fetchWithResilience(accInsightsUrl, "accInsights", 10000),
-      ]);
-
-      let rawCampaigns: any[] = campResult.data;
-      let rawAdsets: any[] = adsetResult.data;
-      let rawAds: any[] = adResult.data;
-
-      // Validação de consistência por entidade para esta conta
-      const accountHasStructuralFailure =
-        (rawCampaigns.length > 0 && adsetResult.hasFailure && rawAdsets.length === 0) ||
-        (rawAdsets.length > 0 && adResult.hasFailure && rawAds.length === 0);
-
-      let accountUsedCachedFallback = false;
-      if (accountHasStructuralFailure && cached?.data) {
-        const prevAdsets = cached.data.adsets?.filter((as: any) => as.account_id === cleanAccId) || [];
-        const prevAds = cached.data.ads?.filter((ad: any) => ad.account_id === cleanAccId) || [];
-
-        if (prevAdsets.length > 0) {
-          console.warn(`[Campaigns API] Preservando cache saudável anterior para a conta ${cleanAccId} (${prevAdsets.length} CJs, ${prevAds.length} ADs)`);
-          accountUsedCachedFallback = true;
-          accountRestoredFromCache.set(cleanAccId, {
-            account: cached.data.accounts?.find((a: any) => a.id === cleanAccId),
-            campaigns: cached.data.campaigns?.filter((c: any) => c.account_id === cleanAccId) || [],
-            adsets: prevAdsets,
-            ads: prevAds,
-          });
-          accountErrors.push({
-            id: cleanAccId,
-            error: "Limite de requisições da Meta Ads (Code 17). Exibindo dados em cache para esta conta.",
-          });
-        }
+      if (campResult.error) {
+        accountErrors.push({ id: cleanAccId, error: campResult.error });
       }
 
-      if (!accountUsedCachedFallback) {
-        if (campResult.error) {
-          accountErrors.push({ id: cleanAccId, error: campResult.error });
-        }
-        if (adsetResult.error) {
-          accountErrors.push({ id: cleanAccId, error: adsetResult.error });
-        }
-        if (adResult.error) {
-          accountErrors.push({ id: cleanAccId, error: adResult.error });
-        }
-      }
-
-      // Mapeamento de Insights
       const campaignInsightsMap = new Map<string, any>();
       cInsResult.data.forEach((ins: any) => {
         if (ins.campaign_id) campaignInsightsMap.set(ins.campaign_id, ins);
-      });
-
-      const adsetInsightsMap = new Map<string, any>();
-      asInsResult.data.forEach((ins: any) => {
-        if (ins.adset_id) adsetInsightsMap.set(ins.adset_id, ins);
-      });
-
-      const adInsightsMap = new Map<string, any>();
-      aInsResult.data.forEach((ins: any) => {
-        if (ins.ad_id) adInsightsMap.set(ins.ad_id, ins);
       });
 
       let accountInsight: any = {};
@@ -568,11 +1090,7 @@ export async function GET(request: NextRequest) {
         }
       } catch {}
 
-      const resolvedCurrency = String(
-        accData?.currency ||
-        rawAcc?.currency ||
-        "BRL"
-      )
+      const resolvedCurrency = String(accData?.currency || rawAcc?.currency || "BRL")
         .trim()
         .toUpperCase();
 
@@ -582,11 +1100,7 @@ export async function GET(request: NextRequest) {
         rawAcc,
         currency: resolvedCurrency,
         rawCampaigns,
-        rawAdsets,
-        rawAds,
         campaignInsightsMap,
-        adsetInsightsMap,
-        adInsightsMap,
         accountInsight,
       });
     }
@@ -596,7 +1110,7 @@ export async function GET(request: NextRequest) {
       entityHistoryPromise,
     ]);
 
-    const dbEvents = dbEventsResult.data || [];
+    const { parsedPurchases, parsedICs } = parseDbEvents(dbEventsResult.data || []);
 
     const budgetHistoryMap = new Map<string, any>();
     if (Array.isArray(entityHistoryResult.data)) {
@@ -607,123 +1121,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 6. Estrutura normalizada de eventos com UTMs extraídas em cascata
-    interface ParsedEvent {
-      id: string;
-      isPurchase: boolean;
-      isIC: boolean;
-      val: number;
-      campId: string;
-      campName: string;
-      adsetId: string;
-      adsetName: string;
-      adId: string;
-      adName: string;
-      rawCampaign: string;
-      rawMedium: string;
-      rawContent: string;
-      rawSource: string;
-      fee: number;
-    }
-
-    const parsedPurchases: ParsedEvent[] = [];
-    const parsedICs: ParsedEvent[] = [];
-
-    (dbEvents || []).forEach((ev) => {
-      const metaResp = ev.meta_response || {};
-      const orderDetails = metaResp.order_details || {};
-      const customData = metaResp.custom_data || {};
-      const tracking = orderDetails.tracking_params || {};
-
-      const isPurchase = ev.event_name === "Purchase";
-      const isIC = ev.event_name === "InitiateCheckout";
-      
-      const method = String(
-        orderDetails.payment_method ||
-        customData.payment_method ||
-        customData.payment_type ||
-        orderDetails.payment_type ||
-        metaResp.payment_method ||
-        ""
-      ).toLowerCase();
-      
-      const isCard = method.includes("card") || method.includes("cartao") || method.includes("credit") || method.includes("visa") || method.includes("master");
-      const isPix = method.includes("pix") || method === "";
-      const isBoleto = method.includes("boleto");
-
-      const val = Number(customData.value || orderDetails.value || 0);
-      let fee = 0;
-      if (val > 0 && isPurchase) {
-        const hasCustomRules = (storeTaxesAndDuties || []).length > 0;
-        if (hasCustomRules) {
-          // 1. Impostos
-          (storeTaxesAndDuties || []).filter((t: any) => t.type === "tax").forEach((t: any) => {
-            fee += val * (Number(t.value || 0) / 100);
-          });
-          // 2. Taxas de Gateway por Forma de Pagamento
-          (storeTaxesAndDuties || []).filter((t: any) => t.type === "duty").forEach((t: any) => {
-            const matchMethod = t.payment_method === "all" ||
-              (isPix && t.payment_method === "pix") ||
-              (isCard && t.payment_method === "credit_card") ||
-              (isBoleto && t.payment_method === "boleto");
-
-            if (matchMethod) {
-              if (t.value_type === "percentage") {
-                fee += val * (Number(t.value || 0) / 100);
-              } else {
-                fee += Number(t.value || 0);
-              }
-            }
-          });
-        } else {
-          // Fallback seguro alinhado com Pix ~9.9%
-          fee = isCard ? (val * 0.15) : (val * 0.099);
-        }
-      }
-
-      const rawCampaign = String(customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || "").trim();
-      const rawMedium = String(customData.utm_medium || orderDetails.utm_medium || tracking.utm_medium || "").trim();
-      const rawContent = String(customData.utm_content || orderDetails.utm_content || tracking.utm_content || "").trim();
-      const rawSource = String(customData.utm_source || orderDetails.utm_source || tracking.utm_source || "").trim();
-
-      // Formato Nome|ID
-      const campId = rawCampaign.includes("|") ? rawCampaign.split("|")[1].trim() : rawCampaign;
-      const campName = rawCampaign.includes("|") ? rawCampaign.split("|")[0].trim() : rawCampaign;
-
-      const adsetId = rawMedium.includes("|") ? rawMedium.split("|")[1].trim() : rawMedium;
-      const adsetName = rawMedium.includes("|") ? rawMedium.split("|")[0].trim() : rawMedium;
-
-      const cleanContent = rawContent.includes("::") ? rawContent.split("::")[0].trim() : rawContent;
-      const adId = cleanContent.includes("|") ? cleanContent.split("|")[1].trim() : cleanContent;
-      const adName = cleanContent.includes("|") ? cleanContent.split("|")[0].trim() : cleanContent;
-
-      const parsed: ParsedEvent = {
-        id: ev.id,
-        isPurchase,
-        isIC,
-        val,
-        campId,
-        campName,
-        adsetId,
-        adsetName,
-        adId,
-        adName,
-        rawCampaign,
-        rawMedium,
-        rawContent,
-        rawSource,
-        fee,
-      };
-
-      if (isPurchase) parsedPurchases.push(parsed);
-      else if (isIC) parsedICs.push(parsed);
-    });
-
-    // Listas globais consolidadas
     const globalCampaignsList: Array<{ id: string; name: string; accId: string; cleanName: string }> = [];
-    const globalAdsetsList: Array<{ id: string; name: string; accId: string; cleanName: string }> = [];
-    const globalAdsList: Array<{ id: string; name: string; accId: string; cleanName: string }> = [];
-
     accountRawResults.forEach((acc) => {
       acc.rawCampaigns.forEach((c: any) => {
         globalCampaignsList.push({
@@ -733,37 +1131,15 @@ export async function GET(request: NextRequest) {
           cleanName: String(c.name || "").toLowerCase().replace(/[^a-z0-9]/g, ""),
         });
       });
-      acc.rawAdsets.forEach((as: any) => {
-        globalAdsetsList.push({
-          id: String(as.id || ""),
-          name: String(as.name || ""),
-          accId: acc.accId,
-          cleanName: String(as.name || "").toLowerCase().replace(/[^a-z0-9]/g, ""),
-        });
-      });
-      acc.rawAds.forEach((ad: any) => {
-        globalAdsList.push({
-          id: String(ad.id || ""),
-          name: String(ad.name || ""),
-          accId: acc.accId,
-          cleanName: String(ad.name || "").toLowerCase().replace(/[^a-z0-9]/g, ""),
-        });
-      });
     });
 
-    // 6. Atribuição UNÍVOCA 1:1 de Compras (Cada compra pertence a exatamente 1 Campanha, 1 Conjunto e 1 Anúncio)
     const campaignAttribution = new Map<string, { grossRevenue: number; netRevenue: number; count: number }>();
-    const adsetAttribution = new Map<string, { grossRevenue: number; netRevenue: number; count: number }>();
-    const adAttribution = new Map<string, { grossRevenue: number; netRevenue: number; count: number }>();
     const accountAttribution = new Map<string, { grossRevenue: number; netRevenue: number; count: number }>();
     const matchedPurchaseIds = new Set<string>();
 
     parsedPurchases.forEach((p) => {
       const pCampNameClean = p.campName.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const pAdsetNameClean = p.adsetName.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const pAdNameClean = p.adName.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-      // 6.1 Match de Campanha (Prioridade 1: ID exato -> Prioridade 2: Nome exato -> Prioridade 3: Substring)
       let bestCamp = globalCampaignsList.find((c) => p.campId && c.id === p.campId);
       if (!bestCamp && pCampNameClean) {
         bestCamp = globalCampaignsList.find((c) => c.cleanName === pCampNameClean);
@@ -776,75 +1152,34 @@ export async function GET(request: NextRequest) {
 
       if (bestCamp) {
         const prev = campaignAttribution.get(bestCamp.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
-        campaignAttribution.set(bestCamp.id, { 
-          grossRevenue: prev.grossRevenue + p.val, 
+        campaignAttribution.set(bestCamp.id, {
+          grossRevenue: prev.grossRevenue + p.val,
           netRevenue: prev.netRevenue + (p.val - p.fee),
-          count: prev.count + 1 
+          count: prev.count + 1,
         });
 
         const prevAcc = accountAttribution.get(bestCamp.accId) || { grossRevenue: 0, netRevenue: 0, count: 0 };
-        accountAttribution.set(bestCamp.accId, { 
-          grossRevenue: prevAcc.grossRevenue + p.val, 
+        accountAttribution.set(bestCamp.accId, {
+          grossRevenue: prevAcc.grossRevenue + p.val,
           netRevenue: prevAcc.netRevenue + (p.val - p.fee),
-          count: prevAcc.count + 1 
+          count: prevAcc.count + 1,
         });
         matchedPurchaseIds.add(p.id);
-      }
-
-      // 6.2 Match de Conjunto/Adset
-      let bestAdset = globalAdsetsList.find((as) => p.adsetId && as.id === p.adsetId);
-      if (!bestAdset && pAdsetNameClean) {
-        bestAdset = globalAdsetsList.find((as) => as.cleanName === pAdsetNameClean);
-      }
-      if (!bestAdset && pAdsetNameClean) {
-        bestAdset = globalAdsetsList.find(
-          (as) => as.cleanName && (as.cleanName.includes(pAdsetNameClean) || pAdsetNameClean.includes(as.cleanName))
-        );
-      }
-
-      if (bestAdset) {
-        const prev = adsetAttribution.get(bestAdset.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
-        adsetAttribution.set(bestAdset.id, { 
-          grossRevenue: prev.grossRevenue + p.val, 
-          netRevenue: prev.netRevenue + (p.val - p.fee),
-          count: prev.count + 1 
-        });
-      }
-
-      // 6.3 Match de Anúncio/Ad
-      let bestAd = globalAdsList.find((ad) => p.adId && ad.id === p.adId);
-      if (!bestAd && pAdNameClean) {
-        bestAd = globalAdsList.find((ad) => ad.cleanName === pAdNameClean);
-      }
-      if (!bestAd && pAdNameClean) {
-        bestAd = globalAdsList.find(
-          (ad) => ad.cleanName && (ad.cleanName.includes(pAdNameClean) || pAdNameClean.includes(ad.cleanName))
-        );
-      }
-
-      if (bestAd) {
-        const prev = adAttribution.get(bestAd.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
-        adAttribution.set(bestAd.id, { 
-          grossRevenue: prev.grossRevenue + p.val, 
-          netRevenue: prev.netRevenue + (p.val - p.fee),
-          count: prev.count + 1 
-        });
-      }
-
-      // 6.4 Se não deu match em campanha, tenta match direto por nome da conta
-      if (!bestCamp) {
+      } else {
         accountRawResults.forEach((acc) => {
-          const accNameClean = (acc.accData.name || acc.rawAcc.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+          const accNameClean = (acc.accData.name || acc.rawAcc.name || "")
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, "");
           if (
             (accNameClean && pCampNameClean && pCampNameClean.includes(accNameClean)) ||
             (accNameClean && p.rawSource.toLowerCase().includes(accNameClean)) ||
-            (p.rawSource.includes(acc.accId))
+            p.rawSource.includes(acc.accId)
           ) {
             const prevAcc = accountAttribution.get(acc.accId) || { grossRevenue: 0, netRevenue: 0, count: 0 };
-            accountAttribution.set(acc.accId, { 
-              grossRevenue: prevAcc.grossRevenue + p.val, 
+            accountAttribution.set(acc.accId, {
+              grossRevenue: prevAcc.grossRevenue + p.val,
               netRevenue: prevAcc.netRevenue + (p.val - p.fee),
-              count: prevAcc.count + 1 
+              count: prevAcc.count + 1,
             });
             matchedPurchaseIds.add(p.id);
           }
@@ -852,17 +1187,11 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // 6.5 Atribuição de InitiateCheckouts (first-party)
     const campaignIcAttribution = new Map<string, number>();
-    const adsetIcAttribution = new Map<string, number>();
-    const adIcAttribution = new Map<string, number>();
     const accountIcAttribution = new Map<string, number>();
 
     parsedICs.forEach((ic) => {
       const pCampNameClean = ic.campName.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const pAdsetNameClean = ic.adsetName.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const pAdNameClean = ic.adName.toLowerCase().replace(/[^a-z0-9]/g, "");
-
       let bestCamp = globalCampaignsList.find((c) => ic.campId && c.id === ic.campId);
       if (!bestCamp && pCampNameClean) {
         bestCamp = globalCampaignsList.find((c) => c.cleanName === pCampNameClean);
@@ -876,49 +1205,10 @@ export async function GET(request: NextRequest) {
         campaignIcAttribution.set(bestCamp.id, (campaignIcAttribution.get(bestCamp.id) || 0) + 1);
         accountIcAttribution.set(bestCamp.accId, (accountIcAttribution.get(bestCamp.accId) || 0) + 1);
       }
-
-      let bestAdset = globalAdsetsList.find((as) => ic.adsetId && as.id === ic.adsetId);
-      if (!bestAdset && pAdsetNameClean) {
-        bestAdset = globalAdsetsList.find((as) => as.cleanName === pAdsetNameClean);
-      }
-      if (!bestAdset && pAdsetNameClean) {
-        bestAdset = globalAdsetsList.find(
-          (as) => as.cleanName && (as.cleanName.includes(pAdsetNameClean) || pAdsetNameClean.includes(as.cleanName))
-        );
-      }
-      if (bestAdset) {
-        adsetIcAttribution.set(bestAdset.id, (adsetIcAttribution.get(bestAdset.id) || 0) + 1);
-      }
-
-      let bestAd = globalAdsList.find((ad) => ic.adId && ad.id === ic.adId);
-      if (!bestAd && pAdNameClean) {
-        bestAd = globalAdsList.find((ad) => ad.cleanName === pAdNameClean);
-      }
-      if (!bestAd && pAdNameClean) {
-        bestAd = globalAdsList.find(
-          (ad) => ad.cleanName && (ad.cleanName.includes(pAdNameClean) || pAdNameClean.includes(ad.cleanName))
-        );
-      }
-      if (bestAd) {
-        adIcAttribution.set(bestAd.id, (adIcAttribution.get(bestAd.id) || 0) + 1);
-      }
     });
 
-    const extractMetaIc = (actions: any[]): number => {
-      if (!Array.isArray(actions)) return 0;
-      const act = actions.find((a: any) =>
-        a.action_type === "initiate_checkout" ||
-        a.action_type === "omni_initiated_checkout" ||
-        a.action_type === "offsite_conversion.fb_pixel_initiate_checkout"
-      );
-      return act ? Number(act.value || 0) : 0;
-    };
-
-    // 7. Montagem das respostas estruturadas com métricas completas
     const formattedAccounts: any[] = [];
     const allCampaigns: any[] = [];
-    const allAdsets: any[] = [];
-    const allAds: any[] = [];
 
     accountRawResults.forEach((acc) => {
       const {
@@ -927,45 +1217,24 @@ export async function GET(request: NextRequest) {
         rawAcc,
         currency: accCurrency,
         rawCampaigns,
-        rawAdsets,
-        rawAds,
         campaignInsightsMap,
-        adsetInsightsMap,
-        adInsightsMap,
         accountInsight,
       } = acc;
 
-      // Se a conta teve adsets/ads restaurados de um cache prévio saudável, usa as entidades preservadas
-      if (accountRestoredFromCache.has(accId)) {
-        const restored = accountRestoredFromCache.get(accId);
-        if (restored?.account && !formattedAccounts.some((a) => a.id === accId)) {
-          formattedAccounts.push(restored.account);
-        }
-        if (Array.isArray(restored?.campaigns)) {
-          allCampaigns.push(...restored.campaigns);
-        }
-        if (Array.isArray(restored?.adsets)) {
-          allAdsets.push(...restored.adsets);
-        }
-        if (Array.isArray(restored?.ads)) {
-          allAds.push(...restored.ads);
-        }
-        return;
-      }
-
-      const currency = String(
-        accData?.currency ||
-        accCurrency ||
-        rawAcc?.currency ||
-        "BRL"
-      )
+      const currency = String(accData?.currency || accCurrency || rawAcc?.currency || "BRL")
         .trim()
         .toUpperCase();
 
       const accName = accData.name || rawAcc.name || `Conta ${accId.replace("act_", "")}`;
       const accStatusCode = accData.account_status;
-      const accStatus = accStatusCode === 1 ? "Ativo" : accStatusCode === 2 ? "Desabilitado" : accStatusCode === 3 ? "Não Verificado" : "Pendente";
-      const cardDisplay = "N/A";
+      const accStatus =
+        accStatusCode === 1
+          ? "Ativo"
+          : accStatusCode === 2
+          ? "Desabilitado"
+          : accStatusCode === 3
+          ? "Não Verificado"
+          : "Pendente";
 
       const rawBalance = Number(accData.balance || rawAcc.balance || 0) / 100;
       const cycleBrl = convertToBrl(rawBalance, currency, usdBrlRate);
@@ -974,20 +1243,17 @@ export async function GET(request: NextRequest) {
       const periodSpendBrl = convertToBrl(rawPeriodSpend, currency, usdBrlRate);
 
       const rawAmountSpent = Number(accData?.amount_spent || 0) / 100;
-      const historicSpentBrl = convertToBrl(
-        rawAmountSpent,
-        currency,
-        usdBrlRate
-      );
+      const historicSpentBrl = convertToBrl(rawAmountSpent, currency, usdBrlRate);
 
       const accAttr = accountAttribution.get(accId) || { grossRevenue: 0, netRevenue: 0, count: 0 };
       const accGrossRevenue = accAttr.grossRevenue;
       const accNetRevenue = accAttr.netRevenue;
       const accSales = accAttr.count;
       const accProfit = accNetRevenue - periodSpendBrl;
-      const accRoas = periodSpendBrl > 0 ? accGrossRevenue / periodSpendBrl : (accGrossRevenue > 0 ? 99.9 : 0);
+      const accRoas =
+        periodSpendBrl > 0 ? accGrossRevenue / periodSpendBrl : accGrossRevenue > 0 ? 99.9 : 0;
       const accCpa = accSales > 0 ? periodSpendBrl / accSales : 0;
-      const accMargin = accNetRevenue > 0 ? (accProfit / accNetRevenue) * 100 : (periodSpendBrl > 0 ? -100 : 0);
+      const accMargin = accNetRevenue > 0 ? (accProfit / accNetRevenue) * 100 : periodSpendBrl > 0 ? -100 : 0;
       const accRoi = periodSpendBrl > 0 ? accProfit / periodSpendBrl : 0;
 
       const metaAccIc = extractMetaIc(accountInsight?.actions);
@@ -1000,7 +1266,7 @@ export async function GET(request: NextRequest) {
         name: accName,
         currency,
         status: accStatus,
-        card: cardDisplay,
+        card: "N/A",
         cycle: cycleBrl,
         spend: periodSpendBrl,
         historic_spent: historicSpentBrl,
@@ -1016,7 +1282,6 @@ export async function GET(request: NextRequest) {
         last_update: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
       });
 
-      // Processa Campanhas
       rawCampaigns.forEach((camp: any) => {
         const cIns = campaignInsightsMap.get(camp.id) || {};
         const cRawSpend = Number(cIns.spend || 0);
@@ -1027,9 +1292,9 @@ export async function GET(request: NextRequest) {
         const cNetRevenue = cAttr.netRevenue;
         const cSales = cAttr.count;
         const cProfit = cNetRevenue - cSpend;
-        const cRoas = cSpend > 0 ? cGrossRevenue / cSpend : (cGrossRevenue > 0 ? 99.9 : 0);
+        const cRoas = cSpend > 0 ? cGrossRevenue / cSpend : cGrossRevenue > 0 ? 99.9 : 0;
         const cCpa = cSales > 0 ? cSpend / cSales : 0;
-        const cMargin = cNetRevenue > 0 ? (cProfit / cNetRevenue) * 100 : (cSpend > 0 ? -100 : 0);
+        const cMargin = cNetRevenue > 0 ? (cProfit / cNetRevenue) * 100 : cSpend > 0 ? -100 : 0;
         const cRoi = cSpend > 0 ? cProfit / cSpend : 0;
 
         const metaCampIc = extractMetaIc(cIns.actions);
@@ -1037,23 +1302,16 @@ export async function GET(request: NextRequest) {
         const cIc = Math.max(metaCampIc, fpCampIc);
         const cCpi = cIc > 0 ? cSpend / cIc : 0;
 
-        // Identifica se a campanha é CBO (Advantage) ou ABO
-        const matchingAdsets = rawAdsets.filter((s: any) => s.campaign_id === camp.id);
         const isCBO = Boolean(camp.daily_budget || camp.lifetime_budget);
-        
-        let rawBudget = 0;
-        if (isCBO) {
-          rawBudget = camp.daily_budget ? Number(camp.daily_budget) / 100 : Number(camp.lifetime_budget || 0) / 100;
-        } else {
-          // Em campanhas ABO, soma o orçamento de todos os conjuntos ativos daquela campanha
-          rawBudget = matchingAdsets.reduce((sum: number, s: any) => {
-            const b = s.daily_budget ? Number(s.daily_budget) / 100 : Number(s.lifetime_budget || 0) / 100;
-            return sum + b;
-          }, 0);
-        }
+        const rawBudget = isCBO
+          ? camp.daily_budget
+            ? Number(camp.daily_budget) / 100
+            : Number(camp.lifetime_budget || 0) / 100
+          : 0;
 
         const convertedBudget = convertToBrl(rawBudget, currency, usdBrlRate);
-        const isActive = camp.effective_status === "ACTIVE" || (camp.effective_status === undefined && camp.status === "ACTIVE");
+        const isActive =
+          camp.effective_status === "ACTIVE" || (camp.effective_status === undefined && camp.status === "ACTIVE");
 
         const cHist = budgetHistoryMap.get(camp.id);
 
@@ -1067,7 +1325,7 @@ export async function GET(request: NextRequest) {
           budget: convertedBudget,
           budget_type: isCBO ? (camp.daily_budget ? "CBO" : "CBO (Vitalício)") : "ABO",
           is_cbo: isCBO,
-          adset_count: matchingAdsets.length,
+          adset_count: 0,
           spend: cSpend,
           revenue: cNetRevenue,
           profit: cProfit,
@@ -1079,145 +1337,28 @@ export async function GET(request: NextRequest) {
           margin: cMargin,
           roi: cRoi,
           last_update: camp.updated_time ? new Date(camp.updated_time).toLocaleString("pt-BR") : "Hoje",
-          budget_history: cHist ? {
-            previous_budget: cHist.previous_budget !== null ? Number(cHist.previous_budget) : null,
-            new_budget: cHist.new_budget !== null ? Number(cHist.new_budget) : null,
-            sales: cHist.sales_at_update,
-            revenue: cHist.revenue_at_update !== null ? Number(cHist.revenue_at_update) : null,
-            spend: cHist.spend_at_update !== null ? Number(cHist.spend_at_update) : null,
-            profit: cHist.profit_at_update !== null ? Number(cHist.profit_at_update) : null,
-            roas: cHist.roas_at_update !== null ? Number(cHist.roas_at_update) : null,
-            cpa: cHist.cpa_at_update !== null ? Number(cHist.cpa_at_update) : null,
-            user_email: cHist.user_email,
-            source: cHist.source,
-            metadata: cHist.metadata,
-            updated_at: cHist.created_at,
-          } : null,
-        });
-      });
-
-      // Processa AdSets
-      rawAdsets.forEach((as: any) => {
-        const asIns = adsetInsightsMap.get(as.id) || {};
-        const asRawSpend = Number(asIns.spend || 0);
-        const asSpend = convertToBrl(asRawSpend, currency, usdBrlRate);
-
-        const asAttr = adsetAttribution.get(as.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
-        const asGrossRevenue = asAttr.grossRevenue;
-        const asNetRevenue = asAttr.netRevenue;
-        const asSales = asAttr.count;
-        const asProfit = asNetRevenue - asSpend;
-        const asRoas = asSpend > 0 ? asGrossRevenue / asSpend : (asGrossRevenue > 0 ? 99.9 : 0);
-        const asCpa = asSales > 0 ? asSpend / asSales : 0;
-        const asMargin = asNetRevenue > 0 ? (asProfit / asNetRevenue) * 100 : (asSpend > 0 ? -100 : 0);
-        const asRoi = asSpend > 0 ? asProfit / asSpend : 0;
-
-        const asIsCBO = !as.daily_budget && !as.lifetime_budget;
-        const asRawBudget = as.daily_budget ? Number(as.daily_budget) / 100 : Number(as.lifetime_budget || 0) / 100;
-        const asConvertedBudget = convertToBrl(asRawBudget, currency, usdBrlRate);
-        const asIsActive = as.effective_status === "ACTIVE" || (as.effective_status === undefined && as.status === "ACTIVE");
-
-        const metaAdsetIc = extractMetaIc(asIns.actions);
-        const fpAdsetIc = adsetIcAttribution.get(as.id) || 0;
-        const asIc = Math.max(metaAdsetIc, fpAdsetIc);
-        const asCpi = asIc > 0 ? asSpend / asIc : 0;
-
-        const asHist = budgetHistoryMap.get(as.id);
-
-        allAdsets.push({
-          id: as.id,
-          name: as.name,
-          campaign_id: as.campaign_id,
-          campaign_name: rawCampaigns.find((c: any) => c.id === as.campaign_id)?.name || as.campaign_id,
-          account_id: accId,
-          account_name: accName,
-          status: asIsActive ? "active" : "paused",
-          effective_status: as.effective_status || as.status,
-          budget: asConvertedBudget,
-          budget_type: asIsCBO ? "CBO" : (as.daily_budget ? "Diário" : "Vitalício"),
-          is_cbo: asIsCBO,
-          spend: asSpend,
-          revenue: asNetRevenue,
-          profit: asProfit,
-          roas: asRoas,
-          sales: asSales,
-          cpa: asCpa,
-          ic: asIc,
-          cpi: asCpi,
-          margin: asMargin,
-          roi: asRoi,
-          last_update: as.updated_time ? new Date(as.updated_time).toLocaleString("pt-BR") : "Hoje",
-          budget_history: asHist ? {
-            previous_budget: asHist.previous_budget !== null ? Number(asHist.previous_budget) : null,
-            new_budget: asHist.new_budget !== null ? Number(asHist.new_budget) : null,
-            sales: asHist.sales_at_update,
-            revenue: asHist.revenue_at_update !== null ? Number(asHist.revenue_at_update) : null,
-            spend: asHist.spend_at_update !== null ? Number(asHist.spend_at_update) : null,
-            profit: asHist.profit_at_update !== null ? Number(asHist.profit_at_update) : null,
-            roas: asHist.roas_at_update !== null ? Number(asHist.roas_at_update) : null,
-            cpa: asHist.cpa_at_update !== null ? Number(asHist.cpa_at_update) : null,
-            user_email: asHist.user_email,
-            source: asHist.source,
-            metadata: asHist.metadata,
-            updated_at: asHist.created_at,
-          } : null,
-        });
-      });
-
-      // Processa Ads
-      rawAds.forEach((ad: any) => {
-        const adIns = adInsightsMap.get(ad.id) || {};
-        const adRawSpend = Number(adIns.spend || 0);
-        const adSpend = convertToBrl(adRawSpend, currency, usdBrlRate);
-
-        const adAttr = adAttribution.get(ad.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
-        const adGrossRevenue = adAttr.grossRevenue;
-        const adNetRevenue = adAttr.netRevenue;
-        const adSales = adAttr.count;
-        const adProfit = adNetRevenue - adSpend;
-        const adRoas = adSpend > 0 ? adGrossRevenue / adSpend : (adGrossRevenue > 0 ? 99.9 : 0);
-        const adCpa = adSales > 0 ? adSpend / adSales : 0;
-        const adMargin = adNetRevenue > 0 ? (adProfit / adNetRevenue) * 100 : (adSpend > 0 ? -100 : 0);
-        const adRoi = adSpend > 0 ? adProfit / adSpend : 0;
-
-        const adIsActive = ad.effective_status === "ACTIVE" || (ad.effective_status === undefined && ad.status === "ACTIVE");
-
-        const metaAdIc = extractMetaIc(adIns.actions);
-        const fpAdIc = adIcAttribution.get(ad.id) || 0;
-        const aIc = Math.max(metaAdIc, fpAdIc);
-        const aCpi = aIc > 0 ? adSpend / aIc : 0;
-
-        allAds.push({
-          id: ad.id,
-          name: ad.name,
-          adset_id: ad.adset_id,
-          adset_name: rawAdsets.find((s: any) => s.id === ad.adset_id)?.name || ad.adset_id,
-          campaign_id: ad.campaign_id,
-          campaign_name: rawCampaigns.find((c: any) => c.id === ad.campaign_id)?.name || ad.campaign_id,
-          account_id: accId,
-          account_name: accName,
-          status: adIsActive ? "active" : "paused",
-          effective_status: ad.effective_status || ad.status,
-          budget: 0,
-          budget_type: "AdSet/Campanha",
-          spend: adSpend,
-          revenue: adNetRevenue,
-          profit: adProfit,
-          roas: adRoas,
-          sales: adSales,
-          cpa: adCpa,
-          ic: aIc,
-          cpi: aCpi,
-          margin: adMargin,
-          roi: adRoi,
-          last_update: ad.updated_time ? new Date(ad.updated_time).toLocaleString("pt-BR") : "Hoje",
+          budget_history: cHist
+            ? {
+                previous_budget: cHist.previous_budget !== null ? Number(cHist.previous_budget) : null,
+                new_budget: cHist.new_budget !== null ? Number(cHist.new_budget) : null,
+                sales: cHist.sales_at_update,
+                revenue: cHist.revenue_at_update !== null ? Number(cHist.revenue_at_update) : null,
+                spend: cHist.spend_at_update !== null ? Number(cHist.spend_at_update) : null,
+                profit: cHist.profit_at_update !== null ? Number(cHist.profit_at_update) : null,
+                roas: cHist.roas_at_update !== null ? Number(cHist.roas_at_update) : null,
+                cpa: cHist.cpa_at_update !== null ? Number(cHist.cpa_at_update) : null,
+                user_email: cHist.user_email,
+                source: cHist.source,
+                metadata: cHist.metadata,
+                updated_at: cHist.created_at,
+              }
+            : null,
         });
       });
     });
 
     const untrackedSalesCount = Math.max(parsedPurchases.length - matchedPurchaseIds.size, 0);
 
-    // Ordenação estrita: Ativas > Com Lucro (maior lucro) > Desativadas
     const sortByActiveProfit = (a: any, b: any) => {
       const aActive = a.status === "active" || a.status === "Ativo" ? 1 : 0;
       const bActive = b.status === "active" || b.status === "Ativo" ? 1 : 0;
@@ -1230,55 +1371,29 @@ export async function GET(request: NextRequest) {
 
     formattedAccounts.sort(sortByActiveProfit);
     allCampaigns.sort(sortByActiveProfit);
-    allAdsets.sort(sortByActiveProfit);
-    allAds.sort(sortByActiveProfit);
-
-    // Se nenhuma conta retornou dados e houve erros, expõe o aviso para a UI sem derrubar a tela
-    if (formattedAccounts.length === 0 && accountErrors.length > 0) {
-      return NextResponse.json({
-        ok: true,
-        usdBrlRate,
-        untracked_sales_count: untrackedSalesCount,
-        account_errors: accountErrors,
-        warning: `Falha ao acessar as contas selecionadas (${accountErrors[0].error}). Verifique se o token possui acesso concedido a essas contas no Facebook Business Manager ou selecione outras contas em Integrações.`,
-        accounts: [],
-        campaigns: [],
-        adsets: [],
-        ads: [],
-      });
-    }
 
     const finalResponse = {
       ok: true,
+      lazy_loading: true,
       usdBrlRate,
       untracked_sales_count: untrackedSalesCount,
       account_errors: accountErrors,
       accounts: formattedAccounts,
       campaigns: allCampaigns,
-      adsets: allAdsets,
-      ads: allAds,
+      adsets: [],
+      ads: [],
     };
 
-    // 8. Impede que erros temporários de rede/API ou inconsistências parciais gravem dados corrompidos no cache
-    // Validação por entidade: verifica se alguma conta teve campanhas mas ficou com adsets vazios (sem restauração)
-    const accountsWithStructuralLoss = accountsMeta.some((acc) => {
-      const camps = allCampaigns.filter((c) => c.account_id === acc.cleanAccId);
-      const adsets = allAdsets.filter((as) => as.account_id === acc.cleanAccId);
-      return camps.length > 0 && adsets.length === 0;
-    });
-
-    if (!accountsWithStructuralLoss && accountErrors.length === 0) {
+    // Cacheia se tiver campanhas e contas sem erros graves
+    if (accountErrors.length === 0 && (formattedAccounts.length > 0 || allCampaigns.length > 0)) {
       MEMORY_CACHE.set(cacheKey, {
         timestamp: nowMs,
         data: finalResponse,
         datePreset,
         timezoneName: accountsMeta[0]?.timezoneName || "America/Sao_Paulo",
       });
-    } else {
-      console.warn(
-        `[Campaigns API] Cache em memória NÃO gravado para ${cacheKey}: accountsWithStructuralLoss=${accountsWithStructuralLoss}, accountErrors=${accountErrors.length}`
-      );
     }
+
     if (isObservabilityEnabled) {
       console.log(
         JSON.stringify({
@@ -1291,8 +1406,8 @@ export async function GET(request: NextRequest) {
           entities_loaded: {
             accounts: formattedAccounts.length,
             campaigns: allCampaigns.length,
-            adsets: allAdsets.length,
-            ads: allAds.length,
+            adsets: 0,
+            ads: 0,
           },
         })
       );

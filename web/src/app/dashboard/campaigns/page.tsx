@@ -38,8 +38,12 @@ function CampaignsContent() {
         if (cached && Array.isArray(cached.accounts) && cached.accounts.length > 0) {
           setAccounts(cached.accounts);
           setCampaigns(cached.campaigns || []);
-          setAdsets(cached.adsets || []);
-          setAds(cached.ads || []);
+          if (Array.isArray(cached.adsets) && cached.adsets.length > 0) {
+            setAdsets(cached.adsets);
+          }
+          if (Array.isArray(cached.ads) && cached.ads.length > 0) {
+            setAds(cached.ads);
+          }
           if (cached.untracked_sales_count !== undefined) {
             setUntrackedSalesCount(cached.untracked_sales_count);
           }
@@ -54,7 +58,7 @@ function CampaignsContent() {
     if (!activeStore?.id) return;
     if (loadingRef.current) return;
     loadingRef.current = true;
-    
+
     // Se já temos contas na tela (via cache ou estado), atualiza em background silenciosamente
     const hasData = accounts.length > 0;
     if (!silent && !hasData) {
@@ -80,15 +84,22 @@ function CampaignsContent() {
 
         setAccounts(accs);
         setCampaigns(camps);
-        setAdsets(adsetsList);
-        setAds(adsList);
+
+        // Regra 6: Em lazy loading, nunca substituir dados existentes por []
+        if (adsetsList.length > 0) {
+          setAdsets(adsetsList);
+        }
+        if (adsList.length > 0) {
+          setAds(adsList);
+        }
+
         setUntrackedSalesCount(untracked);
 
         if (data.warning || data.notice) {
           setApiError(data.warning || data.notice);
         }
 
-        // Persiste no cache do navegador apenas se não houve erros ou dados corrompidos
+        // Persiste no cache do navegador se válido
         if (accs.length > 0 && !data.warning && (!data.account_errors || data.account_errors.length === 0)) {
           try {
             const cacheKey = `atm_camp_cache_${activeStore.id}_${datePreset}`;
@@ -97,8 +108,8 @@ function CampaignsContent() {
               JSON.stringify({
                 accounts: accs,
                 campaigns: camps,
-                adsets: adsetsList,
-                ads: adsList,
+                adsets: adsetsList.length > 0 ? adsetsList : adsets,
+                ads: adsList.length > 0 ? adsList : ads,
                 untracked_sales_count: untracked,
                 timestamp: Date.now(),
               })
@@ -115,6 +126,62 @@ function CampaignsContent() {
       loadingRef.current = false;
       setLoading(false);
       setIsRefreshing(false);
+    }
+  };
+
+  // Carregamento sob demanda: Ao selecionar Campanha, busca seus AdSets
+  const loadAdsetsForCampaign = async (campaignId: string) => {
+    if (!activeStore?.id) return;
+    try {
+      const url = `/api/v1/meta/campaigns/list?campaign_id=${campaignId}&store_id=${activeStore.id}&date_preset=${datePreset}`;
+      const res = await fetch(url, { cache: "no-store" });
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.adsets) && data.adsets.length > 0) {
+        setAdsets((prev) => {
+          const filtered = prev.filter((as) => as.campaign_id !== campaignId);
+          const next = [...filtered, ...data.adsets];
+          try {
+            const cacheKey = `atm_camp_cache_${activeStore.id}_${datePreset}`;
+            const cachedRaw = sessionStorage.getItem(cacheKey);
+            if (cachedRaw) {
+              const cached = JSON.parse(cachedRaw);
+              cached.adsets = next;
+              sessionStorage.setItem(cacheKey, JSON.stringify(cached));
+            }
+          } catch {}
+          return next;
+        });
+      }
+    } catch (err) {
+      console.error(`[Campaigns Page] Erro ao carregar adsets para a campanha ${campaignId}:`, err);
+    }
+  };
+
+  // Carregamento sob demanda: Ao selecionar AdSet, busca seus Ads
+  const loadAdsForAdset = async (adsetId: string) => {
+    if (!activeStore?.id) return;
+    try {
+      const url = `/api/v1/meta/campaigns/list?adset_id=${adsetId}&store_id=${activeStore.id}&date_preset=${datePreset}`;
+      const res = await fetch(url, { cache: "no-store" });
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.ads) && data.ads.length > 0) {
+        setAds((prev) => {
+          const filtered = prev.filter((ad) => ad.adset_id !== adsetId);
+          const next = [...filtered, ...data.ads];
+          try {
+            const cacheKey = `atm_camp_cache_${activeStore.id}_${datePreset}`;
+            const cachedRaw = sessionStorage.getItem(cacheKey);
+            if (cachedRaw) {
+              const cached = JSON.parse(cachedRaw);
+              cached.ads = next;
+              sessionStorage.setItem(cacheKey, JSON.stringify(cached));
+            }
+          } catch {}
+          return next;
+        });
+      }
+    } catch (err) {
+      console.error(`[Campaigns Page] Erro ao carregar ads para o adset ${adsetId}:`, err);
     }
   };
 
@@ -157,6 +224,8 @@ function CampaignsContent() {
           } catch {}
           loadData(true);
         }}
+        onLoadAdsets={loadAdsetsForCampaign}
+        onLoadAds={loadAdsForAdset}
         isRefreshing={isRefreshing}
         apiError={apiError}
       />

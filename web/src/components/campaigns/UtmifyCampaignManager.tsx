@@ -146,6 +146,8 @@ interface UtmifyCampaignManagerProps {
   datePreset: string;
   setDatePreset: (preset: string) => void;
   onRefresh: () => void;
+  onLoadAdsets?: (campaignId: string) => Promise<void>;
+  onLoadAds?: (adsetId: string) => Promise<void>;
   isRefreshing?: boolean;
   apiError?: string | null;
 }
@@ -159,10 +161,15 @@ export function UtmifyCampaignManager({
   datePreset,
   setDatePreset,
   onRefresh,
+  onLoadAdsets,
+  onLoadAds,
   isRefreshing = false,
   apiError = null,
 }: UtmifyCampaignManagerProps) {
   const { activeStore } = useStore();
+
+  // Estado do Loading Discreto para Lazy Loading (Regra 7)
+  const [loadingHierarchyText, setLoadingHierarchyText] = useState<string | null>(null);
 
   // Estado da Aba Ativa
   const [activeTab, setActiveTab] = useState<TabType>("accounts");
@@ -255,7 +262,7 @@ export function UtmifyCampaignManager({
     setActiveTab("campaigns");
   };
 
-  const handleSelectCampaign = (campId: string) => {
+  const handleSelectCampaign = async (campId: string) => {
     setSelectedCampaignIds([campId]);
     setSelectedCampaignId(campId);
     setSelectedAdsetIds([]);
@@ -264,15 +271,35 @@ export function UtmifyCampaignManager({
     setSelectedRowIds([]);
     setSearchTerm("");
     setActiveTab("adsets");
+
+    // Lazy Loading sob demanda: se os adsets desta campanha ainda não foram carregados
+    if (onLoadAdsets && !adsets.some((as) => as.campaign_id === campId)) {
+      setLoadingHierarchyText("Carregando conjuntos...");
+      try {
+        await onLoadAdsets(campId);
+      } finally {
+        setLoadingHierarchyText(null);
+      }
+    }
   };
 
-  const handleSelectAdset = (adsetId: string) => {
+  const handleSelectAdset = async (adsetId: string) => {
     setSelectedAdsetIds([adsetId]);
     setSelectedAdsetId(adsetId);
     setSelectedAdIds([]);
     setSelectedRowIds([]);
     setSearchTerm("");
     setActiveTab("ads");
+
+    // Lazy Loading sob demanda: se os ads deste adset ainda não foram carregados
+    if (onLoadAds && !ads.some((ad) => ad.adset_id === adsetId)) {
+      setLoadingHierarchyText("Carregando anúncios...");
+      try {
+        await onLoadAds(adsetId);
+      } finally {
+        setLoadingHierarchyText(null);
+      }
+    }
   };
 
   // ── Remoção em Cascata de Filtros Hierárquicos ───────────────────────────
@@ -885,10 +912,22 @@ export function UtmifyCampaignManager({
         <button
           onClick={() => {
             if (activeTab === "campaigns" && selectedRowIds.length > 0) {
-              setSelectedCampaignIds([...selectedRowIds]);
-              setSelectedCampaignId(selectedRowIds[0]);
+              const campIds = [...selectedRowIds];
+              setSelectedCampaignIds(campIds);
+              setSelectedCampaignId(campIds[0]);
               setSelectedRowIds([]);
               setSearchTerm("");
+              if (onLoadAdsets) {
+                campIds.forEach((cId) => {
+                  if (!adsets.some((as) => as.campaign_id === cId)) {
+                    setLoadingHierarchyText("Carregando conjuntos...");
+                    onLoadAdsets(cId).finally(() => setLoadingHierarchyText(null));
+                  }
+                });
+              }
+            } else if (selectedCampaignId && onLoadAdsets && !adsets.some((as) => as.campaign_id === selectedCampaignId)) {
+              setLoadingHierarchyText("Carregando conjuntos...");
+              onLoadAdsets(selectedCampaignId).finally(() => setLoadingHierarchyText(null));
             }
             setActiveTab("adsets");
           }}
@@ -934,10 +973,22 @@ export function UtmifyCampaignManager({
         <button
           onClick={() => {
             if (activeTab === "adsets" && selectedRowIds.length > 0) {
-              setSelectedAdsetIds([...selectedRowIds]);
-              setSelectedAdsetId(selectedRowIds[0]);
+              const asIds = [...selectedRowIds];
+              setSelectedAdsetIds(asIds);
+              setSelectedAdsetId(asIds[0]);
               setSelectedRowIds([]);
               setSearchTerm("");
+              if (onLoadAds) {
+                asIds.forEach((asId) => {
+                  if (!ads.some((ad) => ad.adset_id === asId)) {
+                    setLoadingHierarchyText("Carregando anúncios...");
+                    onLoadAds(asId).finally(() => setLoadingHierarchyText(null));
+                  }
+                });
+              }
+            } else if (selectedAdsetId && onLoadAds && !ads.some((ad) => ad.adset_id === selectedAdsetId)) {
+              setLoadingHierarchyText("Carregando anúncios...");
+              onLoadAds(selectedAdsetId).finally(() => setLoadingHierarchyText(null));
             }
             setActiveTab("ads");
           }}
@@ -961,7 +1012,7 @@ export function UtmifyCampaignManager({
               className="ml-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] flex items-center gap-1 hover:bg-blue-500/40"
               title="Limpar filtro de conjuntos"
             >
-              {selectedAdsetIds.length === 1 ? (selectedAdsetObj?.name.slice(0, 15) || "1 conj.") : `${selectedAdsetIds.length} conjs`} <X size={10} />
+              {selectedAdsetIds.length === 1 ? (selectedAdsetObj?.name.slice(0, 15) || "1 CJ") : `${selectedAdsetIds.length} CJs`} <X size={10} />
             </span>
           ) : selectedCampaignIds.length > 0 ? (
             <span
@@ -992,6 +1043,14 @@ export function UtmifyCampaignManager({
           ) : null}
         </button>
       </div>
+
+      {/* ── Loading Discreto de Hierarquia (Regra 7) ── */}
+      {loadingHierarchyText && (
+        <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-medium w-fit animate-pulse">
+          <RotateCw size={13} className="animate-spin text-blue-400" />
+          <span>{loadingHierarchyText}</span>
+        </div>
+      )}
 
       {/* ── Banner de Alerta de Token / Erro da Meta ── */}
       {apiError && (
