@@ -41,6 +41,38 @@ function calculateEmq(userDataKeys: string[]): number {
 }
 
 /**
+ * Verifica se o usuário possui sinal de identidade real (email, telefone ou external_id de cliente)
+ * garantindo isolamento e filtrando identificadores anônimos temporários.
+ */
+function hasIdentitySignal(userData?: BrowserUserData | null, rawUserData?: BrowserUserData | null): boolean {
+  if (!userData) return false;
+  const hasEmail = Boolean(userData.email && userData.email.trim().includes("@"));
+  const hasPhone = Boolean(userData.phone && userData.phone.replace(/\D/g, "").length >= 8);
+  const extId = (rawUserData?.externalId || userData.externalId)?.trim();
+  const hasExternalId = Boolean(
+    extId &&
+    Boolean(rawUserData?.externalId) &&
+    !extId.startsWith("visitor:") &&
+    !extId.startsWith("atm_") &&
+    !extId.startsWith("trk_") &&
+    extId.length >= 3
+  );
+  return hasEmail || hasPhone || hasExternalId;
+}
+
+// Cache in-memory de deduplicação rápida para eventos de browser (proteção contra duplo clique e concorrência)
+const recentBrowserEvents = new Map<string, { timestamp: number; status: string }>();
+
+function cleanRecentEvents() {
+  const cutoff = Date.now() - 10 * 60 * 1000; // 10 minutos
+  for (const [key, val] of recentBrowserEvents.entries()) {
+    if (val.timestamp < cutoff) {
+      recentBrowserEvents.delete(key);
+    }
+  }
+}
+
+/**
  * POST /api/v1/events/browser
  *
  * Recebe eventos de funil do Pixel do Shopify (PageView, ViewContent,
@@ -64,6 +96,7 @@ function jsonWithCors(data: any, status = 200, origin = "*") {
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
   const origin = request.headers.get("origin") || "*";
+  let currentDedupKey: string | null = null;
 
   try {
     let body: any = {};
@@ -134,11 +167,12 @@ export async function POST(request: NextRequest) {
         fbc: rawUserData.fbc,
       });
 
-      // Libera antecipadamente qualquer evento retido no buffer (PageView) com esses novos dados
+      // Libera antecipadamente qualquer evento retido no buffer multievento com esses novos dados
       enrichAndFlushBufferedEvents(store_id, track_id, rawUserData.fbp, rawUserData).catch((e) => {
-        console.warn("[Browser Event] Erro ao liberar buffer:", e.message);
+        console.warn("[Browser Event] Erro ao liberar buffer multievento:", e.message);
       });
-      retroactivelyEnrichCompletedEvents(store_id, track_id, rawUserData.fbp, rawUserData).catch(() => {});
+      // retroactivelyEnrichCompletedEvents preservado para compatibilidade retroativa,
+      // sem reenvios para eventos novos que utilizam o buffer pré-dispatch.
     }
 
     const supabase = createAdminClient();
@@ -179,8 +213,21 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 2. Deduplicação ──
+    currentDedupKey = `${store_id || "dckb5g-7d"}:${event_name}:${event_id}`;
+    if (recentBrowserEvents.has(currentDedupKey)) {
+      const existing = recentBrowserEvents.get(currentDedupKey)!;
+      return jsonWithCors(
+        { ok: true, message: `Evento ${event_name} deduplicado (${existing.status})`, deduplicated: true },
+        200,
+        origin
+      );
+    }
+    recentBrowserEvents.set(currentDedupKey, { timestamp: Date.now(), status: "processing" });
+    if (recentBrowserEvents.size > 2000) cleanRecentEvents();
+
     const lock = await reserveEvent(store_id, event_name, event_id, "browser");
     if (!lock.acquired) {
+      recentBrowserEvents.set(currentDedupKey, { timestamp: Date.now(), status: lock.state || "sent" });
       return jsonWithCors(
         { ok: true, message: `Evento ${event_name} deduplicado (${lock.state})`, deduplicated: true },
         200,
@@ -259,15 +306,30 @@ export async function POST(request: NextRequest) {
 
     if (!enrichedUserData.country) enrichedUserData.country = "BR";
 
-    // ── 4.2 BUFFER INTELIGENTE DE 2 MINUTOS PARA PAGEVIEW ──
-    // Se for PageView e o visitante AINDA NÃO tiver telefone ou e-mail conhecidos:
-    // Retém o evento no buffer por 120 segundos para aguardar o preenchimento no carrinho/checkout.
-    const isPageView = event_name === "PageView";
-    const hasFullContact = Boolean(enrichedUserData.phone && enrichedUserData.email);
+    // ── 4.2 BUFFER INTELIGENTE MULTIEVENTO (PageView, ViewContent, AddToCart, InitiateCheckout) ──
+    // Regra principal: O enriquecimento deve acontecer ANTES do primeiro dispatch oficial para a Meta CAPI.
+    // - Purchase: NUNCA entra em buffer (envio imediato e prioritário).
+    // - InitiateCheckout: envio imediato se possuir sinal de identidade; buffer curto (45s) se anônimo.
+    // - PageView, ViewContent, AddToCart: aguardam enriquecimento (timeout padrão 120s) se anônimos.
+    const isPurchase = event_name === "Purchase";
+    const hasIdentity = hasIdentitySignal(enrichedUserData, rawUserData);
 
-    if (isPageView && !hasFullContact) {
-      const userDataKeys = getUserDataKeys(enrichedUserData as any);
-      const emqScore = calculateEmq(userDataKeys);
+    let bufferTimeoutMs = 0;
+    if (!isPurchase && !hasIdentity) {
+      if (event_name === "PageView") {
+        bufferTimeoutMs = Number(process.env.META_BUFFER_TIMEOUT_PAGEVIEW_MS || 120_000);
+      } else if (event_name === "ViewContent") {
+        bufferTimeoutMs = Number(process.env.META_BUFFER_TIMEOUT_VIEWCONTENT_MS || 120_000);
+      } else if (event_name === "AddToCart") {
+        bufferTimeoutMs = Number(process.env.META_BUFFER_TIMEOUT_ADDTOCART_MS || 120_000);
+      } else if (event_name === "InitiateCheckout") {
+        bufferTimeoutMs = Number(process.env.META_BUFFER_TIMEOUT_CHECKOUT_MS || 45_000);
+      }
+    }
+
+    if (bufferTimeoutMs > 0) {
+      const userDataKeysOriginal = getUserDataKeys(enrichedUserData as any);
+      const emqScore = calculateEmq(userDataKeysOriginal);
       const utmSource = (body.utms?.utm_source || body.custom_data?.utm_source || sessionData.utm_source || "").trim() || undefined;
       const utmCampaign = (body.utms?.utm_campaign || body.custom_data?.utm_campaign || sessionData.utm_campaign || "").trim() || undefined;
       const utmMedium = (body.utms?.utm_medium || body.custom_data?.utm_medium || sessionData.utm_medium || "").trim() || undefined;
@@ -281,13 +343,17 @@ export async function POST(request: NextRequest) {
         "buffered",
         {
           buffered: true,
-          scheduled_for: Date.now() + 120_000,
+          scheduled_for: Date.now() + bufferTimeoutMs,
+          buffer_timeout_ms: bufferTimeoutMs,
+          event_name,
+          event_id,
           track_id,
           fbp: enrichedUserData.fbp,
           fbc: enrichedUserData.fbc,
           client_ip: sessionData.client_ip,
           client_user_agent: sessionData.client_user_agent,
           event_source_url: event_source_url || "",
+          user_data_keys_original: userDataKeysOriginal,
           custom_data: {
             ...(rawCustomData || {}),
             utm_source: utmSource,
@@ -302,18 +368,25 @@ export async function POST(request: NextRequest) {
             customer_phone: enrichedUserData.phone || undefined,
             utm_source: utmSource,
             utm_campaign: utmCampaign,
+            utm_medium: utmMedium,
+            utm_content: utmContent,
+            utm_term: utmTerm,
           },
         },
         0,
-        userDataKeys,
+        userDataKeysOriginal,
         event_name,
         undefined,
         emqScore
       );
 
       console.log(
-        `[Browser Event] PageView (${event_id.slice(-8)}) retido no buffer inteligente (120s) para enriquecimento de Telefone/E-mail | Sinais iniciais: [${userDataKeys.join(", ")}]`
+        `[Browser Event] ${event_name} (${event_id.slice(-8)}) retido no buffer inteligente (${Math.round(bufferTimeoutMs / 1000)}s) | Sinais iniciais: [${userDataKeysOriginal.join(", ")}]`
       );
+
+      if (currentDedupKey) {
+        recentBrowserEvents.set(currentDedupKey, { timestamp: Date.now(), status: "buffered" });
+      }
 
       return jsonWithCors({
         ok: true,
@@ -321,9 +394,9 @@ export async function POST(request: NextRequest) {
         event_id,
         status: "buffered",
         buffered: true,
-        buffer_seconds: 120,
-        message: "PageView retido no buffer inteligente para enriquecimento cruzado de PII (PH/EM)",
-        signals_sent: userDataKeys,
+        buffer_seconds: Math.round(bufferTimeoutMs / 1000),
+        message: `${event_name} retido no buffer inteligente para enriquecimento cruzado de PII`,
+        signals_sent: userDataKeysOriginal,
         emq_score: emqScore,
       }, 200, origin);
     }
@@ -421,6 +494,10 @@ export async function POST(request: NextRequest) {
       `Latência: ${latencyMs}ms`
     );
 
+    if (currentDedupKey) {
+      recentBrowserEvents.set(currentDedupKey, { timestamp: Date.now(), status });
+    }
+
     return jsonWithCors({
       ok: true,
       event_name,
@@ -429,6 +506,9 @@ export async function POST(request: NextRequest) {
       emq_score: emqScore,
     }, 200, origin);
   } catch (error: any) {
+    if (currentDedupKey) {
+      recentBrowserEvents.delete(currentDedupKey);
+    }
     console.error("[Browser Event Error]:", error);
     return jsonWithCors(
       { ok: false, error: "Erro interno no servidor" },

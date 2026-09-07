@@ -69,9 +69,9 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
   }
 
   const supabase = createAdminClient();
-  const twoMinutesAgoIso = new Date(Date.now() - 120 * 1000).toISOString();
+  const nowMs = Date.now();
 
-  // 1. Busca eventos pendentes/falhos e eventos em buffer que já completaram 2 minutos
+  // 1. Busca eventos pendentes/falhos e eventos em buffer (PageView, ViewContent, AddToCart, InitiateCheckout)
   const [{ data: pendingEvents }, { data: bufferedEvents }] = await Promise.all([
     supabase
       .from("events")
@@ -84,12 +84,21 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
       .from("events")
       .select("*")
       .eq("status", "buffered")
-      .lte("created_at", twoMinutesAgoIso)
       .order("created_at", { ascending: true })
-      .limit(Math.floor(maxEvents / 2)),
+      .limit(maxEvents),
   ]);
 
-  const allEvents = [...(bufferedEvents || []), ...(pendingEvents || [])].slice(0, maxEvents);
+  // Filtra os eventos em buffer que atingiram seu timeout específico (scheduled_for ou fallback de 120s)
+  const expiredBufferedEvents = (bufferedEvents || []).filter((ev) => {
+    const scheduledFor = ev.meta_response?.scheduled_for;
+    if (typeof scheduledFor === "number") {
+      return scheduledFor <= nowMs;
+    }
+    const createdAtMs = new Date(ev.created_at || 0).getTime();
+    return nowMs - createdAtMs >= 120_000;
+  }).slice(0, Math.floor(maxEvents / 2));
+
+  const allEvents = [...expiredBufferedEvents, ...(pendingEvents || [])].slice(0, maxEvents);
 
   if (allEvents.length === 0) {
     return result;
