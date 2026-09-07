@@ -177,7 +177,7 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
       event_name: ev.event_name,
       event_time: Math.floor(new Date(ev.created_at || Date.now()).getTime() / 1000),
       event_id: ev.event_id,
-      event_source_url: metaResp.event_source_url || "https://atacadodasgaiolas.shop",
+      event_source_url: metaResp.event_source_url || metaResp.custom_data?.event_source_url || metaResp.order_details?.event_source_url || "https://checkout.loja.com",
       action_source: "website",
       user_data,
       custom_data: {

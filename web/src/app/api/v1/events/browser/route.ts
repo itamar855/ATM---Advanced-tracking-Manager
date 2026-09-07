@@ -5,6 +5,7 @@ import { sendMetaCAPIEvent } from "@/lib/meta/capi";
 import { reserveEvent, updateEventResult } from "@/lib/tracking/dedup-engine";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
 import {
+  upsertVisitorIdentity,
   stitchVisitorIdentity,
   getVisitorIdentity,
   enrichAndFlushBufferedEvents,
@@ -151,22 +152,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── 0. Cruzamento de Identidade & Retroalimentação Imediata ──
-    // Se o evento trouxe telefone ou e-mail (Lead, AddToCart, InitiateCheckout, Purchase):
-    if (rawUserData?.phone || rawUserData?.email) {
-      await stitchVisitorIdentity(store_id, track_id, rawUserData.fbp, {
-        phone: rawUserData.phone,
-        email: rawUserData.email,
-        firstName: rawUserData.firstName,
-        lastName: rawUserData.lastName,
-        city: rawUserData.city,
-        state: rawUserData.state,
-        zip: rawUserData.zip,
-        country: rawUserData.country,
-        fbp: rawUserData.fbp,
-        fbc: rawUserData.fbc,
-      });
+    // ── 0. Cruzamento de Identidade & Perfil Vivo do Visitante (Fase 2.1) ──
+    // Registra/evolui a identidade na tabela public.visitor_identities com Truth Hierarchy
+    await upsertVisitorIdentity(
+      store_id,
+      track_id,
+      rawUserData?.fbp,
+      rawUserData?.fbc,
+      rawUserData || {},
+      event_name,
+      "browser"
+    ).catch((err) => {
+      console.warn("[Browser Event] Falha ao registrar visitor_identities:", err.message);
+    });
 
+    // Se o evento trouxe telefone ou e-mail (Lead, InitiateCheckout, Purchase):
+    if (rawUserData?.phone || rawUserData?.email) {
       // Libera antecipadamente qualquer evento retido no buffer multievento com esses novos dados
       enrichAndFlushBufferedEvents(store_id, track_id, rawUserData.fbp, rawUserData).catch((e) => {
         console.warn("[Browser Event] Erro ao liberar buffer multievento:", e.message);
