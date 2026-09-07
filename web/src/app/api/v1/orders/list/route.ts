@@ -30,6 +30,30 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, error: error.message, orders: [] }, { status: 500 });
     }
 
+    // Busca logs de recuperação forense exclusivamente para os pedidos carregados (Index Lookup)
+    const recoveryMap = new Map<string, any>();
+    const orderIds = (events || [])
+      .map((ev: any) => ev.order_id)
+      .filter(Boolean);
+
+    if (orderIds.length > 0) {
+      try {
+        const { data: recoveryLogs } = await supabase
+          .from("attribution_recovery_log")
+          .select("order_id, campaign_id, source, confidence_score, evidence")
+          .eq("store_id", storeId)
+          .in("order_id", orderIds);
+
+        if (recoveryLogs) {
+          for (const log of recoveryLogs) {
+            recoveryMap.set(log.order_id, log);
+          }
+        }
+      } catch {
+        // Falha silenciosa caso tabela de log ainda não tenha sido aplicada no Supabase
+      }
+    }
+
     const orders = (events || []).map((ev: any) => {
       const metaResp = ev.meta_response || {};
       const orderDetails = metaResp.order_details || {};
@@ -45,12 +69,26 @@ export async function GET(request: NextRequest) {
       const rawMedium = String(orderDetails.utm_medium || customData.utm_medium || tracking.utm_medium || "").trim();
       const rawContent = String(orderDetails.utm_content || customData.utm_content || tracking.utm_content || "").trim();
 
+      const orderKey = ev.order_id || `PED-${ev.event_id?.slice(-8)}` || "";
+      const recovered = recoveryMap.get(orderKey) || recoveryMap.get(ev.order_id);
+
       let utmCamp = rawCamp;
+      let utmSourceVal = rawSource;
+      let isRecovered = Boolean(customData.attribution_recovered || orderDetails.attribution_recovered);
+      let recoveryScore = customData.attribution_confidence || orderDetails.attribution_confidence || null;
+
+      if (!utmCamp && recovered && recovered.confidence_score >= 50) {
+        utmCamp = recovered.evidence?.attribution_decision?.resolvedCampaignName || recovered.campaign_id || utmCamp;
+        if (!utmSourceVal) utmSourceVal = recovered.source;
+        isRecovered = true;
+        recoveryScore = recovered.confidence_score;
+      }
+
       if (!utmCamp && ev.order_id?.includes("VEGA")) {
         utmCamp = "USD 02 - ABO - GAIOALA - ESCALA — 07";
       }
 
-      const cleanSource = rawSource ? (rawSource.startsWith("FB") ? "FB" : rawSource.toUpperCase()) : "FB";
+      const cleanSource = utmSourceVal ? (utmSourceVal.startsWith("FB") ? "FB" : utmSourceVal.toUpperCase()) : "FB";
 
       return {
         id: ev.id,
@@ -65,6 +103,8 @@ export async function GET(request: NextRequest) {
         utmMedium: rawMedium || undefined,
         utmContent: rawContent || undefined,
         createdAt: ev.created_at,
+        attributionRecovered: isRecovered,
+        attributionConfidence: recoveryScore,
       };
     });
 
