@@ -8,15 +8,24 @@ import {
   BrainCircuit,
   AlertCircle,
   Sparkles,
+  Zap,
+  History,
+  Sliders,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { IntelligenceAlertCards } from "@/components/intelligence/IntelligenceAlertCards";
 import { IntelligenceAlertList } from "@/components/intelligence/IntelligenceAlertList";
 import { IntelligenceAIAnalyst } from "@/components/intelligence/IntelligenceAIAnalyst";
+import { IntelligenceActionQueue } from "@/components/intelligence/IntelligenceActionQueue";
+import { IntelligenceActionHistory } from "@/components/intelligence/IntelligenceActionHistory";
+import { IntelligenceSettingsModal } from "@/components/intelligence/IntelligenceSettingsModal";
 import { CampaignAlert, IntelligenceSummary } from "@/lib/intelligence/campaign-alert-engine";
+import { CampaignAction } from "@/lib/intelligence/campaign-action-engine";
 
 type WindowDaysOption = 3 | 7 | 14 | 30;
+type DashboardTab = "actions" | "alerts";
 
 interface AlertsApiResponse {
   ok: boolean;
@@ -30,15 +39,37 @@ interface AlertsApiResponse {
 export default function IntelligenceDashboardPage() {
   const { activeStore } = useStore();
 
+  const [activeTab, setActiveTab] = useState<DashboardTab>("actions");
   const [windowDays, setWindowDays] = useState<WindowDaysOption>(7);
   const [loading, setLoading] = useState(true);
   const [refreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [alertsData, setAlertsData] = useState<AlertsApiResponse | null>(null);
+  const [actions, setActions] = useState<CampaignAction[]>([]);
+  const [actionsLoading, setActionsLoading] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Carrega ações geradas / fila de aprovação
+  const loadActions = useCallback(async () => {
+    if (!activeStore?.id) return;
+    setActionsLoading(true);
+    try {
+      const res = await fetch(`/api/v1/intelligence/actions?store_id=${encodeURIComponent(activeStore.id)}`);
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.actions)) {
+        setActions(data.actions);
+      }
+    } catch (err) {
+      console.warn("[Intelligence Dashboard] Falha ao carregar ações:", err);
+    } finally {
+      setActionsLoading(false);
+    }
+  }, [activeStore?.id]);
+
+  // Carrega alertas analíticos do motor da Fase 6
   const loadAlerts = useCallback(
     async (isManualRefresh = false) => {
       if (!activeStore?.id) return;
@@ -93,12 +124,13 @@ export default function IntelligenceDashboardPage() {
 
   useEffect(() => {
     loadAlerts(false);
+    loadActions();
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
-  }, [loadAlerts]);
+  }, [loadAlerts, loadActions]);
 
   const summary = alertsData?.summary || {
     totalAlerts: 0,
@@ -112,6 +144,7 @@ export default function IntelligenceDashboardPage() {
   };
 
   const alertsList = alertsData?.alerts || [];
+  const pendingActionsCount = actions.filter((a) => a.status === "recommended").length;
 
   return (
     <div className="max-w-[1400px] mx-auto pb-16 space-y-4 fade-in select-none text-zinc-100">
@@ -123,50 +156,93 @@ export default function IntelligenceDashboardPage() {
           </div>
           <div>
             <h1 className="text-base font-bold text-white flex items-center gap-2">
-              Attribution Intelligence & Decision Engine
+              Attribution Intelligence & Action Engine
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                AI ENGINE
+                FASE 7
               </span>
             </h1>
             <p className="text-xs text-zinc-400">
-              Detecção preditiva de oportunidades de escala, vendas ocultas e sangramento financeiro de anúncios.
+              Detecção contábil preditiva e intervenção controlada nos anúncios com aprovação humana obrigatória.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 text-xs font-semibold">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#161B26] border border-zinc-800 text-zinc-300">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Loja: {activeStore?.name || "Carregando..."}</span>
-          </div>
+        <div className="flex items-center gap-2.5 text-xs font-semibold">
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#161B26] hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-medium transition-all active:scale-95 cursor-pointer"
+          >
+            <Sliders size={13} className="text-amber-400" />
+            <span>Guardrails & Segurança</span>
+          </button>
 
           <button
-            onClick={() => loadAlerts(true)}
+            onClick={() => {
+              loadAlerts(true);
+              loadActions();
+            }}
             disabled={refreshing || loading}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#161B26] hover:bg-zinc-800 border border-zinc-800 text-white font-medium transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
           >
             <RotateCw size={13} className={cn(refreshing && "animate-spin text-amber-400")} />
-            <span>{refreshing ? "Analisando..." : "Atualizar Análise"}</span>
+            <span>{refreshing ? "Atualizando..." : "Sincronizar"}</span>
           </button>
         </div>
       </div>
 
-      {/* ── 2. Toolbar de Janela Temporal ────────────────────────────── */}
+      {/* ── 2. Navegação em Abas & Seletor de Período ─────────────────── */}
       <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-3 flex items-center justify-between flex-wrap gap-3 shadow-md">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400 mr-2">
-            <Calendar size={14} className="text-zinc-500" />
-            <span>Janela de Análise Histórica:</span>
-          </div>
+        {/* Abas */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("actions")}
+            className={cn(
+              "px-3.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5",
+              activeTab === "actions"
+                ? "bg-amber-600 border-amber-500 text-white shadow-[0_0_12px_rgba(217,119,6,0.3)]"
+                : "bg-[#161B26] border-zinc-800 text-zinc-400 hover:text-white"
+            )}
+          >
+            <Zap size={13} />
+            <span>Ações & Execuções</span>
+            {pendingActionsCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-emerald-500 text-black ml-1">
+                {pendingActionsCount}
+              </span>
+            )}
+          </button>
 
+          <button
+            type="button"
+            onClick={() => setActiveTab("alerts")}
+            className={cn(
+              "px-3.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5",
+              activeTab === "alerts"
+                ? "bg-amber-600 border-amber-500 text-white shadow-[0_0_12px_rgba(217,119,6,0.3)]"
+                : "bg-[#161B26] border-zinc-800 text-zinc-400 hover:text-white"
+            )}
+          >
+            <Bell size={13} />
+            <span>Alertas Analíticos</span>
+            {alertsList.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-zinc-800 text-zinc-300 ml-1">
+                {alertsList.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Janela de Análise */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Calendar size={13} className="text-zinc-500 mr-1" />
           {([3, 7, 14, 30] as WindowDaysOption[]).map((days) => {
             const labels: Record<WindowDaysOption, string> = {
-              3: "Últimos 3 Dias (Rápido)",
-              7: "Últimos 7 Dias (Recomendado)",
-              14: "Últimos 14 Dias (Consolidado)",
-              30: "Últimos 30 Dias (Mês)",
+              3: "3D",
+              7: "7D",
+              14: "14D",
+              30: "30D",
             };
-
             const isSel = windowDays === days;
             return (
               <button
@@ -174,10 +250,10 @@ export default function IntelligenceDashboardPage() {
                 type="button"
                 onClick={() => setWindowDays(days)}
                 className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer",
+                  "px-2.5 py-1 rounded-md text-xs font-medium border transition-all cursor-pointer",
                   isSel
-                    ? "bg-amber-600 border-amber-500 text-white shadow-[0_0_10px_rgba(217,119,6,0.3)] font-bold"
-                    : "bg-[#161B26] border-zinc-800/80 text-zinc-400 hover:text-white hover:border-zinc-700"
+                    ? "bg-zinc-700 border-zinc-600 text-white font-bold"
+                    : "bg-[#161B26] border-zinc-800/80 text-zinc-400 hover:text-white"
                 )}
               >
                 {labels[days]}
@@ -212,17 +288,47 @@ export default function IntelligenceDashboardPage() {
         fatiguedCreatives={summary.fatiguedCreatives}
       />
 
-      {/* ── 5. Síntese Executiva do AI Analyst ───────────────────────── */}
-      <IntelligenceAIAnalyst
-        alerts={alertsList}
-        loading={loading}
-      />
+      {/* ── 5. Conteúdo da Aba Ativa ─────────────────────────────────── */}
+      {activeTab === "actions" ? (
+        <div className="space-y-4">
+          {/* Fila de Decisão Rápida (Aprovação 1 Clique) */}
+          <IntelligenceActionQueue
+            storeId={activeStore?.id || ""}
+            actions={actions}
+            loading={actionsLoading}
+            onActionProcessed={loadActions}
+          />
 
-      {/* ── 6. Lista Detalhada de Alertas e Ações Acionáveis ─────────── */}
-      <IntelligenceAlertList
-        alerts={alertsList}
-        loading={loading}
-      />
+          {/* Histórico & Auditoria com Suporte a Rollback */}
+          <IntelligenceActionHistory
+            storeId={activeStore?.id || ""}
+            actions={actions}
+            loading={actionsLoading}
+            onRollbackCompleted={loadActions}
+          />
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Síntese Executiva do AI Analyst */}
+          <IntelligenceAIAnalyst alerts={alertsList} loading={loading} />
+
+          {/* Lista Detalhada de Alertas */}
+          <IntelligenceAlertList alerts={alertsList} loading={loading} />
+        </div>
+      )}
+
+      {/* Modal de Configurações e Guardrails */}
+      {activeStore?.id && (
+        <IntelligenceSettingsModal
+          storeId={activeStore.id}
+          isOpen={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          onSaved={() => {
+            loadAlerts(false);
+            loadActions();
+          }}
+        />
+      )}
     </div>
   );
 }
