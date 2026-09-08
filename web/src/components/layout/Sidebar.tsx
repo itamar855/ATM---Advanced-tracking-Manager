@@ -23,7 +23,8 @@ import {
   Sliders,
   FileText,
   Bell,
-  Plus
+  Plus,
+  Layers
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
@@ -40,6 +41,7 @@ interface NavItem {
 const dashboardItems: NavItem[] = [
   { label: "Resumo", href: "/dashboard", icon: LayoutDashboard },
   { label: "Campanhas", href: "/dashboard/campaigns", icon: BarChart3, color: "text-blue-400" },
+  { label: "Atribuição & Ledger", href: "/dashboard/attribution", icon: Layers, color: "text-purple-400", badge: "PRO" },
   { label: "Eventos CAPI", href: "/dashboard/events", icon: Activity, color: "text-emerald-400" },
   { label: "Pedidos & Vendas", href: "/dashboard/orders", icon: ShoppingCart },
   { label: "Configurações da Loja", href: "/dashboard/settings/store", icon: Store },
@@ -244,7 +246,16 @@ export default function Sidebar() {
                       : item.color || "text-zinc-400 group-hover:text-zinc-200"
                   )}
                 />
-                {!collapsed && <span className="truncate">{item.label}</span>}
+                {!collapsed && (
+                  <div className="flex items-center justify-between flex-1 min-w-0">
+                    <span className="truncate">{item.label}</span>
+                    {item.badge && (
+                      <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
+                        {item.badge}
+                      </span>
+                    )}
+                  </div>
+                )}
               </Link>
             );
           })}
