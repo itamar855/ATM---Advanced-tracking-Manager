@@ -24,7 +24,8 @@ import {
   FileText,
   Bell,
   Plus,
-  Layers
+  Layers,
+  BrainCircuit
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
@@ -42,6 +43,7 @@ const dashboardItems: NavItem[] = [
   { label: "Resumo", href: "/dashboard", icon: LayoutDashboard },
   { label: "Campanhas", href: "/dashboard/campaigns", icon: BarChart3, color: "text-blue-400" },
   { label: "Atribuição & Ledger", href: "/dashboard/attribution", icon: Layers, color: "text-purple-400", badge: "PRO" },
+  { label: "Alertas & Decisão", href: "/dashboard/intelligence", icon: BrainCircuit, color: "text-amber-400", badge: "AI" },
   { label: "Eventos CAPI", href: "/dashboard/events", icon: Activity, color: "text-emerald-400" },
   { label: "Pedidos & Vendas", href: "/dashboard/orders", icon: ShoppingCart },
   { label: "Configurações da Loja", href: "/dashboard/settings/store", icon: Store },
