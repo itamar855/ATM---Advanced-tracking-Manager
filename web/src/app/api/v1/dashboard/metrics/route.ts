@@ -68,111 +68,166 @@ export async function GET(request: NextRequest) {
     const availableAccounts: Array<{ id: string; name: string; currency: string; status: string; spend: number; spendBrl: number }> = [];
     const accountRanges: Array<{ id: string; range: AccountDateRange; isActive: boolean }> = [];
 
-    // 3. Busca lista de contas e consulta gastos na Meta Graph API pelo período
-    let accountIdsToQuery = configuredAccountIds;
-    if (token && accountIdsToQuery.length === 0) {
-      try {
-        const meRes = await fetch(
-          `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,account_status&access_token=${token}&limit=50`,
-          { cache: "no-store" }
-        );
-        if (meRes.ok) {
-          const meData = await meRes.json();
-          if (Array.isArray(meData.data)) {
-            accountIdsToQuery = meData.data.map((a: any) => a.id);
-          }
-        }
-      } catch {}
+    // 3. Consulta Gastos Contábeis em public.campaign_cost_snapshots (Fase 8.3)
+    const fallbackRange = resolveAccountDateRange(datePreset, "America/Sao_Paulo");
+    const querySinceDate = fallbackRange.since;
+    const queryUntilDate = fallbackRange.until;
+
+    const formattedSelectedAccId = selectedAccountId.startsWith("act_") ? selectedAccountId : `act_${selectedAccountId}`;
+
+    let snapshotQuery = supabase
+      .from("campaign_cost_snapshots")
+      .select("ad_account_id, campaign_id, campaign_name, spend, spend_brl, impressions, clicks, date")
+      .eq("store_id", storeId)
+      .gte("date", querySinceDate)
+      .lte("date", queryUntilDate);
+
+    if (selectedAccountId !== "all") {
+      snapshotQuery = snapshotQuery.eq("ad_account_id", formattedSelectedAccId);
     }
+
+    const { data: costSnapshots, error: snapErr } = await snapshotQuery;
+    const hasCostSnapshots = !snapErr && Array.isArray(costSnapshots) && costSnapshots.length > 0;
 
     let metaPermissionError: string | null = null;
 
-    if (token && accountIdsToQuery.length > 0) {
-      const spendPromises = accountIdsToQuery.map(async (accId) => {
-        const formattedId = accId.startsWith("act_") ? accId : `act_${accId}`;
-        try {
-          // 1. Metadados da Conta (incluindo timezone)
-          const accInfoRes = await fetch(
-            `https://graph.facebook.com/v23.0/${formattedId}?fields=name,currency,account_status,timezone_name,timezone_offset_hours_utc&access_token=${token}`,
-            { cache: "no-store" }
-          );
+    if (hasCostSnapshots) {
+      // Popula totais de gasto diretamente da camada contábil
+      const accSpendMap = new Map<string, { spend: number; spendBrl: number }>();
 
-          let accName = formattedId;
-          let currency = "BRL";
-          let isActive = true;
-          let tzName: string | null = integration?.config?.ad_accounts_metadata?.[formattedId]?.timezone_name || null;
+      costSnapshots.forEach((s: any) => {
+        const accId = s.ad_account_id;
+        const prev = accSpendMap.get(accId) || { spend: 0, spendBrl: 0 };
+        prev.spend += Number(s.spend || 0);
+        prev.spendBrl += Number(s.spend_brl || 0);
+        accSpendMap.set(accId, prev);
 
-          if (accInfoRes.ok) {
-            const accInfo = await accInfoRes.json();
-            if (accInfo.name) accName = accInfo.name;
-            if (accInfo.currency) currency = accInfo.currency.toUpperCase();
-            if (accInfo.account_status !== undefined) isActive = accInfo.account_status === 1;
-            if (accInfo.timezone_name) tzName = accInfo.timezone_name;
-          }
-
-          // 2. Resolve janela de datas exata no fuso da conta
-          const accDateRange = resolveAccountDateRange(datePreset, tzName);
-          accountRanges.push({ id: formattedId, range: accDateRange, isActive });
-
-          // 3. Consulta Insights usando time_range={since, until}
-          const timeRangeParam = encodeURIComponent(
-            JSON.stringify({ since: accDateRange.since, until: accDateRange.until })
-          );
-          const insRes = await fetch(
-            `https://graph.facebook.com/v23.0/${formattedId}/insights?time_range=${timeRangeParam}&fields=spend,impressions,clicks,cpc,cpm&access_token=${token}`,
-            { cache: "no-store" }
-          );
-
-          let origSpend = 0;
-          let imp = 0;
-          let clk = 0;
-
-          if (insRes.ok) {
-            const insData = await insRes.json();
-            if (insData.error) {
-              console.warn(`[Dashboard Metrics] Erro de permissão conta ${formattedId}:`, insData.error.message);
-              if (insData.error.code === 200 || insData.error.code === 100) {
-                metaPermissionError = "Token da Meta precisa da permissão ads_read para consultar gastos de anúncios.";
-              }
-            } else if (Array.isArray(insData.data) && insData.data.length > 0) {
-              const ins = insData.data[0];
-              origSpend = Number(ins.spend || 0);
-              imp = Number(ins.impressions || 0);
-              clk = Number(ins.clicks || 0);
-            }
-          }
-
-          const convertedSpendBrl = convertToBrl(origSpend, currency, usdBrlRate);
-
-          availableAccounts.push({
-            id: formattedId,
-            name: accName,
-            currency,
-            status: isActive ? "active" : "disabled",
-            spend: origSpend,
-            spendBrl: convertedSpendBrl,
-          });
-
-          // Só soma aos totais se a conta for ATIVA e bater com o filtro de conta selecionada
-          const matchesFilter = selectedAccountId === "all" ? isActive : selectedAccountId === formattedId;
-
-          if (matchesFilter) {
-            totalSpendOriginal += origSpend;
-            totalSpendBrl += convertedSpendBrl;
-            totalImpressions += imp;
-            totalClicks += clk;
-          }
-        } catch (e) {
-          console.warn(`[Dashboard Metrics] Erro na conta ${formattedId}:`, e);
-        }
+        totalSpendOriginal += Number(s.spend || 0);
+        totalSpendBrl += Number(s.spend_brl || 0);
+        totalImpressions += Number(s.impressions || 0);
+        totalClicks += Number(s.clicks || 0);
       });
 
-      await Promise.all(spendPromises);
+      // Popula contas disponíveis a partir dos metadados da integração e dos snapshots
+      const allKnownAccs = configuredAccountIds.length > 0 ? configuredAccountIds : Array.from(accSpendMap.keys());
+      allKnownAccs.forEach((accId) => {
+        const formattedId = accId.startsWith("act_") ? accId : `act_${accId}`;
+        const accStats = accSpendMap.get(formattedId) || { spend: 0, spendBrl: 0 };
+        const metaInfo = integration?.config?.ad_accounts_metadata?.[formattedId];
+        availableAccounts.push({
+          id: formattedId,
+          name: metaInfo?.name || formattedId,
+          currency: metaInfo?.currency || "BRL",
+          status: "active",
+          spend: Math.round(accStats.spend * 100) / 100,
+          spendBrl: Math.round(accStats.spendBrl * 100) / 100,
+        });
+      });
+    } else {
+      // Fallback de Segurança: busca em tempo real via Meta Graph API caso snapshots ainda estejam vazios
+      let accountIdsToQuery = configuredAccountIds;
+      if (token && accountIdsToQuery.length === 0) {
+        try {
+          const meRes = await fetch(
+            `https://graph.facebook.com/v23.0/me/adaccounts?fields=id,account_status&access_token=${token}&limit=50`,
+            { cache: "no-store" }
+          );
+          if (meRes.ok) {
+            const meData = await meRes.json();
+            if (Array.isArray(meData.data)) {
+              accountIdsToQuery = meData.data.map((a: any) => a.id);
+            }
+          }
+        } catch {}
+      }
+
+      if (token && accountIdsToQuery.length > 0) {
+        const spendPromises = accountIdsToQuery.map(async (accId) => {
+          const formattedId = accId.startsWith("act_") ? accId : `act_${accId}`;
+          try {
+            // 1. Metadados da Conta (incluindo timezone)
+            const accInfoRes = await fetch(
+              `https://graph.facebook.com/v23.0/${formattedId}?fields=name,currency,account_status,timezone_name,timezone_offset_hours_utc&access_token=${token}`,
+              { cache: "no-store" }
+            );
+
+            let accName = formattedId;
+            let currency = "BRL";
+            let isActive = true;
+            let tzName: string | null = integration?.config?.ad_accounts_metadata?.[formattedId]?.timezone_name || null;
+
+            if (accInfoRes.ok) {
+              const accInfo = await accInfoRes.json();
+              if (accInfo.name) accName = accInfo.name;
+              if (accInfo.currency) currency = accInfo.currency.toUpperCase();
+              if (accInfo.account_status !== undefined) isActive = accInfo.account_status === 1;
+              if (accInfo.timezone_name) tzName = accInfo.timezone_name;
+            }
+
+            // 2. Resolve janela de datas exata no fuso da conta
+            const accDateRange = resolveAccountDateRange(datePreset, tzName);
+            accountRanges.push({ id: formattedId, range: accDateRange, isActive });
+
+            // 3. Consulta Insights usando time_range={since, until}
+            const timeRangeParam = encodeURIComponent(
+              JSON.stringify({ since: accDateRange.since, until: accDateRange.until })
+            );
+            const insRes = await fetch(
+              `https://graph.facebook.com/v23.0/${formattedId}/insights?time_range=${timeRangeParam}&fields=spend,impressions,clicks,cpc,cpm&access_token=${token}`,
+              { cache: "no-store" }
+            );
+
+            let origSpend = 0;
+            let imp = 0;
+            let clk = 0;
+
+            if (insRes.ok) {
+              const insData = await insRes.json();
+              if (insData.error) {
+                console.warn(`[Dashboard Metrics] Erro de permissão conta ${formattedId}:`, insData.error.message);
+                if (insData.error.code === 200 || insData.error.code === 100) {
+                  metaPermissionError = "Token da Meta precisa da permissão ads_read para consultar gastos de anúncios.";
+                }
+              } else if (Array.isArray(insData.data) && insData.data.length > 0) {
+                const ins = insData.data[0];
+                origSpend = Number(ins.spend || 0);
+                imp = Number(ins.impressions || 0);
+                clk = Number(ins.clicks || 0);
+              }
+            }
+
+            const convertedSpendBrl = convertToBrl(origSpend, currency, usdBrlRate);
+
+            availableAccounts.push({
+              id: formattedId,
+              name: accName,
+              currency,
+              status: isActive ? "active" : "disabled",
+              spend: origSpend,
+              spendBrl: convertedSpendBrl,
+            });
+
+            // Só soma aos totais se a conta for ATIVA e bater com o filtro de conta selecionada
+            const matchesFilter = selectedAccountId === "all" ? isActive : selectedAccountId === formattedId;
+
+            if (matchesFilter) {
+              totalSpendOriginal += origSpend;
+              totalSpendBrl += convertedSpendBrl;
+              totalImpressions += imp;
+              totalClicks += clk;
+            }
+          } catch (e) {
+            console.warn(`[Dashboard Metrics] Erro na conta ${formattedId}:`, e);
+          }
+        });
+
+        await Promise.all(spendPromises);
+      }
     }
 
     // 4. Determina intervalo UTC harmonizado para consulta de pedidos/vendas no Supabase
     const relevantRanges = accountRanges.filter((ar) =>
-      selectedAccountId === "all" ? ar.isActive : ar.id === (selectedAccountId.startsWith("act_") ? selectedAccountId : `act_${selectedAccountId}`)
+      selectedAccountId === "all" ? ar.isActive : ar.id === formattedSelectedAccId
     );
 
     let queryStartUtc: string;
@@ -188,7 +243,6 @@ export async function GET(request: NextRequest) {
         relevantRanges[0].range.endUtc
       );
     } else {
-      const fallbackRange = resolveAccountDateRange(datePreset, "America/Sao_Paulo");
       queryStartUtc = fallbackRange.startUtc;
       queryEndUtc = fallbackRange.endUtc;
     }
@@ -213,32 +267,53 @@ export async function GET(request: NextRequest) {
     const targetAccount = availableAccounts.find((a) => a.id === selectedAccountId);
     const targetAccNorm = targetAccount ? normalizeMeta(targetAccount.name) : "";
     const targetAccIdNum = selectedAccountId.replace(/^act_/, "");
-    const formattedTargetId = selectedAccountId.startsWith("act_") ? selectedAccountId : `act_${selectedAccountId}`;
 
     const targetCampaignIds = new Set<string>();
-    const campPromise = (selectedAccountId !== "all" && token)
-      ? (async () => {
-          try {
-            const campRes = await fetch(
-              `https://graph.facebook.com/v23.0/${formattedTargetId}/campaigns?fields=id,name&limit=150&access_token=${token}`,
-              { cache: "no-store" }
-            );
-            if (campRes.ok) {
-              const campData = await campRes.json();
-              if (Array.isArray(campData.data)) {
-                campData.data.forEach((c: any) => {
-                  if (c.id) targetCampaignIds.add(String(c.id));
-                });
-              }
-            }
-          } catch (e) {
-            console.warn(`[Dashboard Metrics] Erro ao buscar campanhas da conta ${formattedTargetId}:`, e);
-          }
-        })()
-      : Promise.resolve();
 
-    // 5. Busca vendas aprovadas NO PERÍODO HARMONIZADO (usando effectiveStartDate e queryEndUtc)
-    const [purchasesResult, pendingResult] = await Promise.all([
+    // Mapeia campanhas da conta selecionada via snapshots (ou live Meta API fallback)
+    if (selectedAccountId !== "all") {
+      const { data: snapCamps } = await supabase
+        .from("campaign_cost_snapshots")
+        .select("campaign_id")
+        .eq("store_id", storeId)
+        .eq("ad_account_id", formattedSelectedAccId);
+
+      if (snapCamps && snapCamps.length > 0) {
+        snapCamps.forEach((c: any) => {
+          if (c.campaign_id) targetCampaignIds.add(String(c.campaign_id));
+        });
+      } else if (token) {
+        try {
+          const campRes = await fetch(
+            `https://graph.facebook.com/v23.0/${formattedSelectedAccId}/campaigns?fields=id,name&limit=150&access_token=${token}`,
+            { cache: "no-store" }
+          );
+          if (campRes.ok) {
+            const campData = await campRes.json();
+            if (Array.isArray(campData.data)) {
+              campData.data.forEach((c: any) => {
+                if (c.id) targetCampaignIds.add(String(c.id));
+              });
+            }
+          }
+        } catch (e) {
+          console.warn(`[Dashboard Metrics] Erro ao buscar campanhas da conta ${formattedSelectedAccId}:`, e);
+        }
+      }
+    }
+
+    // 5. Busca Vendas Contábeis em public.revenue_ledger (Fase 8.3)
+    const attributionModel = searchParams.get("attribution_model") || "last_click";
+
+    const [ledgerResult, purchasesResult, pendingResult] = await Promise.all([
+      supabase
+        .from("revenue_ledger")
+        .select("id, order_id, order_value, attributed_revenue, payment_method, source, campaign_id, order_paid_at")
+        .eq("store_id", storeId)
+        .eq("attribution_model", attributionModel)
+        .gte("order_paid_at", effectiveStartDate)
+        .lte("order_paid_at", queryEndUtc)
+        .order("order_paid_at", { ascending: false }),
       supabase
         .from("events")
         .select("id, event_name, meta_response, created_at")
@@ -256,11 +331,12 @@ export async function GET(request: NextRequest) {
         .eq("status", "pending")
         .gte("created_at", effectiveStartDate)
         .lte("created_at", queryEndUtc),
-      campPromise,
     ]);
 
+    const ledgerRows = ledgerResult.data || [];
     const allPurchases = purchasesResult.data || [];
     const pendingPurchases = pendingResult.data || [];
+    const hasLedgerData = ledgerRows.length > 0;
 
     // Busca regras de impostos e taxas configuradas pelo usuário para esta loja
     const { data: storeTaxesAndDuties } = await supabase
@@ -288,140 +364,205 @@ export async function GET(request: NextRequest) {
     let naSalesCount = 0;
 
     const seenOrderIds = new Set<string>();
+    const hasCustomRules = (storeTaxesAndDuties || []).length > 0;
 
-    (allPurchases || []).forEach((ev) => {
-      const metaResp = ev.meta_response || {};
-      const orderDetails = metaResp.order_details || {};
-      const customData = metaResp.custom_data || {};
-      const tracking = orderDetails.tracking_params || {};
-
-      // Deduplicação por order_id para garantir consistência com a plataforma de checkout
-      const orderId = String(orderDetails.order_id || customData.order_id || ev.id || "").trim();
-      if (orderId && seenOrderIds.has(orderId)) {
-        return;
-      }
-      if (orderId) seenOrderIds.add(orderId);
-
-      const rawCamp = String(customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || "").trim();
-      const rawSrc = String(customData.utm_source || orderDetails.utm_source || tracking.utm_source || "").trim();
-      const campId = rawCamp.includes("|") ? rawCamp.split("|")[1].trim() : (customData.campaign_id || orderDetails.campaign_id || "");
-
-      const normCamp = normalizeMeta(rawCamp);
-      const normSrc = normalizeMeta(rawSrc);
-
-      // Se uma conta específica foi selecionada, só contabiliza vendas atribuídas a ela
-      if (selectedAccountId !== "all") {
-        const matchesAccount =
-          (campId && targetCampaignIds.has(campId)) ||
-          (targetAccNorm && (normCamp.includes(targetAccNorm) || normSrc.includes(targetAccNorm))) ||
-          (rawSrc.includes(targetAccIdNum) || String(customData.ad_account_id || orderDetails.ad_account_id || "").includes(targetAccIdNum));
-        if (!matchesAccount) return;
-      }
-
-      // Valor: prioriza custom_data.value (que é sempre preenchido pelo webhook)
-      const val = Number(
-        customData.value ||
-        orderDetails.value ||
-        customData.order_value ||
-        0
-      );
-      grossRevenue += val;
-
-      // Classifica Método de Pagamento — busca em múltiplos caminhos
-      const method = String(
-        orderDetails.payment_method ||
-        customData.payment_method ||
-        customData.payment_type ||
-        orderDetails.payment_type ||
-        metaResp.payment_method ||
-        ""
-      ).toLowerCase();
-      
-      const isCard = method.includes("card") || method.includes("cartao") || method.includes("credit") || method.includes("visa") || method.includes("master");
-      const isBoleto = method.includes("boleto");
-      const isPix = method.includes("pix") || method === ""; // Default pix
-
-      // Cálculo de Taxas e Impostos Dinâmicos (Cadastrados pelo Usuário)
-      let fee = 0;
-      let operationalTax = 0;
-      let cogs = 0;
-
-      const hasCustomRules = (storeTaxesAndDuties || []).length > 0;
-
-      if (hasCustomRules) {
-        // 1. Impostos Operacionais (ex: Simples Nacional)
-        (storeTaxesAndDuties || []).filter((t: any) => t.type === "tax").forEach((t: any) => {
-          operationalTax += val * (Number(t.value || 0) / 100);
-        });
-
-        // 2. Taxas de Gateway por Forma de Pagamento
-        (storeTaxesAndDuties || []).filter((t: any) => t.type === "duty").forEach((t: any) => {
-          const matchMethod = t.payment_method === "all" ||
-            (isPix && t.payment_method === "pix") ||
-            (isCard && t.payment_method === "credit_card") ||
-            (isBoleto && t.payment_method === "boleto");
-
-          if (matchMethod) {
-            if (t.value_type === "percentage") {
-              fee += val * (Number(t.value || 0) / 100);
-            } else {
-              fee += Number(t.value || 0);
-            }
+    if (hasLedgerData) {
+      // ── FLUXO CONTÁBIL PRINCIPAL: REVENUE LEDGER ─────────────────────────────
+      ledgerRows.forEach((row: any) => {
+        // Se uma conta específica foi selecionada, só contabiliza vendas atribuídas a ela
+        if (selectedAccountId !== "all") {
+          const rowCamp = String(row.campaign_id || "").trim();
+          if (!rowCamp || !targetCampaignIds.has(rowCamp)) {
+            return;
           }
-        });
-      } else {
-        // Fallback seguro enquanto o usuário não cadastrar suas regras personalizadas
-        if (val > 0) {
-          fee = isCard ? (val * 0.15) : (val * 0.099);
         }
-      }
 
-      // 3. Custo de Mercadorias (COGS)
-      const products = orderDetails.products || customData.products || [];
-      if (Array.isArray(products) && (storeProductCosts || []).length > 0) {
-        products.forEach((p: any) => {
-          const pName = String(p.name || p.product_name || "").toLowerCase().trim();
-          const pQty = Number(p.quantity || 1);
-          const matched = (storeProductCosts || []).find((c: any) =>
-            pName && String(c.product_name || "").toLowerCase().trim().includes(pName)
-          );
-          if (matched && matched.cost_price) {
-            cogs += Number(matched.cost_price) * pQty;
+        const orderId = String(row.order_id || "").trim();
+        const val = Number(row.attributed_revenue ?? row.order_value ?? 0);
+
+        if (orderId && !seenOrderIds.has(orderId)) {
+          seenOrderIds.add(orderId);
+          paidSalesCount += 1;
+
+          // Classifica Método de Pagamento do Ledger
+          const method = String(row.payment_method || "").toLowerCase();
+          const isCard = method.includes("card") || method.includes("cartao") || method.includes("credit") || method.includes("visa") || method.includes("master");
+          const isBoleto = method.includes("boleto");
+          const isPix = method.includes("pix") || method === ""; // Default pix
+
+          if (isPix) pixCount++;
+          else if (isCard) cardCount++;
+          else if (isBoleto) boletoCount++;
+          else otherCount++;
+
+          // Classifica Fonte de Tráfego do Ledger
+          const src = String(row.source || "").toLowerCase();
+          if (src.includes("meta") || src.includes("facebook") || src === "fb" || src.startsWith("fb") || src.includes("insta")) {
+            metaSalesCount++;
+          } else if (src.includes("iq") || src.startsWith("igj") || src.includes("google") || src.includes("kwai") || src.includes("tiktok")) {
+            iqSalesCount++;
+          } else {
+            naSalesCount++;
           }
-        });
-      }
+        }
 
-      totalTaxes += fee;
-      totalOperationalTaxes += operationalTax;
-      totalCogs += cogs;
+        grossRevenue += val;
 
-      paidSalesCount += 1;
+        // Cálculo de Taxas e Impostos Dinâmicos (Cadastrados pelo Usuário)
+        let fee = 0;
+        let operationalTax = 0;
 
-      if (isPix) pixCount++;
-      else if (isCard) cardCount++;
-      else if (isBoleto) boletoCount++;
-      else otherCount++;
+        if (hasCustomRules) {
+          (storeTaxesAndDuties || []).filter((t: any) => t.type === "tax").forEach((t: any) => {
+            operationalTax += val * (Number(t.value || 0) / 100);
+          });
 
-      // Classifica Fonte de Tráfego — prioriza custom_data.utm_source (onde o Zedy salva)
-      const src = String(
-        customData.utm_source ||
-        orderDetails.utm_source ||
-        (orderDetails.tracking_params || {}).utm_source ||
-        ""
-      ).toLowerCase();
+          (storeTaxesAndDuties || []).filter((t: any) => t.type === "duty").forEach((t: any) => {
+            const method = String(row.payment_method || "").toLowerCase();
+            const isCard = method.includes("card") || method.includes("cartao") || method.includes("credit");
+            const isBoleto = method.includes("boleto");
+            const isPix = method.includes("pix") || method === "";
+            const matchMethod = t.payment_method === "all" ||
+              (isPix && t.payment_method === "pix") ||
+              (isCard && t.payment_method === "credit_card") ||
+              (isBoleto && t.payment_method === "boleto");
 
-      if (src.includes("meta") || src.includes("facebook") || src === "fb" || src.startsWith("fb") || src.includes("insta")) {
-        metaSalesCount++;
-      } else if (src.includes("iq") || src.startsWith("igj") || src.includes("google") || src.includes("kwai") || src.includes("tiktok")) {
-        // IQ (Instagram Quality) codes começam com "igj"
-        iqSalesCount++;
-      } else if (src === "" || src === "organic" || src === "undefined") {
-        naSalesCount++;
-      } else {
-        // UTM source desconhecido — classifica como N/A
-        naSalesCount++;
-      }
-    });
+            if (matchMethod) {
+              if (t.value_type === "percentage") {
+                fee += val * (Number(t.value || 0) / 100);
+              } else {
+                fee += Number(t.value || 0);
+              }
+            }
+          });
+        } else {
+          if (val > 0) {
+            const isCard = String(row.payment_method || "").toLowerCase().includes("card");
+            fee = isCard ? (val * 0.15) : (val * 0.099);
+          }
+        }
+
+        totalTaxes += fee;
+        totalOperationalTaxes += operationalTax;
+      });
+    } else {
+      // ── FALLBACK RESILIENTE: CONSULTA VIA EVENTS (CASO LEDGER VAZIO) ────────
+      (allPurchases || []).forEach((ev) => {
+        const metaResp = ev.meta_response || {};
+        const orderDetails = metaResp.order_details || {};
+        const customData = metaResp.custom_data || {};
+        const tracking = orderDetails.tracking_params || {};
+
+        const orderId = String(orderDetails.order_id || customData.order_id || ev.id || "").trim();
+        if (orderId && seenOrderIds.has(orderId)) {
+          return;
+        }
+        if (orderId) seenOrderIds.add(orderId);
+
+        const rawCamp = String(customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || "").trim();
+        const rawSrc = String(customData.utm_source || orderDetails.utm_source || tracking.utm_source || "").trim();
+        const campId = rawCamp.includes("|") ? rawCamp.split("|")[1].trim() : (customData.campaign_id || orderDetails.campaign_id || "");
+
+        const normCamp = normalizeMeta(rawCamp);
+        const normSrc = normalizeMeta(rawSrc);
+
+        if (selectedAccountId !== "all") {
+          const matchesAccount =
+            (campId && targetCampaignIds.has(campId)) ||
+            (targetAccNorm && (normCamp.includes(targetAccNorm) || normSrc.includes(targetAccNorm))) ||
+            (rawSrc.includes(targetAccIdNum) || String(customData.ad_account_id || orderDetails.ad_account_id || "").includes(targetAccIdNum));
+          if (!matchesAccount) return;
+        }
+
+        const val = Number(
+          customData.value ||
+          orderDetails.value ||
+          customData.order_value ||
+          0
+        );
+        grossRevenue += val;
+
+        const method = String(
+          orderDetails.payment_method ||
+          customData.payment_method ||
+          customData.payment_type ||
+          orderDetails.payment_type ||
+          metaResp.payment_method ||
+          ""
+        ).toLowerCase();
+        
+        const isCard = method.includes("card") || method.includes("cartao") || method.includes("credit") || method.includes("visa") || method.includes("master");
+        const isBoleto = method.includes("boleto");
+        const isPix = method.includes("pix") || method === "";
+
+        let fee = 0;
+        let operationalTax = 0;
+
+        if (hasCustomRules) {
+          (storeTaxesAndDuties || []).filter((t: any) => t.type === "tax").forEach((t: any) => {
+            operationalTax += val * (Number(t.value || 0) / 100);
+          });
+
+          (storeTaxesAndDuties || []).filter((t: any) => t.type === "duty").forEach((t: any) => {
+            const matchMethod = t.payment_method === "all" ||
+              (isPix && t.payment_method === "pix") ||
+              (isCard && t.payment_method === "credit_card") ||
+              (isBoleto && t.payment_method === "boleto");
+
+            if (matchMethod) {
+              if (t.value_type === "percentage") {
+                fee += val * (Number(t.value || 0) / 100);
+              } else {
+                fee += Number(t.value || 0);
+              }
+            }
+          });
+        } else {
+          if (val > 0) {
+            fee = isCard ? (val * 0.15) : (val * 0.099);
+          }
+        }
+
+        const products = orderDetails.products || customData.products || [];
+        if (Array.isArray(products) && (storeProductCosts || []).length > 0) {
+          products.forEach((p: any) => {
+            const pName = String(p.name || p.product_name || "").toLowerCase().trim();
+            const pQty = Number(p.quantity || 1);
+            const matched = (storeProductCosts || []).find((c: any) =>
+              pName && String(c.product_name || "").toLowerCase().trim().includes(pName)
+            );
+            if (matched && matched.cost_price) {
+              totalCogs += Number(matched.cost_price) * pQty;
+            }
+          });
+        }
+
+        totalTaxes += fee;
+        totalOperationalTaxes += operationalTax;
+
+        paidSalesCount += 1;
+
+        if (isPix) pixCount++;
+        else if (isCard) cardCount++;
+        else if (isBoleto) boletoCount++;
+        else otherCount++;
+
+        const src = String(
+          customData.utm_source ||
+          orderDetails.utm_source ||
+          (orderDetails.tracking_params || {}).utm_source ||
+          ""
+        ).toLowerCase();
+
+        if (src.includes("meta") || src.includes("facebook") || src === "fb" || src.startsWith("fb") || src.includes("insta")) {
+          metaSalesCount++;
+        } else if (src.includes("iq") || src.startsWith("igj") || src.includes("google") || src.includes("kwai") || src.includes("tiktok")) {
+          iqSalesCount++;
+        } else {
+          naSalesCount++;
+        }
+      });
+    }
 
     // Vendas Pendentes calculadas dinamicamente
     let pendingSalesValue = 0;

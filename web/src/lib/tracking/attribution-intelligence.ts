@@ -506,36 +506,127 @@ export async function buildCustomerJourney(
     });
   }
 
-  // Se o pedido trouxer dados próprios no checkout (webhook), adiciona como touchpoint final caso relevante
-  const hasExistingMeta =
-    !isGenericValue(input.existingCampaignId) ||
-    !isGenericValue(input.existingCampaignName) ||
-    !isGenericValue(input.utmCampaign) ||
-    !isGenericValue(input.utmSource);
+  // ---------------------------------------------------------------------------
+  // Fallback de Atribuição sem UTM (Fase 8):
+  // Hierarquia:
+  // 1. campaign_id UTM (incluindo split de nome|id)
+  // 2. fbc/fbp (Meta Click / Browser Fingerprint)
+  // 3. visitor identity / cluster
+  // 4. sessions anteriores
+  // 5. organic / direct
+  // ---------------------------------------------------------------------------
+  let resolvedCampId = input.existingCampaignId || null;
+  let resolvedCampName = input.existingCampaignName || null;
 
-  if (hasExistingMeta || candidateTouches.length === 0) {
+  // 1. Fallback 1: campaign_id UTM (incluindo split de nome|id)
+  if (input.utmCampaign) {
+    if (input.utmCampaign.includes("|")) {
+      const parts = input.utmCampaign.split("|");
+      resolvedCampName = resolvedCampName || parts[0].trim();
+      resolvedCampId = resolvedCampId || parts[1].trim();
+    } else {
+      resolvedCampName = resolvedCampName || input.utmCampaign;
+      resolvedCampId = resolvedCampId || input.utmCampaign;
+    }
+  }
+
+  const hasExplicitUtm = !isGenericValue(resolvedCampId) || !isGenericValue(resolvedCampName);
+  const hasExplicitSource = !isGenericValue(input.existingSource) || !isGenericValue(input.utmSource);
+  const hasFbc = Boolean(input.fbc || candidateTouches.some((t) => t.fbc));
+  const hasFbp = Boolean(input.fbp || candidateTouches.some((t) => t.fbp));
+  const hasVisitorIdentity = Boolean(recoveredVisitorIdentityId || identityClusterId);
+
+  let finalMethod: AttributionMethod = "webhook_utm";
+  let finalScore = 70;
+  let finalSource = input.existingSource || input.utmSource || "direct";
+  let isRecovered = false;
+
+  if (hasExplicitUtm) {
+    // 1. Prioridade 1: campaign_id UTM
+    finalMethod = resolvedCampId ? "native_pixel" : "webhook_utm";
+    finalScore = resolvedCampId ? 90 : 75;
+    finalSource = input.existingSource || input.utmSource || "facebook";
+  } else if (hasFbc) {
+    // 2. Prioridade 2: fbc (Meta Click ID comprovado)
+    finalMethod = "forensic_fbc";
+    finalScore = 85;
+    finalSource = "facebook";
+    const priorCamp = candidateTouches.find((t) => !isGenericValue(t.campaignName));
+    resolvedCampName = priorCamp?.campaignName || "Meta Ads (Via FBC)";
+    resolvedCampId = priorCamp?.campaignId || null;
+    isRecovered = true;
+  } else if (hasFbp) {
+    // 2. Prioridade 2 (cont): fbp (Meta Browser ID)
+    finalMethod = "native_pixel";
+    finalScore = 65;
+    finalSource = "facebook";
+    const priorCamp = candidateTouches.find((t) => !isGenericValue(t.campaignName));
+    resolvedCampName = priorCamp?.campaignName || "Meta Ads (Via FBP)";
+    resolvedCampId = priorCamp?.campaignId || null;
+    isRecovered = true;
+  } else if (hasVisitorIdentity) {
+    // 3. Prioridade 3: visitor identity / cluster
+    finalMethod = "forensic_identity";
+    finalScore = 60;
+    finalSource = input.utmSource || "facebook";
+    const priorCamp = candidateTouches.find((t) => !isGenericValue(t.campaignName));
+    resolvedCampName = priorCamp?.campaignName || "Identidade Recuperada";
+    resolvedCampId = priorCamp?.campaignId || null;
+    isRecovered = true;
+  } else if (candidateTouches.length > 0) {
+    // 4. Prioridade 4: sessions anteriores
+    const sessionWithCamp = [...candidateTouches].reverse().find((t) => !isGenericValue(t.campaignName) || !isGenericValue(t.campaignId));
+    if (sessionWithCamp) {
+      resolvedCampId = sessionWithCamp.campaignId;
+      resolvedCampName = sessionWithCamp.campaignName;
+      finalSource = sessionWithCamp.source || "facebook";
+      finalMethod = sessionWithCamp.attributionMethod || "webhook_utm";
+      finalScore = 55;
+      isRecovered = true;
+    } else {
+      // 5. Prioridade 5: organic / direct
+      const hasSource = !isGenericValue(input.utmSource) || !isGenericValue(input.existingSource);
+      finalMethod = "webhook_utm";
+      finalScore = hasSource ? 50 : 40;
+      finalSource = input.utmSource || input.existingSource || "direct";
+      resolvedCampName = finalSource === "organic" ? "Orgânico" : finalSource === "direct" ? "Direto / Sem Rastreio" : `Canal ${finalSource}`;
+    }
+  } else {
+    // 5. Prioridade 5: organic / direct (sem toques prévios)
+    const hasSource = !isGenericValue(input.utmSource) || !isGenericValue(input.existingSource);
+    finalMethod = "webhook_utm";
+    finalScore = hasSource ? 50 : 40;
+    finalSource = input.utmSource || input.existingSource || "direct";
+    resolvedCampName = finalSource === "organic" ? "Orgânico" : finalSource === "direct" ? "Direto / Sem Rastreio" : `Canal ${finalSource}`;
+  }
+
+  // Adiciona o touchpoint do pedido caso tenha dados ou seja o único toque
+  if (hasExplicitUtm || hasExplicitSource || candidateTouches.length === 0) {
     candidateTouches.push({
       index: 0,
       timestamp: input.orderPaidAt || new Date().toISOString(),
-      campaignId: input.existingCampaignId || null,
-      campaignName: input.existingCampaignName || input.utmCampaign || null,
+      campaignId: resolvedCampId,
+      campaignName: resolvedCampName,
       adsetId: input.existingAdsetId || null,
       adsetName: input.existingAdsetName || null,
       adId: input.existingAdId || null,
       adName: input.existingAdName || null,
-      source: input.existingSource || input.utmSource || "facebook",
+      source: finalSource,
       utmSource: input.utmSource || null,
       utmMedium: input.utmMedium || null,
       utmCampaign: input.utmCampaign || null,
       utmContent: input.utmContent || null,
       utmTerm: input.utmTerm || null,
-      attributionMethod: input.existingCampaignId ? "native_pixel" : "webhook_utm",
-      confidenceScore: input.existingCampaignId ? 90 : 70,
-      isRecovered: false,
+      attributionMethod: finalMethod,
+      confidenceScore: finalScore,
+      isRecovered: isRecovered,
       trackId: input.trackId || null,
       fbp: input.fbp || null,
       fbc: input.fbc || null,
-      evidence: { source: "order_input_payload" },
+      evidence: {
+        source: "order_input_payload",
+        fallbackLevel: hasExplicitUtm ? "utm" : input.fbc ? "fbc" : input.fbp ? "fbp" : "organic_direct",
+      },
     });
   }
 

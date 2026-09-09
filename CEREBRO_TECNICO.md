@@ -139,7 +139,8 @@ Implementada no serviço [`web/src/lib/currency.ts`](file:///c:/Users/Hard%20Wor
 | **v5.7.0** | 03/09/2026 | **Conciliação e Transparência do Lucro Líquido & Sincronização de Taxas** | Auditoria e refinamento matemático da Dashboard e custos: (1) Descoberta e resolução do desacoplamento de loja na tela de Custos (`settings/costs/page.tsx`), integrando com o `useStore()` para que a loja ativa do topo governe a gravação de taxas e custos; (2) Sincronização das taxas reais cadastradas pelo usuário (`6,99% + R$ 1,99 no PIX`) para a loja ativa (`dckb5g-7d`), eliminando o fallback genérico de 9,9% e restaurando mais de R$ 1.600 de lucro real nos relatórios; (3) Atualização do Card 1 da Dashboard (`dashboard/page.tsx`) para exibir em destaque "Valor Vendido Pago" (Bruto) com legenda "Líquido pós-taxas", tornando a conciliação na tela 100% intuitiva (`Vendido Pago - Ads - Taxas = Lucro`); (4) Adição de tooltips detalhados nos cards de Lucro Líquido e Taxas de Gateway exibindo a quebra exata da fórmula. | Antigravity |
 | **v5.8.0** | 03/09/2026 | **Shopify OAuth 2.0 Flow & Multi-Browser Signed State** | Implementação do fluxo oficial de autorização OAuth 2.0 da Shopify para sincronização de pedidos pagos reais sem fake fallback: (1) Criação do helper `shopify-oauth.ts` com assinatura criptográfica HMAC SHA-256 do parâmetro `state` (`storeId:timestamp:hmac`), permitindo a cópia do link para autorização em qualquer navegador ou aba (ex: aba anônima ou navegador onde a loja Shopify está logada), eliminando erros 403 CSRF causados por cookies de sessão locais; (2) Atualização das rotas `/api/auth/shopify` e `/api/auth/shopify/callback` para realizar a troca oficial via `POST https://{shop}/admin/oauth/access_token` com `client_id`, `client_secret` e `code`; (3) Criptografia AES-256-GCM do token permanente retornado (`shpat_...`) e persistência segura no Supabase dentro do JSONB `stores.settings.shopify`; (4) Interface modernizada em `settings/integrations/page.tsx` com campos de Client ID/Secret do App Partners, botão "Copiar Link para Autorizar em Outro Navegador", conexão 1-clique e botões de ressincronização limpa de pedidos reais; (5) Atualização do sincronizador `/api/v1/sync/shopify` para ler tokens decriptografados e alimentar o Dashboard com faturamento e lucro 100% verídicos. | Antigravity |
 | **v6.0.0** | 06/09/2026 | **Meta Ads Architecture: Lazy Loading sob Demanda** | Resolução do gargalo de rate limit de Development Access (Code 17 / subcode 2446079) na Meta Graph API: (1) Transição do carregamento monolítico inicial para arquitetura de Lazy Loading sob demanda; (2) Carga inicial leve retorna exclusivamente `accounts` e `campaigns` (`adsets: []`, `ads: []`, `lazy_loading: true`), reduzindo o tempo de carregamento de ~15s para < 800ms; (3) Carregamento granular de conjuntos de anúncios disparado sob demanda (`GET /campaigns/list?campaign_id=X`) com campos aninhados `/{campId}?fields=adsets{...},insights{...}` imunes a rate limit; (4) Carregamento granular de anúncios disparado sob demanda (`GET /campaigns/list?adset_id=X`); (5) Cache isolado e independente por entidade (`store_date_campaign_ID`, `store_date_adset_ID`) em memória (`MEMORY_CACHE`) e preservação acumulativa no `sessionStorage` da aplicação, mantendo métricas contábeis (ROAS, CPA, Lucro, Spend) e histórico intactos. | Antigravity |
-| **v6.1.0** | 06/09/2026 | **Hardening & Observabilidade Meta Ads (Blindagem de Produção)** | Blindagem de robustez para operação em alta escala sem regressões: (1) Observabilidade estruturada e segura via flag `META_LAZY_OBSERVABILITY_ENABLED=true`, registrando telemetria estritamente técnica (`event`, `mode`, `entity_id`, `duration_ms`, `items_loaded`, `success`, `error_type`) com zero PII ou tokens; (2) Proteção contra cliques rápidos e duplicados no frontend (`page.tsx`) com travas in-flight baseadas em `useRef<Set<string>>`, garantindo que duplo clique em campanha ou conjunto gere apenas 1 requisição de rede; (3) Tratamento semântico de falhas da Meta diferenciando Caso A (sucesso legítimo com zero itens) de Caso B (falha técnica ou timeout), apresentando alerta contextual âmbar com botão de retry `[Tentar novamente]` na interface (`UtmifyCampaignManager.tsx`); (4) Preservação estrita de 100% dos contratos da API (campos aditivos) e criação da suíte de testes de estresse automatizada `scripts/test-meta-lazy-hardening.js` (30/30 testes aprovados). | Antigravity |
+| **v7.0.0** | 07/09/2026 | **Feature & Automação** | **Campaign Action Engine & Central de Inteligência (Fase 7):** Migrations 019 e 020 (`campaign_intelligence_alerts`, `campaign_actions`, `campaign_settings`). Motor de decisões com fila assíncrona, execução e rollback bidirecional de orçamentos e status (play/pause/scale/kill), modal de configurações com modo de aprovação manual ou autônomo, e tolerância zero a regressões validadas por testes unitários e de integração. | Antigravity |
+| **v8.0.0** | 08/09/2026 | **Arquitetura & Unificação Contábil** | **Unificação Contábil Definitiva (Fases 8, 8.1, 8.2, 8.3):** Eliminação de discrepâncias entre Dashboard e Banco. (1) Backfill do `revenue_ledger` com 2.772 fatias de atribuição nos 4 modelos (last_click, first_click, linear, u_shaped) conciliando R$ 75.783,11 (100% exato); (2) Migration 021 criando `campaign_cost_snapshots` com chave única `(store_id, ad_account_id, campaign_id, date)`; (3) Backfill de custos Meta com 719 snapshots persistidos ($ 14.039,83 USD e R$ 71.454,33 BRL); (4) Migração cirúrgica da rota `/api/v1/dashboard/metrics` para ler exclusivamente de `revenue_ledger` e `campaign_cost_snapshots` com fallback resiliente; (5) Suíte de testes `test-dashboard-financial-conciliation.js` com 14/14 testes aprovados. | Antigravity |
 
 ---
 
@@ -169,6 +170,32 @@ Apps Meta em modo *Development Access* possuem cota global reduzida por conta de
   - **Caso B (Falha da Meta):** Consulta retornou erro ou timeout (`ok: false`, `error_type`), exibindo aviso âmbar com detalhe e botão interativo `[Tentar novamente]`.
 - **Contrato Universal 100% Preservado:** Todas as respostas da API contêm as coleções completas (`accounts`, `campaigns`, `adsets`, `ads`), garantindo retrocompatibilidade total com clientes e testes.
 - **Observabilidade Estruturada:** Logs JSON de uma linha sob a flag de ambiente `META_LAZY_OBSERVABILITY_ENABLED=true` sem qualquer dado pessoal (PII) ou tokens.
+
+---
+
+## 7. Arquitetura Contábil & Unificação Financeira (v8.0.0)
+
+### 7.1 A Causa Raiz das Divergências Resolvida
+Historicamente, as três interfaces financeiras do ATM calculavam métricas por caminhos heterogêneos:
+- **Dashboard Resumo**: Varredura direta na tabela `events` (Purchase accepted) + Meta Graph API ao vivo.
+- **Campanhas**: `events` + parseamento regex de UTMs inline + Meta Graph API ao vivo.
+- **Atribuição**: `revenue_ledger` (que até a Fase 7 não recebia backfill retroativo).
+
+### 7.2 O Novo Pipeline Contábil Unificado
+1. **Camada de Receita (`public.revenue_ledger`):**
+   - Todo pedido aprovado gera fatias auditáveis nos 4 modelos de atribuição (`last_click`, `first_click`, `linear`, `u_shaped`).
+   - A Dashboard lê a receita contábil consolidada (`order_paid_at`), eliminando divergências de datas UTC/fuso de webhook.
+2. **Camada de Custo (`public.campaign_cost_snapshots`):**
+   - Snapshots diários consolidados com constraint `UNIQUE(store_id, ad_account_id, campaign_id, date)`.
+   - Cotação comercial congelada no dia (`exchange_rate`) para conversão de USD para BRL, eliminando oscilações retrospectivas.
+   - Preserva `spend`, `spend_brl`, `impressions`, `clicks`, `cpc`, `cpm`, `ctr`.
+3. **Métricas Finais (ROAS, CPA, ROI):**
+   - `Real ROAS = Receita Ledger / Spend Snapshots`
+   - `Real CPA = Spend Snapshots / Total Pedidos Únicos`
+   - `Real ROI = (Receita Líquida - Spend Snapshots - COGS) / Spend Snapshots`
+4. **Resiliência Operacional com Fallback:**
+   - Caso uma loja ou período novo ainda não possua snapshots sincronizados, o endpoint `/api/v1/dashboard/metrics` ativa automaticamente a busca ao vivo na Meta Graph API e na tabela `events`, mantendo a aplicação 100% funcional.
+
 
 
 
