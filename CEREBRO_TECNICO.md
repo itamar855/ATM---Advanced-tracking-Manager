@@ -225,6 +225,14 @@ O Campaign Action Engine não pode tomar decisões de escala e aumento orçament
 - Snapshots diários com chave única composta `(store_id, asset_type, asset_id, snapshot_date)`.
 - Políticas RLS rigorosas de isolamento multi-tenant garantindo segregação total entre lojas.
 
+### 8.5 Otimização de Leitura & Cache Multi-Tenant da Meta
+- **Módulo**: `web/src/lib/meta/meta-cache.ts`.
+- **Paralelização de Descoberta**: As consultas a nós de Business Managers (`/owned_ad_accounts` e `/client_ad_accounts`) foram migradas de um loop sequencial para execução concorrente com `Promise.allSettled`, reduzindo o tempo de resposta de 15s para ~1s.
+- **Isolamento Multi-Tenant**: Chaves formatadas com hash criptográfico seguro do token (`${scope}:${storeId}:${tokenHash}`). Entradas com `storeId` divergente são sumariamente descartadas.
+- **TTL e Invalidação**: TTL padrão de 5 minutos para contas e 45s para a Dashboard, com invalidação atômica manual via parâmetro `?refresh=true` e no salvamento de configurações (POST).
+- **Polling Inteligente**: Frontend suspende polling quando a aba do navegador estiver oculta (`document.visibilityState === "hidden"`), preservando limites de cota da Graph API.
+
+
 
 
 

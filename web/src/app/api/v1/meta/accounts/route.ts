@@ -7,18 +7,23 @@ import {
   normalizeAdAccountId,
 } from "@/lib/meta/graph-service";
 import { MetaAdAccount } from "@/lib/meta/types";
+import { metaCache } from "@/lib/meta/meta-cache";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/v1/meta/accounts
  * Retorna as Business Managers, Contas de Anúncio e Seleção ativa para a loja especificada.
+ * Suporta cache em memória com TTL de 5 minutos, isolamento multi-tenant e bypass com ?refresh=true.
  */
 export async function GET(request: NextRequest) {
+  const startTime = performance.now();
+
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get("store_id");
     const rawToken = searchParams.get("token");
+    const refresh = searchParams.get("refresh") === "true";
 
     if (!storeId && !rawToken) {
       return NextResponse.json({ ok: false, error: "store_id is required" }, { status: 400 });
@@ -74,14 +79,40 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const effectiveStoreId = storeId || currentIntegration?.store_id || "default_store";
+
+    // 4. Verificação de Cache Multi-Tenant (Se não for forçado refresh)
+    if (!refresh) {
+      const cached = metaCache.get<any>("accounts", effectiveStoreId, accessToken);
+      if (cached.hit && cached.data) {
+        const totalDurationMs = Math.round(performance.now() - startTime);
+        console.log(`[GET /api/v1/meta/accounts] [CACHE HIT] store_id=${effectiveStoreId} (idade: ${cached.ageMs}ms, restante: ${cached.remainingTtlMs}ms) respondido em ${totalDurationMs}ms`);
+        return NextResponse.json({
+          ...cached.data,
+          _cache: {
+            hit: true,
+            ageMs: cached.ageMs,
+            ttlRemainingMs: cached.remainingTtlMs,
+            durationMs: totalDurationMs,
+          },
+        });
+      }
+    }
+
+    console.log(`[GET /api/v1/meta/accounts] [CACHE MISS] store_id=${effectiveStoreId} (refresh=${refresh}) consultando Meta Graph API...`);
+
     const savedProfileName = currentIntegration?.config?.profile_name || undefined;
     const savedPixelId = currentIntegration?.pixel_id || "1104875232197441";
 
-    // 4. Descoberta exaustiva da hierarquia de BMs e Contas
-    const profile = await discoverFullMetaHierarchy(accessToken, savedProfileName);
-    const permissions = await fetchTokenPermissions(accessToken);
+    // 5. Descoberta exaustiva da hierarquia de BMs e Contas
+    const graphStartTime = performance.now();
+    const [profile, permissions] = await Promise.all([
+      discoverFullMetaHierarchy(accessToken, savedProfileName),
+      fetchTokenPermissions(accessToken),
+    ]);
+    const graphDurationMs = Math.round(performance.now() - graphStartTime);
 
-    // 5. Coleta todas as contas planas para compatibilidade
+    // 6. Coleta todas as contas planas para compatibilidade
     const allAccounts: MetaAdAccount[] = [];
     profile.businesses.forEach((bm) => {
       bm.accounts.forEach((acc) => {
@@ -91,14 +122,14 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    // 6. Recupera seleção de contas e BMs salvas no banco
+    // 7. Recupera seleção de contas e BMs salvas no banco
     const savedSelected = currentIntegration?.config?.ad_account_ids;
     const selectedAccountIds: string[] = Array.isArray(savedSelected) ? savedSelected : [];
 
     const savedBmIds = currentIntegration?.config?.selected_bm_ids;
     const selectedBmIds: string[] = Array.isArray(savedBmIds) ? savedBmIds : [];
 
-    return NextResponse.json({
+    const responsePayload = {
       ok: true,
       connected: true,
       isFromDatabase,
@@ -115,9 +146,25 @@ export async function GET(request: NextRequest) {
         hasAdsRead: permissions.includes("ads_read"),
         hasAdsManagement: permissions.includes("ads_management"),
       },
+    };
+
+    // 8. Grava no cache por 5 minutos (300.000 ms) com isolamento por storeId e token
+    metaCache.set("accounts", effectiveStoreId, accessToken, responsePayload, 5 * 60 * 1000);
+
+    const totalDurationMs = Math.round(performance.now() - startTime);
+    console.log(`[GET /api/v1/meta/accounts] Sucesso: Meta Graph levou ${graphDurationMs}ms, resposta total em ${totalDurationMs}ms (gravado em cache)`);
+
+    return NextResponse.json({
+      ...responsePayload,
+      _cache: {
+        hit: false,
+        graphDurationMs,
+        totalDurationMs,
+      },
     });
   } catch (error: any) {
-    console.error("[GET /api/v1/meta/accounts Error]:", error);
+    const totalDurationMs = Math.round(performance.now() - startTime);
+    console.error(`[GET /api/v1/meta/accounts Error] Falhou após ${totalDurationMs}ms:`, error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 }
@@ -256,6 +303,10 @@ export async function POST(request: NextRequest) {
 
       if (insertErr) throw insertErr;
     }
+
+    // Invalida o cache da loja para garantir consistência imediata na próxima leitura
+    const invalidatedCount = metaCache.invalidateStore(store_id, "accounts");
+    console.log(`[POST /api/v1/meta/accounts] Cache invalidado para store_id=${store_id} (${invalidatedCount} chave(s) removida(s))`);
 
     return NextResponse.json({
       ok: true,

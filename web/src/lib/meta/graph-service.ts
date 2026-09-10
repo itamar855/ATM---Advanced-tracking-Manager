@@ -102,8 +102,7 @@ export async function discoverFullMetaHierarchy(
   accessToken: string,
   preferredProfileName?: string
 ): Promise<MetaProfile> {
-  const user = await fetchUserProfile(accessToken);
-  const profileName = preferredProfileName || user.name || "Perfil Facebook";
+  const graphStartTime = performance.now();
 
   const allAccountsMap = new Map<string, MetaAdAccount>();
   const bmMap = new Map<string, { id: string; name: string; accounts: MetaAdAccount[] }>();
@@ -132,68 +131,76 @@ export async function discoverFullMetaHierarchy(
     }
   };
 
-  // 1. Consulta /me/adaccounts (Usa campos seguros e universais)
-  try {
-    const accUrl = `${GRAPH_BASE_URL}/me/adaccounts?fields=id,account_id,name,account_status,currency,amount_spent,business_name,timezone_name,timezone_offset_hours_utc&access_token=${accessToken}&limit=100`;
-    const accRes = await fetch(accUrl, { cache: "no-store" });
-    if (accRes.ok) {
-      const accData = await accRes.json();
+  // 1. Dispara em paralelo: Perfil do usuário, /me/adaccounts e /me/businesses
+  const [userResult, accountsResult, businessesResult] = await Promise.allSettled([
+    fetchUserProfile(accessToken),
+    fetch(`${GRAPH_BASE_URL}/me/adaccounts?fields=id,account_id,name,account_status,currency,amount_spent,business_name,timezone_name,timezone_offset_hours_utc&access_token=${accessToken}&limit=100`, { cache: "no-store" }),
+    fetch(`${GRAPH_BASE_URL}/me/businesses?fields=id,name&access_token=${accessToken}&limit=50`, { cache: "no-store" }),
+  ]);
+
+  const user = userResult.status === "fulfilled" ? userResult.value : { id: "me", name: "Perfil Facebook" };
+  const profileName = preferredProfileName || user.name || "Perfil Facebook";
+
+  // Processa /me/adaccounts
+  if (accountsResult.status === "fulfilled" && accountsResult.value.ok) {
+    try {
+      const accData = await accountsResult.value.json();
       if (Array.isArray(accData.data)) {
         accData.data.forEach((raw: any) => {
           const parsed = parseRawAccount(raw);
           if (parsed) registerAccount(parsed, undefined, raw.business_name || undefined);
         });
       }
+    } catch (accErr) {
+      console.warn("[Meta GraphService] Erro ao parsear /me/adaccounts:", accErr);
     }
-  } catch (err) {
-    console.warn("[Meta GraphService] Erro ao consultar /me/adaccounts:", err);
   }
 
-  // 2. Consulta /me/businesses (Descobre BMs formais às quais o token tem acesso)
-  try {
-    const bmsUrl = `${GRAPH_BASE_URL}/me/businesses?fields=id,name&access_token=${accessToken}&limit=50`;
-    const bmsRes = await fetch(bmsUrl, { cache: "no-store" });
-    if (bmsRes.ok) {
-      const bmsData = await bmsRes.json();
-      if (Array.isArray(bmsData.data)) {
-        for (const rawBm of bmsData.data) {
-          const bmId = String(rawBm.id);
-          const bmName = rawBm.name || `Business Manager ${bmId}`;
+  // Processa /me/businesses e busca todas as BMs concorrentemente em paralelo
+  if (businessesResult.status === "fulfilled" && businessesResult.value.ok) {
+    try {
+      const bmsData = await businessesResult.value.json();
+      if (Array.isArray(bmsData.data) && bmsData.data.length > 0) {
+        // Dispara todas as BMs concorrentemente (em vez de esperar uma a uma sequencialmente)
+        await Promise.allSettled(
+          bmsData.data.map(async (rawBm: any) => {
+            const bmId = String(rawBm.id);
+            const bmName = rawBm.name || `Business Manager ${bmId}`;
 
-          // Para cada BM, busca owned_ad_accounts e client_ad_accounts
-          try {
-            const [ownedRes, clientRes] = await Promise.all([
-              fetch(`${GRAPH_BASE_URL}/${bmId}/owned_ad_accounts?fields=id,account_id,name,account_status,currency,amount_spent,business_name,timezone_name,timezone_offset_hours_utc&access_token=${accessToken}&limit=100`, { cache: "no-store" }),
-              fetch(`${GRAPH_BASE_URL}/${bmId}/client_ad_accounts?fields=id,account_id,name,account_status,currency,amount_spent,business_name,timezone_name,timezone_offset_hours_utc&access_token=${accessToken}&limit=100`, { cache: "no-store" }),
-            ]);
+            try {
+              const [ownedRes, clientRes] = await Promise.all([
+                fetch(`${GRAPH_BASE_URL}/${bmId}/owned_ad_accounts?fields=id,account_id,name,account_status,currency,amount_spent,business_name,timezone_name,timezone_offset_hours_utc&access_token=${accessToken}&limit=100`, { cache: "no-store" }),
+                fetch(`${GRAPH_BASE_URL}/${bmId}/client_ad_accounts?fields=id,account_id,name,account_status,currency,amount_spent,business_name,timezone_name,timezone_offset_hours_utc&access_token=${accessToken}&limit=100`, { cache: "no-store" }),
+              ]);
 
-            if (ownedRes.ok) {
-              const owned = await ownedRes.json();
-              if (Array.isArray(owned.data)) {
-                owned.data.forEach((raw: any) => {
-                  const parsed = parseRawAccount(raw, bmId, bmName);
-                  if (parsed) registerAccount(parsed, bmId, bmName);
-                });
+              if (ownedRes.ok) {
+                const owned = await ownedRes.json();
+                if (Array.isArray(owned.data)) {
+                  owned.data.forEach((raw: any) => {
+                    const parsed = parseRawAccount(raw, bmId, bmName);
+                    if (parsed) registerAccount(parsed, bmId, bmName);
+                  });
+                }
               }
-            }
 
-            if (clientRes.ok) {
-              const client = await clientRes.json();
-              if (Array.isArray(client.data)) {
-                client.data.forEach((raw: any) => {
-                  const parsed = parseRawAccount(raw, bmId, bmName);
-                  if (parsed) registerAccount(parsed, bmId, bmName);
-                });
+              if (clientRes.ok) {
+                const client = await clientRes.json();
+                if (Array.isArray(client.data)) {
+                  client.data.forEach((raw: any) => {
+                    const parsed = parseRawAccount(raw, bmId, bmName);
+                    if (parsed) registerAccount(parsed, bmId, bmName);
+                  });
+                }
               }
+            } catch (bmErr) {
+              console.warn(`[Meta GraphService] Erro ao buscar contas da BM ${bmId}:`, bmErr);
             }
-          } catch (bmErr) {
-            console.warn(`[Meta GraphService] Erro ao buscar contas da BM ${bmId}:`, bmErr);
-          }
-        }
+          })
+        );
       }
+    } catch (bmsErr) {
+      console.warn("[Meta GraphService] Erro ao parsear /me/businesses:", bmsErr);
     }
-  } catch (err) {
-    console.warn("[Meta GraphService] Erro ao consultar /me/businesses:", err);
   }
 
   // 3. Monta a lista final de Business Managers
@@ -209,6 +216,9 @@ export async function discoverFullMetaHierarchy(
       },
     ];
   }
+
+  const graphDurationMs = Math.round(performance.now() - graphStartTime);
+  console.log(`[Meta GraphService] Descoberta da árvore Meta concluída em ${graphDurationMs}ms (${businesses.length} BMs, ${allAccountsMap.size} contas)`);
 
   return {
     id: user.id,

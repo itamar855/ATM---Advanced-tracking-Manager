@@ -44,6 +44,15 @@
   3. `BLOCKED`: Escala barrada preventivamente para proteger o capital (ex: falhas de pagamento no registro ou CPA estourado). Ação é registrada como `status: 'rejected'` com auditoria e justificativa clara.
 - **Auditoria**: `node scripts/test-asset-intelligence-guard.js` (**6 PASS | 0 FAIL**).
 
+#### ✅ Fase 9.4 — Otimização de Leitura & Camada de Cache Multi-Tenant da Meta
+- **Módulos Criados/Otimizados**:
+  - `web/src/lib/meta/meta-cache.ts`: Camada de cache em memória isolada por loja e hash do token com TTL rigoroso e blindagem multi-tenant.
+  - `web/src/lib/meta/graph-service.ts`: Paralelização simultânea das consultas de Business Managers (degradando latência de ~15s para ~1s).
+  - `web/src/app/api/v1/meta/accounts/route.ts`: Cache de 5 minutos, logs de latência (`[CACHE HIT]` / `[CACHE MISS]`) e suporte a bypass com `?refresh=true`.
+  - `web/src/app/api/v1/dashboard/metrics/route.ts`: Cache de 45 segundos para métricas e fallback da Meta Graph.
+  - `web/src/app/dashboard/page.tsx`: Polling otimizado para 45s com suspensão automática quando a aba do navegador estiver em segundo plano (`document.visibilityState === "hidden"`).
+- **Auditoria**: `node scripts/test-meta-cache-and-concurrency.js` (**8 PASS | 0 FAIL**).
+
 ---
 
 ## 2. Testes de Validação da Fase 9
@@ -53,8 +62,9 @@ Para validar a qualquer momento no terminal:
 node scripts/test-meta-asset-health-engine.js
 node scripts/test-meta-asset-sync.js
 node scripts/test-asset-intelligence-guard.js
+node scripts/test-meta-cache-and-concurrency.js
 ```
-*(Todos retornam 100% PASS)*
+*(Todos retornam 100% PASS — Total: 25 testes aprovados)*
 
 ---
 

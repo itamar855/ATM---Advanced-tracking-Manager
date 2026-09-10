@@ -101,14 +101,15 @@ export default function DashboardResumoPage() {
   const [availableAccounts, setAvailableAccounts] = useState<Array<{ id: string; name: string }>>([]);
   const [usdBrlRate, setUsdBrlRate] = useState(5.1627);
 
-  const loadData = async (silent = false) => {
+  const loadData = async (silent = false, forceRefresh = false) => {
     if (!activeStore) return;
     if (!silent) setLoading(true);
     else setIsRefreshing(true);
 
     try {
+      const refreshParam = forceRefresh ? "&refresh=true" : "";
       const res = await fetch(
-        `/api/v1/dashboard/metrics?date_preset=${datePreset}&ad_account_id=${selectedAccountId}&store_id=${activeStore.id}`,
+        `/api/v1/dashboard/metrics?date_preset=${datePreset}&ad_account_id=${selectedAccountId}&store_id=${activeStore.id}${refreshParam}`,
         { cache: "no-store" }
       );
       if (res.ok) {
@@ -133,11 +134,14 @@ export default function DashboardResumoPage() {
     loadData(false);
   }, [datePreset, selectedAccountId, activeStore]);
 
-  // Polling em tempo real a cada 15s
+  // Polling em tempo real otimizado (45s) com proteção contra abas em segundo plano
   useEffect(() => {
     const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return; // Não sobrecarrega a rede quando o usuário estiver em outra aba
+      }
       loadData(true);
-    }, 15000);
+    }, 45000);
     return () => clearInterval(interval);
   }, [datePreset, selectedAccountId, activeStore]);
 
@@ -195,7 +199,7 @@ export default function DashboardResumoPage() {
           <div className="flex items-center gap-3">
             <span className="text-xs text-zinc-400">Atualizado agora mesmo</span>
             <button
-              onClick={() => loadData(true)}
+              onClick={() => loadData(true, true)}
               disabled={isRefreshing}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-[0_0_15px_rgba(37,99,235,0.4)] transition-all active:scale-95 disabled:opacity-50"
             >

@@ -3,30 +3,51 @@ import { createClient } from "@/lib/supabase/server";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
 import { getUsdBrlRate, convertToBrl } from "@/lib/currency";
 import { resolveAccountDateRange, AccountDateRange } from "@/lib/date-utils";
+import { metaCache } from "@/lib/meta/meta-cache";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/v1/dashboard/metrics
  * Retorna métricas financeiras completas da Dashboard Resumo.
- *
- * v3.1.0 - Fixes:
- *   - Filtro de data aplicado nas vendas (mesmo intervalo que o gasto em ads)
- *   - effective_start_date = MAX(checkout_started_at, início_período)
- *   - Removido fallback faker de dados fictícios
- *   - Adicionado suporte a last_60d
- *   - Vendas Pendentes calculadas dinamicamente
+ * Inclui cache inteligente em memória (TTL 45s), isolamento multi-tenant e logs de tempo.
  */
 export async function GET(request: NextRequest) {
+  const startTime = performance.now();
+
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get("store_id");
     const datePreset = searchParams.get("date_preset") || "today";
     const selectedAccountId = searchParams.get("ad_account_id") || "all";
+    const refresh = searchParams.get("refresh") === "true";
     
     if (!storeId) {
       return NextResponse.json({ error: "store_id is required" }, { status: 400 });
     }
+
+    const cacheScope = "dashboard_metrics";
+    const cacheTokenKey = `${selectedAccountId}:${datePreset}`;
+
+    // Verificação de cache em memória para responder instantaneamente ao polling e navegação
+    if (!refresh) {
+      const cached = metaCache.get<any>(cacheScope, storeId, cacheTokenKey);
+      if (cached.hit && cached.data) {
+        const durationMs = Math.round(performance.now() - startTime);
+        console.log(`[GET /api/v1/dashboard/metrics] [CACHE HIT] store_id=${storeId} preset=${datePreset} acc=${selectedAccountId} (idade: ${cached.ageMs}ms) respondido em ${durationMs}ms`);
+        return NextResponse.json({
+          ...cached.data,
+          _cache: {
+            hit: true,
+            ageMs: cached.ageMs,
+            ttlRemainingMs: cached.remainingTtlMs,
+            durationMs,
+          },
+        });
+      }
+    }
+
+    console.log(`[GET /api/v1/dashboard/metrics] [CACHE MISS] store_id=${storeId} preset=${datePreset} acc=${selectedAccountId} (refresh=${refresh}) calculando métricas contábeis...`);
 
     const supabase = await createClient();
     const usdBrlRate = await getUsdBrlRate();
@@ -612,7 +633,7 @@ export async function GET(request: NextRequest) {
     const iqPercent = totalOrders > 0 ? ((iqSalesCount / totalOrders) * 100).toFixed(1) : "0";
     const naPercent = totalOrders > 0 ? ((naSalesCount / totalOrders) * 100).toFixed(1) : "0";
 
-    return NextResponse.json({
+    const responsePayload = {
       ok: true,
       usdBrlRate,
       date_preset: datePreset,
@@ -654,9 +675,24 @@ export async function GET(request: NextRequest) {
       ],
       available_accounts: availableAccounts,
       meta_permission_error: metaPermissionError,
+    };
+
+    // Grava no cache por 45 segundos (isolado por loja e preset)
+    metaCache.set(cacheScope, storeId, cacheTokenKey, responsePayload, 45 * 1000);
+
+    const totalDurationMs = Math.round(performance.now() - startTime);
+    console.log(`[GET /api/v1/dashboard/metrics] Cálculo concluído e cache gravado em ${totalDurationMs}ms para store_id=${storeId} preset=${datePreset}`);
+
+    return NextResponse.json({
+      ...responsePayload,
+      _cache: {
+        hit: false,
+        durationMs: totalDurationMs,
+      },
     });
   } catch (error: any) {
-    console.error("[Dashboard Metrics API Error]:", error);
+    const totalDurationMs = Math.round(performance.now() - startTime);
+    console.error(`[Dashboard Metrics API Error] Falhou após ${totalDurationMs}ms:`, error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 }

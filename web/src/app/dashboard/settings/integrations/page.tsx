@@ -181,7 +181,7 @@ function IntegrationsContent() {
       setNewProfileName("");
       setNewProfileToken("");
       setSaveSuccessMsg(`Perfil "${data.profile_name || 'Meta Ads'}" conectado e sincronizado com sucesso!`);
-      await loadMetaCredentials();
+      await loadMetaCredentials(true);
       setTimeout(() => setSaveSuccessMsg(""), 5000);
     } catch (err: any) {
       setAddProfileError("Erro na conexão: " + err.message);
@@ -483,10 +483,11 @@ function IntegrationsContent() {
     }
   };
 
-  const loadMetaCredentials = async () => {
+  const loadMetaCredentials = async (forceRefresh = false) => {
     try {
       const targetStoreId = activeStore?.id || storeId || (typeof window !== "undefined" ? localStorage.getItem("atm_active_store_id") : null) || "dckb5g-7d";
-      const accRes = await fetch(`/api/v1/meta/accounts?store_id=${targetStoreId}`);
+      const refreshParam = forceRefresh ? "&refresh=true" : "";
+      const accRes = await fetch(`/api/v1/meta/accounts?store_id=${targetStoreId}${refreshParam}`);
       if (accRes.ok) {
         const accData = await accRes.json();
         if (accData.ok) {
@@ -596,7 +597,7 @@ function IntegrationsContent() {
       if (e.data?.type === "FB_OAUTH_SUCCESS") {
         setIsAddProfileModalOpen(false);
         setSaveSuccessMsg(`Perfil ${e.data.profile || ""} conectado com sucesso!`);
-        loadMetaCredentials();
+        loadMetaCredentials(true);
         setTimeout(() => setSaveSuccessMsg(""), 5000);
       }
     };
@@ -703,7 +704,7 @@ function IntegrationsContent() {
 
       if (res.ok) {
         setSaveSuccessMsg(`Configurações salvas! (${selectedBms.length} BM(s) ativas e ${selectedAccounts.length} conta(s) selecionadas)`);
-        await loadMetaCredentials();
+        await loadMetaCredentials(true);
         setTimeout(() => setSaveSuccessMsg(""), 4000);
       } else {
         const data = await res.json();
