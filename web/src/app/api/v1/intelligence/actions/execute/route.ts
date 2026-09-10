@@ -99,11 +99,58 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 5.1 ATM ASSET INTELLIGENCE GUARD™ (Camada de Proteção Pré-Execução)
+    const { evaluateAssetGuardAction } = await import("@/lib/intelligence/asset-intelligence-guard");
+    const guardResult = await evaluateAssetGuardAction({
+      store_id,
+      campaign_id: action.campaign_id,
+      campaign_name: action.campaign_name,
+      action_type: action.action_type,
+      ad_account_id: action.ad_account_id,
+      requested_increase_percent: 20,
+    });
+
+    if (guardResult.decision === "BLOCKED") {
+      // Registra a ação como rejeitada pelo Guard para auditoria estrita
+      await supabase
+        .from("campaign_actions")
+        .update({
+          status: "rejected",
+          reason: `Asset Intelligence Guard blocked execution: ${guardResult.reasons.join(" | ")}`,
+          idempotency_key,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", action_id);
+
+      return NextResponse.json(
+        {
+          ok: false,
+          blocked_by_guard: true,
+          decision: "BLOCKED",
+          reasons: guardResult.reasons,
+          health_summary: guardResult.health_summary,
+          error: `Execução bloqueada pelo Asset Intelligence Guard: ${guardResult.reasons.join(" | ")}`,
+        },
+        { status: 403 }
+      );
+    }
+
+    // Se a decisão for RESTRICTED, limita o target_value a no máximo o teto permitido (ex: +15%)
+    let effectiveTargetValue = action.target_value;
+    if (guardResult.decision === "RESTRICTED" && action.action_type === "SCALE_BUDGET_PERCENT") {
+      const prevVal = Number(action.previous_value) || Number(action.target_value);
+      const cappedVal = Math.round(prevVal * (1 + guardResult.max_allowed_increase / 100) * 100) / 100;
+      if (cappedVal < Number(action.target_value)) {
+        effectiveTargetValue = cappedVal;
+      }
+    }
+
     // 6. Atualiza status temporário para "executing" para evitar concorrência
     await supabase
       .from("campaign_actions")
       .update({
         status: "executing",
+        target_value: effectiveTargetValue,
         idempotency_key,
         updated_at: new Date().toISOString(),
       })

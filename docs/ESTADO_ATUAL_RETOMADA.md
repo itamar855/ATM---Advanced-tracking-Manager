@@ -1,97 +1,73 @@
 # 📌 ATM — Documento de Retomada de Sessão (Handover de Estado)
 
-> **Data de Salvamento:** 08 de Setembro de 2026 — 14:25 (Horário de Brasília)  
-> **Branch Atual:** `main` (limpa, sem commits/push realizados, conforme solicitado)  
-> **Status do Build:** ✅ `npx tsc --noEmit` (0 erros) | ✅ `npm run build` (33/33 rotas compiladas)  
-> **Status dos Testes:** ✅ `14 PASSOU | 0 FALHOU` em `scripts/test-dashboard-financial-conciliation.js`
+> **Data de Atualização:** 10 de Setembro de 2026 — 20:20 (Horário de Brasília)  
+> **Branch Atual:** `main`  
+> **Status do Build:** ✅ `npx tsc --noEmit` (0 erros)  
+> **Status dos Testes:** ✅ `17 PASSOU | 0 FALHOU` na Suíte de Asset Intelligence (Fase 9)  
+> **Banco Supabase:** ✅ `meta_asset_health_snapshots` (Migration 022 aplicada e validada)
 
 ---
 
 ## 1. Onde Paramos (Status das Fases)
 
-### ✅ Fase 8 — Unificação do Revenue Ledger
-- **Status**: Concluída e auditada.
-- **Tabela**: `public.revenue_ledger` populada com **2.772 fatias contábeis** (693 pedidos únicos $\times$ 4 modelos de atribuição).
-- **Conciliação**: R$ 75.783,11 em `events` == R$ 75.783,11 no `revenue_ledger` (**Divergência R$ 0,00 | 100% de consistência**).
-
-### ✅ Fase 8.1 — Estrutura de Campaign Cost Snapshots
-- **Status**: Concluída.
-- **Migration Aplicada no Supabase**: `supabase/migrations/021_create_campaign_cost_snapshots.sql`.
-- **Constraint Única**: `(store_id, ad_account_id, campaign_id, date)`.
-- **Módulos Criados**: `web/src/lib/tracking/campaign-cost-sync.ts` e `web/src/app/api/v1/campaigns/costs/route.ts`.
-
-### ✅ Fase 8.2 — Backfill Histórico dos Custos Meta
-- **Status**: Concluída e auditada.
-- **Script de Backfill**: `node scripts/backfill-campaign-costs.js --execute`.
-- **Dados Persistidos**: **719 snapshots diários** cobrindo 89 dias e 277 campanhas nas 3 contas de anúncio.
-- **Totais Gravados**:
-  - Spend USD: **$ 14.039,83**
-  - Spend BRL Harmonizado: **R$ 71.454,33**
-  - Duplicações: **0**
-- **Auditoria**: `node scripts/audit-campaign-cost-consistency.js` (100% aprovada).
-
-### ✅ Fase 8.3 — Migração da Dashboard para Dados Contábeis
-- **Status**: Concluída e testada.
-- **Arquivo Modificado Cirurgicamente**: `web/src/app/api/v1/dashboard/metrics/route.ts`.
-- **Nova Origem dos KPIs**:
-  - **Receita Bruta**: `public.revenue_ledger` (soma contábil por período).
-  - **Total de Pedidos**: `COUNT(DISTINCT order_id)` no `revenue_ledger`.
-  - **Spend Ads**: `public.campaign_cost_snapshots` (soma congelada diária).
-  - **ROAS & CPA**: Calculados diretamente das grandezas contábeis unificadas.
-  - **Fallback de Segurança**: Preservado caso filtros ou períodos novos não tenham snapshots ainda.
-- **Preservação**: `attribution-engine.ts`, `identity-stitcher.ts`, `webhooks/*` e telas visuais permaneceram **intocados**.
+### ✅ Fase 8 — Unificação Contábil & Revenue Ledger
+- **Status**: Concluída e auditada (Commit `f72fc43`).
+- **Tabelas**: `public.revenue_ledger` (2.772 fatias) e `public.campaign_cost_snapshots` (719 snapshots de custo com cotação congelada).
+- **Conciliação**: R$ 75.783,11 conciliados com 100% de consistência.
+- **Dashboard**: Consome diretamente os dados contábeis consolidados, com fallback ativo para Meta Graph API ao vivo caso snapshots de um período recente ainda não tenham sido gerados.
 
 ---
 
-## 2. Indicadores Financeiros Reais Consolidados (Loja: `dckb5g-7d`)
+### ✅ Fase 9 — ATM Asset Intelligence Guard™ + Campaign Action Engine Protection Layer
 
-| Indicador Contábil | Valor Auditado | Fonte da Verdade |
-| :--- | :--- | :--- |
-| **Receita Total Atribuída** | **R$ 75.783,11** | `public.revenue_ledger` |
-| **Total de Pedidos Conciliados** | **693 pedidos** | `public.revenue_ledger` |
-| **Spend Total Meta Ads** | **R$ 71.454,33** ($ 14.039,83 USD) | `public.campaign_cost_snapshots` |
-| **Real ROAS Global** | **1.06x** | Ledger / Snapshots |
-| **Real CPA Global** | **R$ 103,11** por pedido | Snapshots / Pedidos |
-| **Real ROI Global** | **6.06%** | Lucro / Spend |
-| **Lucro Líquido Operacional (Ads)** | **R$ 4.328,78** | Receita - Spend |
+#### ✅ Fase 9.1 — Motor de Saúde de Ativos em 3 Camadas
+- **Módulo**: `web/src/lib/intelligence/meta-asset-health-engine.ts`.
+- **Ponderação**:
+  - **Asset Trust Score (40%)**: Idade da conta, verificação da BM, estabilidade de billing (falhas de pagamento), histórico de restrições e *Historical Risk Recovery* (5% - evita penalização perpétua de ativos recuperados).
+  - **Delivery Power Score (30%)**: EMQ First-Party dos eventos CAPI, Estabilidade de CPM (<15% excelente, >30% penalidade), CTR Decay e Frequency Pressure.
+  - **Scaling Readiness Score (30%)**: Distância do teto diário de gastos (`adtrust_spend_limit`), ROAS recente e margem de CPA vs limite máximo tolerável.
+- **Auditoria**: `node scripts/test-meta-asset-health-engine.js` (**5 PASS | 0 FAIL**).
 
----
+#### ✅ Fase 9.2 — Sincronizador de Ativos e Snapshots Auditáveis
+- **Módulo**: `web/src/lib/intelligence/meta-asset-sync.ts`.
+- **API Endpoint**: `GET/POST /api/v1/intelligence/assets/sync`.
+- **Banco de Dados**: `public.meta_asset_health_snapshots` (Migration `022_create_asset_intelligence_snapshots.sql`).
+- **Constraint Única**: `(store_id, asset_type, asset_id, snapshot_date)` — snapshots diários sem duplicação.
+- **Auditoria**: `node scripts/test-meta-asset-sync.js` (**6 PASS | 0 FAIL**).
 
-## 3. Comandos Rápidos para Executar ao Ligar o Computador
-
-Quando o computador for ligado e você abrir o terminal na raiz do projeto:
-
-### 1. Validar a conciliação contábil (10 segundos):
-```bash
-node scripts/test-dashboard-financial-conciliation.js
-```
-*(Deve retornar: 14 PASSOU | 0 FALHOU)*
-
-### 2. Validar integridade do TypeScript:
-```bash
-npx tsc --noEmit
-```
-*(Deve retornar código 0, sem erros)*
-
-### 3. Subir o servidor de desenvolvimento:
-```bash
-cd web
-npm run dev
-```
-*(Acessar `http://localhost:3000/dashboard` para visualizar as métricas unificadas)*
+#### ✅ Fase 9.3 — Camada de Proteção Pré-Execução (Execution Guard)
+- **Módulo**: `web/src/lib/intelligence/asset-intelligence-guard.ts`.
+- **Ponto de Interceptação Cirúrgico**: `web/src/app/api/v1/intelligence/actions/execute/route.ts`.
+- **Fluxo de Decisão**:
+  1. `APPROVED`: Escala total autorizada (até +30% diário).
+  2. `RESTRICTED`: Escala autorizada com poda de segurança automática para no máximo +15% diário (ex: CPM subindo ou margem apertada).
+  3. `BLOCKED`: Escala barrada preventivamente para proteger o capital (ex: falhas de pagamento no registro ou CPA estourado). Ação é registrada como `status: 'rejected'` com auditoria e justificativa clara.
+- **Auditoria**: `node scripts/test-asset-intelligence-guard.js` (**6 PASS | 0 FAIL**).
 
 ---
 
-## 4. Arquivos Alterados na Sessão (Prontos para Commit quando Autorizado)
+## 2. Testes de Validação da Fase 9
 
-- **Modificado**: `web/src/app/api/v1/dashboard/metrics/route.ts`
+Para validar a qualquer momento no terminal:
+```bash
+node scripts/test-meta-asset-health-engine.js
+node scripts/test-meta-asset-sync.js
+node scripts/test-asset-intelligence-guard.js
+```
+*(Todos retornam 100% PASS)*
+
+---
+
+## 3. Arquivos da Fase 9 Incluídos nesta Atualização
+
+- **Modificado**: `web/src/app/api/v1/intelligence/actions/execute/route.ts`
+- **Novo**: `supabase/migrations/022_create_asset_intelligence_snapshots.sql`
+- **Novo**: `web/src/lib/intelligence/meta-asset-health-engine.ts`
+- **Novo**: `web/src/lib/intelligence/meta-asset-sync.ts`
+- **Novo**: `web/src/lib/intelligence/asset-intelligence-guard.ts`
+- **Novo**: `web/src/app/api/v1/intelligence/assets/sync/route.ts`
+- **Novo**: `scripts/test-meta-asset-health-engine.js`
+- **Novo**: `scripts/test-meta-asset-sync.js`
+- **Novo**: `scripts/test-asset-intelligence-guard.js`
 - **Modificado**: `CEREBRO_TECNICO.md`
-- **Novo**: `supabase/migrations/021_create_campaign_cost_snapshots.sql` (Já rodado no Supabase)
-- **Novo**: `web/src/lib/tracking/campaign-cost-sync.ts`
-- **Novo**: `web/src/app/api/v1/campaigns/costs/route.ts`
-- **Novo**: `scripts/backfill-campaign-costs.js`
-- **Novo**: `scripts/audit-campaign-cost-consistency.js`
-- **Novo**: `scripts/test-dashboard-financial-conciliation.js`
-- **Novo**: `docs/ESTADO_ATUAL_RETOMADA.md`
-
-Tudo está seguro, persistido e perfeitamente documentado. Descanse tranquilo e até a volta! 🚀
+- **Modificado**: `docs/ESTADO_ATUAL_RETOMADA.md`

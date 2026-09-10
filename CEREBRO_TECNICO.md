@@ -196,6 +196,36 @@ Historicamente, as três interfaces financeiras do ATM calculavam métricas por 
 4. **Resiliência Operacional com Fallback:**
    - Caso uma loja ou período novo ainda não possua snapshots sincronizados, o endpoint `/api/v1/dashboard/metrics` ativa automaticamente a busca ao vivo na Meta Graph API e na tabela `events`, mantendo a aplicação 100% funcional.
 
+---
+
+## 8. ATM Asset Intelligence Engine & Pre-Execution Guard™ (v9.0.0)
+
+### 8.1 Motivação e Governança
+O Campaign Action Engine não pode tomar decisões de escala e aumento orçamentário no vácuo. Injetar orçamento em uma campanha com bom ROAS pontual, mas associada a uma conta de anúncios com falhas de faturamento, restrições iminentes ou leilões em disparada (CPM em escalada abrupta) causa queima de capital e bloqueios de ativos.
+
+### 8.2 As 3 Camadas de Avaliação Contínua
+1. **Asset Trust Score (Ponderação 40%):**
+   - Integridade jurídica e financeira do ativo Meta.
+   - Analisa idade da conta de anúncio, status de verificação da Business Manager (`bm_verification_status`), histórico de falhas de cobrança (`payment_failures`), conformidade de status da conta (`account_status = 1`) e **Historical Risk Recovery** (5% de bônus seguro para ativos recuperados).
+2. **Delivery Power Score (Ponderação 30%):**
+   - Qualidade do sinal e entrega no leilão.
+   - Analisa EMQ First-Party dos eventos CAPI locais, estabilidade de CPM (<15% excelente, >30% penalidade severa), degradação de CTR (sinal de fadiga criativa) e pressão de frequência de público (>2.5 saturação).
+3. **Scaling Readiness Score (Ponderação 30%):**
+   - Apetite financeiro e margem de escala.
+   - Distância para o teto de gastos diário imposto pela Meta (`adtrust_spend_limit`), ROAS recente e distância do CPA atual para o CPA máximo tolerável da operação.
+
+### 8.3 Interceptação Pré-Execução (Asset Intelligence Guard)
+- **Localização:** `web/src/lib/intelligence/asset-intelligence-guard.ts` interceptando `web/src/app/api/v1/intelligence/actions/execute/route.ts`.
+- **Três Níveis de Decisão:**
+  - `APPROVED`: Ativo saudável com sinal verde para escala integral (até +30% diário).
+  - `RESTRICTED`: Ativo com sinais de alerta moderados; teto de aumento é podado automaticamente para no máximo +15% diário.
+  - `BLOCKED`: Ativo em risco crítico (falha de faturamento, conta desativada ou CPA acima do aceitável). Ação é rejeitada para execução, gravada na tabela `campaign_actions` como `status: 'rejected'` para fins de auditoria, e o erro 403 detalha exatamente os motivos do bloqueio.
+
+### 8.4 Persistência Auditável (`meta_asset_health_snapshots`)
+- Snapshots diários com chave única composta `(store_id, asset_type, asset_id, snapshot_date)`.
+- Políticas RLS rigorosas de isolamento multi-tenant garantindo segregação total entre lojas.
+
+
 
 
 
