@@ -66,11 +66,19 @@
 ---
 
 ### ✅ Fase 10.1 — Campaign Intelligence Bridge (Copilot Mode)
-- **Status**: Concluída e auditada (**35 PASS | 0 FAIL**).
-- **Módulos Criados**:
-  - `supabase/migrations/025_create_campaign_intelligence_recommendations.sql`: Tabela `public.campaign_intelligence_recommendations` com governança assistida (`requires_approval: true`), status `pending_review`, `asset_permission` (`SAFE`, `RESTRICTED`, `BLOCKED`) e deduplicação via `recommendation_hash`.
-  - `web/src/lib/intelligence/campaign-intelligence-bridge.ts`: Fusão de sinais contábeis com saúde de ativos, Confidence Score Tri-Fator (50% profit, 30% asset, 20% data maturity) com salvamento de componentes em `evidence_json`, Cooldown de 24h anti-duplicação (`recommendation_hash`) e governança de Asset Guard (`asset_permission`).
-  - `scripts/test-campaign-intelligence-bridge.js`: Suíte automatizada cobrindo os 6 cenários mandatórios e os 3 refinamentos.
+- **Status**: Concluída, commitada e enviada para `origin/main` (Commit `295db67` — **35 PASS | 0 FAIL**).
+- **Módulos**: `supabase/migrations/025_create_campaign_intelligence_recommendations.sql`, `web/src/lib/intelligence/campaign-intelligence-bridge.ts`, `scripts/test-campaign-intelligence-bridge.js`.
+- **Refinamentos**: Confidence Tri-Fator, Cooldown 24h via `recommendation_hash`, e Asset Guard (`SAFE`, `RESTRICTED`, `BLOCKED`).
+
+---
+
+### ✅ Fase 10.2 — Central de Recomendações e Auditoria (Observability & Shadow Mode)
+- **Status**: Concluída e auditada (**33 PASS | 0 FAIL**).
+- **Módulos Criados/Atualizados**:
+  - `supabase/migrations/026_create_recommendation_audit_outcomes.sql`: Expansão da tabela de recomendações com `is_simulation`, `simulation_thought`, `human_explanation`, `metrics_before`, `metrics_after`, `outcome_result` (com `PENDING_EVALUATION`), `outcome_reason_code`, `outcome_reason` e `confidence_profile`.
+  - `web/src/lib/intelligence/campaign-recommendation-auditor.ts`: Motor de auditoria com proteção de avaliação temporal (mínimo D+1/D+3 para SCALE, bloqueando falso erro intradiário com `PENDING_EVALUATION` e `EVALUATION_WINDOW_NOT_ELAPSED`), explicabilidade humana, modo simulação, classificador de impacto líquido e `reason_code` canônicos.
+  - `web/src/lib/intelligence/campaign-intelligence-bridge.ts`: Conexão com o auditor para gerar snapshots de métricas, copy humanizada e default `outcome_result: 'PENDING_EVALUATION'`.
+  - `scripts/test-campaign-recommendation-auditor.js`: Suíte de testes com 33 asserções cobrindo o caso real de escala (CPA R$ 32 -> R$ 35), bloqueio intradiário de escala prematura às 14h com PENDING_EVALUATION e liberação após 72h como ACERTO, casos de erro, `reason_codes`, shadow mode e hit rate.
 - **Preservação**: Zero escrita na Meta API, zero UI, zero auto-escala.
 
 ---
@@ -79,6 +87,7 @@
 
 Para validar a qualquer momento no terminal:
 ```bash
+node scripts/test-campaign-recommendation-auditor.js
 node scripts/test-campaign-intelligence-bridge.js
 node scripts/test-campaign-profit-engine.js
 node scripts/test-meta-performance-observability.js
@@ -88,15 +97,18 @@ node scripts/test-asset-intelligence-guard.js
 node scripts/test-meta-asset-health-engine.js
 node scripts/test-dashboard-financial-conciliation.js
 ```
-*(Todos retornam 100% PASS — Total: 98 testes aprovados)*
+*(Todos retornam 100% PASS — Total: 131 testes aprovados)*
 
 ---
 
-## 3. Arquivos da Fase 10.1 (Aguardando Autorização para Commit)
+## 3. Arquivos da Fase 10.2 (Aguardando Autorização para Commit)
 
-- **Novo**: `supabase/migrations/025_create_campaign_intelligence_recommendations.sql`
-- **Novo**: `web/src/lib/intelligence/campaign-intelligence-bridge.ts`
-- **Novo**: `scripts/test-campaign-intelligence-bridge.js`
+- **Novo**: `supabase/migrations/026_create_recommendation_audit_outcomes.sql`
+- **Novo**: `web/src/lib/intelligence/campaign-recommendation-auditor.ts`
+- **Novo**: `scripts/test-campaign-recommendation-auditor.js`
+- **Modificado**: `web/src/lib/intelligence/campaign-intelligence-bridge.ts`
 - **Modificado**: `CEREBRO_TECNICO.md`
 - **Modificado**: `docs/ESTADO_ATUAL_RETOMADA.md`
+
+
 

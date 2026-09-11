@@ -337,6 +337,81 @@ Em mídia de performance, alterações sucessivas de orçamento no mesmo dia des
 #### O Papel do Modo Copilot
 O verdadeiro diferencial do ATM não é automatizar botões de API na Meta. O diferencial é **construir uma camada de inteligência com discernimento analítico superior ao gestor médio**, onde cada sugestão é explicável, embasada e sujeita à aprovação humana soberana (`requires_approval: true`).
 
+---
+
+## 11. Central de Recomendações e Auditoria (Fase 10.2)
+
+### 11.1 Arquitetura de Observabilidade e Feedback Loop (24h / 48h / 72h)
+A **Central de Recomendações e Auditoria** atua como o laboratório empírico do ATM. Antes de autorizar qualquer automação autônoma de orçamento, o sistema avalia o desfecho das suas próprias decisões passadas, comparando o snapshot inicial de métricas (`metrics_before`) com as métricas consolidadas após o leilão (`metrics_after`).
+
+```
+Recomendação Gerada (metrics_before)
+               │
+               ▼ (Janela de 24h / 48h / 72h)
+  Extração de metrics_after
+               │
+               ▼
+  Classificador Contábil de Desfecho
+  ├── ACERTO  (Impacto financeiro líquido positivo)
+  ├── ERRO    (Destruição de margem ou sangramento)
+  └── NEUTRO  (Amostragem preliminar ou estabilidade)
+               │
+               ▼
+  Cálculo do Hit Rate Histórico (%)
+```
+
+### 11.2 Regra de Ouro: Julgamento por Impacto Financeiro Líquido
+Uma recomendação de escala (`SCALE`) **nunca é classificada como ERRO apenas pelo aumento absoluto do CPA**. No leilão da Meta, absorver escala com leve aumento de CPA é fisiológico (retornos marginais decrescentes), contanto que o volume absoluto de lucro líquido aumente e o CPA permaneça dentro do limite operacional.
+
+* **ACERTO**:
+  - Lucro incremental aumentou ($\Delta \text{profit} > 0$).
+  - ROI permaneceu saudável e acima do limite ($\text{ROI} \ge 10\%$ e $\text{ROAS} \ge 1.15\text{x}$).
+  - CPA permaneceu dentro do limite operacional ($\text{CPA} \le \text{max\_acceptable\_cpa}$).
+* **ERRO**:
+  - Aumento de orçamento destruiu margem.
+  - Lucro líquido caiu ($\Delta \text{profit} < 0$) ou gasto subiu sem novos pedidos.
+  - CPA ultrapassou o limite crítico tolerado pela operação ($\text{CPA} > \text{max\_acceptable\_cpa}$).
+* **NEUTRO**:
+  - Dados insuficientes ou período sem significância estatística ($< 5$ pedidos).
+
+### 11.3 Tabela Canônica de `reason_code`
+Cada avaliação pós-janela recebe um código determinístico padronizado:
+| `reason_code` | Classificação | Significado Contábil |
+| :--- | :---: | :--- |
+| `PROFIT_GROWTH_AFTER_SCALE` | **ACERTO** | Lucro líquido expandiu com CPA absorvido dentro do teto operacional. |
+| `SCALE_MARGIN_COLLAPSE` | **ERRO** | Escala destruiu margem ou CPA estourou o limite tolerado. |
+| `LOSS_PREVENTION_AFTER_REDUCE` | **ACERTO** | Redução conteve perdas e restaurou a eficiência de CPA. |
+| `BLEEDING_HALTED_AFTER_PAUSE` | **ACERTO** | Pausa estancou sangramento ativo em campanha sem conversões. |
+| `PREMATURE_PAUSE_DETECTED` | **ERRO** | Campanha lucrativa com amostragem válida foi pausada indevidamente. |
+| `STABLE_PERFORMANCE_MAINTAINED` | **ACERTO** | Campanha manteve equilíbrio contábil e entrega saudável. |
+| `UNCONTAINED_PERFORMANCE_DROP` | **ERRO** | Campanha entrou em colapso sem contenção prévia. |
+| `INSUFFICIENT_DATA` | **NEUTRO** | Amostragem insuficiente para validação conclusiva (< 5 pedidos). |
+| `EVALUATION_WINDOW_NOT_ELAPSED` | **PENDING_EVALUATION** | Janela temporal mínima não transcorrida. Julgamento prematuro bloqueado. |
+
+### 11.4 Proteção de Avaliação Temporal (Janela Mínima & D+1 / D+3)
+* **Prevenção de Falso Negativo Intradiário**: Se uma escala for recomendada às 10h, até as 14h a campanha consumiu orçamento mas a curva de conversão ainda não se consolidou (delay natural de tráfego pago e compras no período noturno). Julgar a recomendação antes da janela mínima geraria um falso `ERRO`.
+* **Regra de Bloqueio**:
+  - Enquanto `elapsed_hours < min_required_hours`, nenhuma recomendação pode ser classificada como `ACERTO` ou `ERRO`. O classificador retorna compulsoriamente `outcome_result: "PENDING_EVALUATION"` com `reason_code: "EVALUATION_WINDOW_NOT_ELAPSED"`.
+  - Para `SCALE`: Exige análise consolidada D+1 (mínimo 24h) ou D+3 (72h), proibindo classificação baseada puramente em flutuação intradiária.
+  - Após a janela transcorrida: Avalia o impacto financeiro líquido. Caso a amostragem seja preliminar (< 5 pedidos), retorna `NEUTRO` com `INSUFFICIENT_DATA`.
+
+### 11.5 Modo Simulação (Shadow Mode)
+Operação invisível de auditoria com flag `is_simulation: true` e registro do raciocínio analítico:
+`simulation_thought: "O ATM teria recomendado SCALE_BUDGET_PERCENT (+30%)"`.
+Zero chamadas enviadas à Meta Ads API. O sistema atua como um analista silencioso acumulando histórico de assertividade.
+
+### 11.6 Camada de Explicabilidade Humana (Human-First Copywriting)
+Em vez de retornar apenas códigos brutos de máquina (`SCALE_BUDGET_PERCENT, +30%`), o ATM gera um objeto estruturado de comunicação comercial:
+* **Headline Persuasivo**: *"🚀 O ATM recomenda aumentar orçamento (+30%)"*
+* **Resumo Executivo**: Diagnóstico em uma frase.
+* **Bullet Points de Evidências**: Métricas reais com checagem (compras confirmadas, margem de segurança do CPA, integridade do ativo).
+* **Badge Visual**: Score, rótulo humanizado (*"Altíssima Confiança"*) e cor de destaque.
+* **Nota de Simulação**: Transparência sobre o modo observacional.
+
+### 11.7 Estrutura de Perfil (`confidence_profile`)
+A estrutura de perfis de risco está arquitetada na tabela e nos tipos para expansão futura, com o baseline **`BALANCED`** (50% profit, 30% asset, 20% maturidade) travado como padrão para garantir que nenhuma variação artificial altere o aprendizado nesta fase.
+
+
 
 
 

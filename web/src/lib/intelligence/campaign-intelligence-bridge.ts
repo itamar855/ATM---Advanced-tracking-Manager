@@ -16,6 +16,13 @@
  */
 
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import {
+  buildHumanExplanation,
+  getProfileWeights,
+  ConfidenceProfile,
+  HumanExplanation,
+  MetricsSnapshot,
+} from "./campaign-recommendation-auditor";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rridxhzbkitgcodzyctu.supabase.co";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyaWR4aHpia2l0Z2NvZHp5Y3R1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzcxNTUzMCwiZXhwIjoyMTAzMjkxNTMwfQ.gGxjPtKXABAYM4r6RsHcebVwwHsdpMD-RyRnxJn3QxE";
@@ -95,6 +102,8 @@ export interface CampaignBridgeInput {
 
   campaign_metrics: CampaignMetricsInput;
   automation_settings?: AutomationSettingsInput;
+  confidence_profile?: ConfidenceProfile;
+  is_simulation?: boolean; // Padrão: true (Shadow Mode / Modo Simulação)
 }
 
 export interface BridgeDecisionResult {
@@ -114,6 +123,10 @@ export interface BridgeDecisionResult {
   status: RecommendationStatus;
   blocked_by_asset_guard: boolean;
   restricted_by_guard: boolean;
+  is_simulation: boolean;
+  simulation_thought: string;
+  human_explanation: HumanExplanation;
+  metrics_before: MetricsSnapshot;
   evidence: {
     profit_score: number;
     asset_health_score: number;
@@ -154,15 +167,20 @@ export function calculateDataMaturityScore(orders: number): 40 | 70 | 100 {
 export function calculateConfidenceDetails(
   profit_score: number,
   asset_health_score: number,
-  data_maturity_score: 40 | 70 | 100
+  data_maturity_score: 40 | 70 | 100,
+  customWeights?: { profit_weight: number; asset_weight: number; data_maturity_weight: number }
 ): { score: number; components: ConfidenceComponents } {
   const pScore = Math.min(100, Math.max(0, Number(profit_score) || 0));
   const aScore = Math.min(100, Math.max(0, Number(asset_health_score) || 0));
   const dScore = data_maturity_score;
 
-  const profit_contribution = Math.round(pScore * 0.50 * 100) / 100;
-  const asset_contribution = Math.round(aScore * 0.30 * 100) / 100;
-  const data_maturity_contribution = Math.round(dScore * 0.20 * 100) / 100;
+  const pWeight = customWeights?.profit_weight ?? 0.50;
+  const aWeight = customWeights?.asset_weight ?? 0.30;
+  const dWeight = customWeights?.data_maturity_weight ?? 0.20;
+
+  const profit_contribution = Math.round(pScore * pWeight * 100) / 100;
+  const asset_contribution = Math.round(aScore * aWeight * 100) / 100;
+  const data_maturity_contribution = Math.round(dScore * dWeight * 100) / 100;
 
   const total = Math.min(100, Math.max(0, Math.round(profit_contribution + asset_contribution + data_maturity_contribution)));
 
@@ -170,13 +188,13 @@ export function calculateConfidenceDetails(
     score: total,
     components: {
       profit_score: pScore,
-      profit_weight: 0.50,
+      profit_weight: pWeight,
       profit_contribution,
       asset_health_score: aScore,
-      asset_weight: 0.30,
+      asset_weight: aWeight,
       asset_contribution,
       data_maturity_score: dScore,
-      data_maturity_weight: 0.20,
+      data_maturity_weight: dWeight,
       data_maturity_contribution,
       total_confidence_score: total,
     },
@@ -189,9 +207,10 @@ export function calculateConfidenceDetails(
 export function calculateConfidenceScore(
   profit_score: number,
   asset_health_score: number,
-  data_maturity_score: 40 | 70 | 100
+  data_maturity_score: 40 | 70 | 100,
+  customWeights?: { profit_weight: number; asset_weight: number; data_maturity_weight: number }
 ): number {
-  return calculateConfidenceDetails(profit_score, asset_health_score, data_maturity_score).score;
+  return calculateConfidenceDetails(profit_score, asset_health_score, data_maturity_score, customWeights).score;
 }
 
 /**
@@ -250,12 +269,14 @@ export function evaluateCampaignBridge(input: CampaignBridgeInput): BridgeDecisi
   const cooldown_active = Boolean(campaign_metrics.cooldown_active);
   const kill_switch_active = Boolean(automation_settings?.kill_switch);
 
-  // 1. Cálculo da Maturidade de Dados e Confidence Score Tri-Fator com Detalhamento
+  // 1. Cálculo da Maturidade de Dados e Confidence Score Tri-Fator com Perfil de Risco
+  const profileWeights = getProfileWeights(input.confidence_profile);
   const data_maturity_score = calculateDataMaturityScore(orders);
   const { score: confidence_score, components: confidence_components } = calculateConfidenceDetails(
     profit_score,
     asset_health_score,
-    data_maturity_score
+    data_maturity_score,
+    profileWeights
   );
 
   // 2. Classificação de Segurança do Ativo (Meta Asset Intelligence Guard)
@@ -367,6 +388,35 @@ export function evaluateCampaignBridge(input: CampaignBridgeInput): BridgeDecisi
   );
   const dedupe_key = generateDedupeKey(store_id, campaign_id, action, date_window);
 
+  // Snapshot inicial de métricas antes da intervenção
+  const metrics_before: MetricsSnapshot = {
+    spend_brl,
+    orders,
+    revenue_brl,
+    cpa,
+    max_acceptable_cpa: max_cpa,
+    roas,
+    roi,
+    profit,
+    captured_at: new Date().toISOString(),
+  };
+
+  const is_simulation = input.is_simulation !== false;
+  const simulation_thought = is_simulation
+    ? `O ATM teria recomendado ${action} (${budget_change_percent > 0 ? `+${budget_change_percent}` : budget_change_percent}%) com base no Profit Score ${profit_score}/100 e Asset Score ${asset_health_score}/100.`
+    : "";
+
+  const human_explanation = buildHumanExplanation({
+    action,
+    budget_change_percent,
+    confidence_score,
+    metrics: metrics_before,
+    asset_health_score,
+    asset_permission,
+    data_maturity_score,
+    is_simulation,
+  });
+
   return {
     store_id,
     campaign_id,
@@ -384,6 +434,10 @@ export function evaluateCampaignBridge(input: CampaignBridgeInput): BridgeDecisi
     status: "pending_review",
     blocked_by_asset_guard,
     restricted_by_guard,
+    is_simulation,
+    simulation_thought,
+    human_explanation,
+    metrics_before,
     evidence: {
       profit_score,
       asset_health_score,
@@ -459,6 +513,12 @@ export async function persistBridgeRecommendation(
       dedupe_key: result.dedupe_key,
       status: result.status,
       requires_approval: result.requires_approval,
+      is_simulation: result.is_simulation,
+      simulation_thought: result.simulation_thought,
+      human_explanation: result.human_explanation,
+      metrics_before: result.metrics_before,
+      outcome_result: "PENDING_EVALUATION",
+      evaluation_window_hours: 72,
       updated_at: new Date().toISOString(),
     };
 
