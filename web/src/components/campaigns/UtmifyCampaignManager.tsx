@@ -286,12 +286,14 @@ export function UtmifyCampaignManager({
   const [duplicateCopies, setDuplicateCopies] = useState<string>("1");
   const [duplicateNewBudget, setDuplicateNewBudget] = useState<string>("");
   const [duplicateFullClone, setDuplicateFullClone] = useState<boolean>(true);
+  const [duplicateActivateAfter, setDuplicateActivateAfter] = useState<boolean>(true);
   const [duplicationPhase, setDuplicationPhase] = useState<"configure" | "loading" | "success" | "error">("configure");
   const [duplicationStepIndex, setDuplicationStepIndex] = useState<number>(0);
   const [duplicationErrorInline, setDuplicationErrorInline] = useState<string | null>(null);
   const [duplicationResult, setDuplicationResult] = useState<{
     new_campaign_id?: string | null;
     status?: string | null;
+    activated_at?: string | null;
     adsets_count?: number;
     ads_count?: number;
     duration_ms?: number;
@@ -650,6 +652,7 @@ export function UtmifyCampaignManager({
             copies,
             newBudget: duplicateNewBudget ? Number(duplicateNewBudget) : null,
             store_id: activeStore?.id,
+            activate_after_duplication: duplicateActivateAfter,
           }),
         })
       );
@@ -703,7 +706,8 @@ export function UtmifyCampaignManager({
 
         setDuplicationResult({
           new_campaign_id: newCampId || "Criada",
-          status: "PAUSED",
+          status: resInfo?.final_status || (duplicateActivateAfter ? "ACTIVE" : "PAUSED"),
+          activated_at: resInfo?.activated_at || (duplicateActivateAfter ? new Date().toISOString() : null),
           adsets_count: resInfo?.adsets_count ?? (duplicateFullClone ? 1 : 0),
           ads_count: resInfo?.ads_count ?? (duplicateFullClone ? 1 : 0),
           duration_ms: resInfo?.duration_ms || resInfo?.job?.duration_ms,
@@ -2359,7 +2363,7 @@ export function UtmifyCampaignManager({
                   )}
 
                   {duplicateItemLevel === "campaign" && (
-                    <div className="pt-3 border-t border-zinc-800/80">
+                    <div className="pt-3 border-t border-zinc-800/80 space-y-3">
                       <label className="flex items-start gap-3 cursor-pointer select-none group">
                         <input
                           type="checkbox"
@@ -2375,6 +2379,27 @@ export function UtmifyCampaignManager({
                             {duplicateFullClone
                               ? "FULL_CLONE: Clona 100% da árvore (Campanha → Conjuntos → Anúncios → Criativos, Pixel e UTMs)."
                               : "SIMPLE: Clona somente o container da campanha."}
+                          </p>
+                        </div>
+                      </label>
+
+                      {/* Checkbox: Ativar campanha após duplicação (Default: true) */}
+                      <label className="flex items-start gap-3 cursor-pointer select-none group pt-2 border-t border-zinc-800/50">
+                        <input
+                          type="checkbox"
+                          checked={duplicateActivateAfter}
+                          onChange={(e) => setDuplicateActivateAfter(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0 cursor-pointer"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors flex items-center gap-1.5">
+                            Ativar campanha após duplicação
+                            <span className="text-[10px] text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">
+                              Recomendado ATM
+                            </span>
+                          </span>
+                          <p className="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
+                            Cria a árvore com segurança em PAUSED e ativa a veiculação automaticamente após a validação completa.
                           </p>
                         </div>
                       </label>
@@ -2561,7 +2586,7 @@ export function UtmifyCampaignManager({
                 </div>
 
                 {/* Card de Identificação Exclusiva da Campanha Criada */}
-                <div className="bg-[#121622] border border-zinc-800 rounded-xl p-4 space-y-2.5">
+                <div className="bg-[#121622] border border-zinc-800 rounded-xl p-4 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1 min-w-0 flex-1">
                       <span className="text-[11px] text-zinc-400 font-medium block">Nome da Campanha</span>
@@ -2579,12 +2604,36 @@ export function UtmifyCampaignManager({
                     </span>
                   </div>
 
-                  <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs">
-                    <span className="text-zinc-500 text-[11px]">ID da Campanha</span>
-                    <span className="font-mono text-zinc-300 font-medium select-all">
-                      {duplicationResult?.new_campaign_id || "—"}
-                    </span>
+                  <div className="pt-2 border-t border-zinc-800/80 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-zinc-500 text-[10px] block">ID da Campanha</span>
+                      <span className="font-mono text-zinc-300 font-medium text-[11px] select-all">
+                        {duplicationResult?.new_campaign_id || "—"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-500 text-[10px] block">Origem</span>
+                      <span className="text-blue-400 font-medium text-[11px]">
+                        Duplicação ATM
+                      </span>
+                    </div>
                   </div>
+
+                  {duplicationResult?.activated_at && (
+                    <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs">
+                      <span className="text-zinc-400 flex items-center gap-1.5 text-[11px]">
+                        <Clock size={12} className="text-emerald-400" />
+                        Hora de ativação
+                      </span>
+                      <span className="font-mono text-emerald-400 font-bold text-[11px]">
+                        {new Date(duplicationResult.activated_at).toLocaleTimeString("pt-BR", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Grid Executivo de Resumo */}

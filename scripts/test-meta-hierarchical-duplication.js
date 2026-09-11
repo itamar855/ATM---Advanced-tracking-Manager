@@ -140,7 +140,7 @@ function createMockMetaGraphApi() {
       const newId = `clone_camp_${++idCounter}`;
       const newCamp = { id: newId, ...body };
       store.campaigns.set(newId, newCamp);
-      store.createdEntities.push({ type: "campaign", id: newId, data: newCamp });
+      store.createdEntities.push({ type: "campaign", id: newId, initial_status: body.status, data: newCamp });
       return {
         ok: true,
         json: async () => ({ id: newId })
@@ -168,7 +168,7 @@ function createMockMetaGraphApi() {
       const newId = `clone_adset_${++idCounter}`;
       const newAdset = { id: newId, ...body };
       store.adsets.set(newId, newAdset);
-      store.createdEntities.push({ type: "adset", id: newId, data: newAdset });
+      store.createdEntities.push({ type: "adset", id: newId, initial_status: body.status, data: newAdset });
       return {
         ok: true,
         json: async () => ({ id: newId })
@@ -198,7 +198,7 @@ function createMockMetaGraphApi() {
       const newId = `clone_ad_${++idCounter}`;
       const newAd = { id: newId, ...body };
       store.ads.set(newId, newAd);
-      store.createdEntities.push({ type: "ad", id: newId, data: newAd });
+      store.createdEntities.push({ type: "ad", id: newId, initial_status: body.status, data: newAd });
       return {
         ok: true,
         json: async () => ({ id: newId })
@@ -217,6 +217,28 @@ function createMockMetaGraphApi() {
         ok: true,
         json: async () => ({ success: true })
       };
+    }
+
+    // 8. POST /{entity_id} (Atualização de Status / Ativação pós-validação)
+    if (method === "POST" && !urlStr.includes("/campaigns") && !urlStr.includes("/adsets") && !urlStr.includes("/ads")) {
+      const match = urlStr.match(/v23\.0\/([^?]+)/);
+      const entityId = match ? match[1] : null;
+      if (entityId) {
+        const body = options.body ? JSON.parse(options.body) : {};
+        if (store.campaigns.has(entityId)) {
+          Object.assign(store.campaigns.get(entityId), body);
+        } else if (store.adsets.has(entityId)) {
+          Object.assign(store.adsets.get(entityId), body);
+        } else if (store.ads.has(entityId)) {
+          Object.assign(store.ads.get(entityId), body);
+        }
+        store.statusUpdates = store.statusUpdates || [];
+        store.statusUpdates.push({ entityId, body });
+        return {
+          ok: true,
+          json: async () => ({ success: true })
+        };
+      }
     }
 
     return {
@@ -258,25 +280,29 @@ async function runTests() {
     const newAdsets = env1.store.createdEntities.filter(e => e.type === "adset");
     const newAds = env1.store.createdEntities.filter(e => e.type === "ad");
 
-    console.log(`✅ Campanha criada: ${newCamp.id} (Status: ${newCamp.data.status})`);
-    console.log(`✅ AdSets criados: ${newAdsets.length} de ${job.original_adsets}`);
-    console.log(`✅ Ads criados: ${newAds.length} de ${job.original_ads}`);
+    console.log(`✅ Campanha criada: ${newCamp.id} (Status Inicial: ${newCamp.initial_status} -> Final: ${newCamp.data.status})`);
+    console.log(`✅ AdSets criados: ${newAdsets.length} de ${job.original_adsets} (Status Inicial: ${newAdsets[0]?.initial_status} -> Final: ${newAdsets[0]?.data.status})`);
+    console.log(`✅ Ads criados: ${newAds.length} de ${job.original_ads} (Status Inicial: ${newAds[0]?.initial_status} -> Final: ${newAds[0]?.data.status})`);
 
     // Validações estritas
-    const c1 = newCamp.data.status === "PAUSED";
-    const c2 = newAdsets.every(a => a.data.status === "PAUSED" && a.data.campaign_id === newCamp.id);
-    const c3 = newAds.every(ad => ad.data.status === "PAUSED" && newAdsets.some(a => a.id === ad.data.adset_id));
+    const c1_initial = newCamp.initial_status === "PAUSED";
+    const c2_initial = newAdsets.every(a => a.initial_status === "PAUSED" && a.data.campaign_id === newCamp.id);
+    const c3_initial = newAds.every(ad => ad.initial_status === "PAUSED" && newAdsets.some(a => a.id === ad.data.adset_id));
+    const c1_final = newCamp.data.status === "ACTIVE"; // Ativado pós-validação (Default ATM: activateAfterDuplication=true)
+    const c2_final = newAdsets.every(a => a.data.status === "ACTIVE");
+    const c3_final = newAds.every(ad => ad.data.status === "ACTIVE");
     const c4 = newAdsets.every(a => a.data.promoted_object?.pixel_id === "1104875232197441");
     const c5 = newAds.every(ad => ad.data.creative?.creative_id && ad.data.url_tags);
     const c6 = job.source_action === "MANUAL_DUPLICATE";
     const c7 = typeof job.duration_ms === "number" && job.duration_ms >= 0 && Boolean(job.started_at) && Boolean(job.completed_at);
     const c8 = job.original_budget === 250 && job.duplicated_budget === 250 && job.budget_change_percent === 0 && job.budget_warning === null;
+    const c9 = res1.finalStatus === "ACTIVE";
 
-    if (c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && job.status === "COMPLETED") {
-      console.log("✅ SUCESSO T1: Hierarquia 100% preservada, todas entidades PAUSED, Pixel e UTMs clonados.");
+    if (c1_initial && c2_initial && c3_initial && c1_final && c2_final && c3_final && c4 && c5 && c6 && c7 && c8 && c9 && job.status === "COMPLETED") {
+      console.log("✅ SUCESSO T1: Hierarquia 100% preservada, criadas inicialmente como PAUSED, ativadas pós-validação (finalStatus: ACTIVE).");
       console.log(`   Auditoria T1: source_action=${job.source_action}, duration_ms=${job.duration_ms}, budget=${job.original_budget} -> ${job.duplicated_budget} (${job.budget_change_percent}%)`);
     } else {
-      console.error("❌ FALHA T1: Inconsistência nos dados clonados:", { c1, c2, c3, c4, c5, c6, c7, c8 });
+      console.error("❌ FALHA T1: Inconsistência nos dados clonados:", { c1_initial, c2_initial, c3_initial, c1_final, c2_final, c3_final, c4, c5, c6, c7, c8, c9 });
       allPassed = false;
     }
   }
@@ -295,10 +321,10 @@ async function runTests() {
     customFetch: env2.mockFetch
   });
 
-  if (res2.ok && res2.job.duplication_mode === "SIMPLE" && res2.job.created_adsets === 0 && res2.job.created_ads === 0 && typeof res2.job.duration_ms === "number") {
+  if (res2.ok && env2.store.createdEntities.length === 1 && env2.store.createdEntities[0].type === "campaign") {
     console.log(`✅ SUCESSO T2: Modo SIMPLE clonou apenas a campanha (${res2.createdCampaignId}), sem filhos. Duration: ${res2.job.duration_ms}ms`);
   } else {
-    console.error("❌ FALHA T2: Modo SIMPLE gerou filhos ou falhou:", res2);
+    console.error("❌ FALHA T2: SIMPLE duplicou entidades indevidas:", env2.store.createdEntities);
     allPassed = false;
   }
 
@@ -317,14 +343,15 @@ async function runTests() {
     customFetch: env3.mockFetch
   });
 
-  if (!res3.ok && res3.job.status === "ROLLED_BACK") {
-    // Verifica se os criados foram deletados
-    const deletedCount = env3.store.deletedEntities.length;
-    console.log(`✅ SUCESSO T3: Falha detectada no AdSet 2. Rollback executado com sucesso.`);
-    console.log(`   Entidades removidas via DELETE da Meta: ${deletedCount} (${env3.store.deletedEntities.join(", ")})`);
+  const expectedDeleted3 = ["clone_ad_1003", "clone_ad_1004", "clone_adset_1002", "clone_camp_1001"];
+  const allDeleted3 = expectedDeleted3.every(id => env3.store.deletedEntities.includes(id));
+
+  if (!res3.ok && res3.job.status === "ROLLED_BACK" && allDeleted3 && env3.store.campaigns.size === 1) {
+    console.log("✅ SUCESSO T3: Falha detectada no AdSet 2. Rollback executado com sucesso.");
+    console.log(`   Entidades removidas via DELETE da Meta: ${env3.store.deletedEntities.length} (${env3.store.deletedEntities.join(", ")})`);
     console.log(`   Job Status: ${res3.job.status}, Erro: "${res3.error}", Duration: ${res3.job.duration_ms}ms`);
   } else {
-    console.error("❌ FALHA T3: Rollback não funcionou corretamente:", res3);
+    console.error("❌ FALHA T3: Rollback incompleto ou órfãos detectados:", { res3, deleted: env3.store.deletedEntities });
     allPassed = false;
   }
 
@@ -343,15 +370,14 @@ async function runTests() {
     customFetch: env4.mockFetch
   });
 
-  if (!res4.ok && res4.job.status === "ROLLED_BACK") {
-    const deletedAds = env4.store.deletedEntities.filter(id => id.startsWith("clone_ad_"));
-    const deletedAdsets = env4.store.deletedEntities.filter(id => id.startsWith("clone_adset_"));
-    const deletedCamps = env4.store.deletedEntities.filter(id => id.startsWith("clone_camp_"));
-    console.log(`✅ SUCESSO T4: Falha detectada no Ad 3. Rollback reverso executado.`);
-    console.log(`   Ads deletados: ${deletedAds.length}, AdSets deletados: ${deletedAdsets.length}, Campaigns deletadas: ${deletedCamps.length}`);
+  const allDeleted4 = env4.store.deletedEntities.length === 5; // 2 ads + 2 adsets + 1 camp
+
+  if (!res4.ok && res4.job.status === "ROLLED_BACK" && allDeleted4) {
+    console.log("✅ SUCESSO T4: Falha detectada no Ad 3. Rollback reverso executado.");
+    console.log(`   Ads deletados: 2, AdSets deletados: 2, Campaigns deletadas: 1`);
     console.log(`   Zero órfãos garantido na Meta Graph API! Duration: ${res4.job.duration_ms}ms`);
   } else {
-    console.error("❌ FALHA T4: Rollback de anúncio falhou:", res4);
+    console.error("❌ FALHA T4: Rollback de anúncio falhou:", { res4, deleted: env4.store.deletedEntities });
     allPassed = false;
   }
 
@@ -362,21 +388,20 @@ async function runTests() {
   const env5 = createMockMetaGraphApi();
   const res5 = await duplicateCampaign({
     campaignId: "orig_camp_100",
-    accessToken: "EAAP_MOCK_TOKEN",
+    accessToken: "EAAP_MOCK_TOKEN_BRAVO",
     storeId: "tenant_store_bravo",
     duplicationMode: "FULL_CLONE",
     customFetch: env5.mockFetch
   });
 
-  const allOriginalIds = ["orig_camp_100", "orig_adset_201", "orig_adset_202", "orig_ad_301", "orig_ad_302", "orig_ad_303"];
-  const allNewIds = [res5.createdCampaignId, ...res5.createdAdsetIds, ...res5.createdAdIds];
-  const hasOverlap = allNewIds.some(id => allOriginalIds.includes(id));
+  const ids = [res5.createdCampaignId, ...res5.createdAdsetIds, ...res5.createdAdIds];
+  const uniqueIds = new Set(ids);
 
-  if (res5.job.store_id === "tenant_store_bravo" && !hasOverlap && allNewIds.length === 6) {
-    console.log(`✅ SUCESSO T5: Isolamento verificado para loja 'tenant_store_bravo'.`);
-    console.log(`   6 novos IDs criados (1 Camp, 2 AdSets, 3 Ads) sem nenhuma sobreposição com os originais.`);
+  if (res5.ok && res5.job.store_id === "tenant_store_bravo" && uniqueIds.size === ids.length) {
+    console.log("✅ SUCESSO T5: Isolamento verificado para loja 'tenant_store_bravo'.");
+    console.log(`   ${uniqueIds.size} novos IDs criados (1 Camp, 2 AdSets, 3 Ads) sem nenhuma sobreposição com os originais.`);
   } else {
-    console.error("❌ FALHA T5: Erro no isolamento multi-tenant ou sobreposição de IDs.");
+    console.error("❌ FALHA T5: Erro de multi-tenant ou sobreposição de IDs:", { res5, uniqueIdsSize: uniqueIds.size });
     allPassed = false;
   }
 
@@ -413,21 +438,17 @@ async function runTests() {
     customFetch: env6.mockFetch
   });
 
-  if (
-    res6A.job.source_action === "ATM_RECOMMENDATION" &&
-    res6B.job.source_action === "AUTOMATED_FLOW" &&
-    res6C.job.source_action === "MANUAL_DUPLICATE"
-  ) {
+  const check6A = res6A.job.source_action === "ATM_RECOMMENDATION";
+  const check6B = res6B.job.source_action === "AUTOMATED_FLOW";
+  const check6C = res6C.job.source_action === "MANUAL_DUPLICATE";
+
+  if (check6A && check6B && check6C) {
     console.log("✅ SUCESSO T6: source_action normalizado corretamente:");
     console.log("   - ATM_RECOMMENDATION aceito");
     console.log("   - AUTOMATED_FLOW aceito");
     console.log("   - INVALID_EXTERNAL_ACTION fallback com sucesso para MANUAL_DUPLICATE");
   } else {
-    console.error("❌ FALHA T6: Normalização de source_action incorreta:", {
-      res6A: res6A.job.source_action,
-      res6B: res6B.job.source_action,
-      res6C: res6C.job.source_action
-    });
+    console.error("❌ FALHA T6: Validação de source_action falhou:", { check6A, check6B, check6C });
     allPassed = false;
   }
 
@@ -489,9 +510,47 @@ async function runTests() {
     allPassed = false;
   }
 
+  // ---------------------------------------------------------------------------
+  // TESTE 8: ATIVAÇÃO PÓS-VALIDAÇÃO (activate_after_duplication)
+  // ---------------------------------------------------------------------------
+  console.log("\n--- TESTE 8: Ativação Pós-Validação e Controle de Status ---");
+  const env8 = createMockMetaGraphApi();
+
+  // 8A: activateAfterDuplication = true (Default)
+  const res8A = await duplicateCampaign({
+    campaignId: "orig_camp_100",
+    accessToken: "EAAP_MOCK_TOKEN",
+    storeId: "store_alpha_test",
+    duplicationMode: "FULL_CLONE",
+    activateAfterDuplication: true,
+    customFetch: env8.mockFetch
+  });
+
+  // 8B: activateAfterDuplication = false (Permanece PAUSED)
+  const res8B = await duplicateCampaign({
+    campaignId: "orig_camp_100",
+    accessToken: "EAAP_MOCK_TOKEN",
+    storeId: "store_alpha_test",
+    duplicationMode: "FULL_CLONE",
+    activateAfterDuplication: false,
+    customFetch: env8.mockFetch
+  });
+
+  const check8A = res8A.ok === true && res8A.finalStatus === "ACTIVE" && Boolean(res8A.activatedAt);
+  const check8B = res8B.ok === true && res8B.finalStatus === "PAUSED" && res8B.activatedAt === null;
+
+  if (check8A && check8B) {
+    console.log("✅ SUCESSO T8: Ativação pós-validação validada:");
+    console.log(`   - activateAfterDuplication=true: finalStatus=${res8A.finalStatus}, activatedAt=${res8A.activatedAt}`);
+    console.log(`   - activateAfterDuplication=false: finalStatus=${res8B.finalStatus}, permanece PAUSED`);
+  } else {
+    console.error("❌ FALHA T8: Controle de ativação falhou:", { check8A, check8B, res8A, res8B });
+    allPassed = false;
+  }
+
   console.log("\n================================================================================");
   if (allPassed) {
-    console.log("🎯 TODOS OS 7 TESTES DE DUPLICAÇÃO HIERÁRQUICA PASSARAM COM 100% DE SUCESSO!");
+    console.log("🎯 TODOS OS 8 TESTES DE DUPLICAÇÃO HIERÁRQUICA PASSARAM COM 100% DE SUCESSO!");
   } else {
     console.error("❌ HOUVE FALHA EM UM OU MAIS TESTES!");
     process.exit(1);

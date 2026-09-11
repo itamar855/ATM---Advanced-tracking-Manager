@@ -182,6 +182,9 @@ export async function POST(request: NextRequest) {
       // Se for nível campanha, utiliza o motor de duplicação hierárquica (FULL_CLONE ou SIMPLE)
       if (level === "campaign") {
         const duplicationResults = [];
+        const activateAfterDuplication = body.activate_after_duplication !== undefined
+          ? Boolean(body.activate_after_duplication)
+          : true;
 
         for (let i = 0; i < copies; i++) {
           const result = await duplicateCampaign({
@@ -191,6 +194,7 @@ export async function POST(request: NextRequest) {
             duplicationMode,
             sourceAction,
             newDailyBudgetCents: targetBudget,
+            activateAfterDuplication,
           });
 
           if (!result.ok) {
@@ -215,10 +219,13 @@ export async function POST(request: NextRequest) {
           id,
           duplication_mode: duplicationMode,
           source_action: sourceAction,
+          activate_after_duplication: activateAfterDuplication,
           results: duplicationResults.map((r) => ({
             new_campaign_id: r.createdCampaignId,
             adsets_count: r.createdAdsetIds?.length || 0,
             ads_count: r.createdAdIds?.length || 0,
+            final_status: r.finalStatus || "PAUSED",
+            activated_at: r.activatedAt || null,
             budget_validation: {
               original_budget: r.job.original_budget,
               duplicated_budget: r.job.duplicated_budget,

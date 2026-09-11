@@ -55,6 +55,7 @@ export interface DuplicationOptions {
   copiesCount?: number; // Default: 1
   newDailyBudgetCents?: number | null;
   preferredName?: string;
+  activateAfterDuplication?: boolean; // Default: true (Regra ATM)
   customFetch?: typeof fetch; // Injeção de dependência para testes automatizados com mocks
 }
 
@@ -64,6 +65,8 @@ export interface DuplicationResult {
   createdCampaignId?: string | null;
   createdAdsetIds?: string[];
   createdAdIds?: string[];
+  finalStatus?: "ACTIVE" | "PAUSED";
+  activatedAt?: string | null;
   error?: string;
 }
 
@@ -112,6 +115,53 @@ export async function persistDuplicationLog(log: DuplicationJobLog): Promise<voi
     }
   } catch (err: any) {
     console.warn("[persistDuplicationLog] Falha assíncrona ao persistir log:", err.message);
+  }
+}
+
+export type CampaignStatusEventType =
+  | "CAMPAIGN_DUPLICATED"
+  | "DELIVERY_ENABLED"
+  | "CAMPAIGN_PAUSED";
+
+export interface CampaignStatusHistoryRecord {
+  id?: string;
+  store_id: string;
+  campaign_id: string;
+  source_campaign_id?: string | null;
+  event_type: CampaignStatusEventType;
+  previous_status: string | null;
+  new_status: string;
+  source: string;
+  created_at?: string;
+  metadata_json?: Record<string, any>;
+}
+
+/**
+ * Registra a transição de status na tabela de auditoria campaign_status_history
+ */
+export async function persistCampaignStatusHistory(
+  record: CampaignStatusHistoryRecord
+): Promise<void> {
+  try {
+    const supabase = createAdminClient();
+    const payload = {
+      store_id: record.store_id,
+      campaign_id: record.campaign_id,
+      source_campaign_id: record.source_campaign_id || null,
+      event_type: record.event_type,
+      previous_status: record.previous_status || null,
+      new_status: record.new_status,
+      source: record.source || "MANUAL_DUPLICATE",
+      created_at: record.created_at || new Date().toISOString(),
+      metadata_json: record.metadata_json || {},
+    };
+
+    const { error } = await supabase.from("campaign_status_history").insert(payload);
+    if (error) {
+      console.warn("[persistCampaignStatusHistory] Aviso ao salvar status (tabela pode estar pendente de migração):", error.message);
+    }
+  } catch (err: any) {
+    console.warn("[persistCampaignStatusHistory] Falha assíncrona ao persistir status:", err.message);
   }
 }
 
@@ -173,6 +223,7 @@ export async function duplicateCampaign(options: DuplicationOptions): Promise<Du
     sourceAction,
     newDailyBudgetCents = null,
     preferredName,
+    activateAfterDuplication = true,
     customFetch = fetch,
   } = options;
 
@@ -309,6 +360,59 @@ export async function duplicateCampaign(options: DuplicationOptions): Promise<Du
 
     // Se o modo for "SIMPLE", finaliza após clonar apenas o container da campanha
     if (duplicationMode === "SIMPLE") {
+      await persistCampaignStatusHistory({
+        store_id: storeId,
+        campaign_id: createdCampaignId!,
+        source_campaign_id: campaignId,
+        event_type: "CAMPAIGN_DUPLICATED",
+        previous_status: null,
+        new_status: "PAUSED",
+        source: normalizedAction,
+        metadata_json: {
+          duplication_mode: "SIMPLE",
+          budget: duplicatedBudgetUnits,
+        },
+      });
+
+      let finalStatus: "ACTIVE" | "PAUSED" = "PAUSED";
+      let activatedAtIso: string | null = null;
+
+      if (activateAfterDuplication) {
+        await customFetch(`${GRAPH_BASE}/${createdCampaignId}?access_token=${accessToken}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "ACTIVE" }),
+        });
+        finalStatus = "ACTIVE";
+        activatedAtIso = new Date().toISOString();
+        const activationDelaySeconds = Number(((Date.now() - startTime) / 1000).toFixed(2));
+
+        await persistCampaignStatusHistory({
+          store_id: storeId,
+          campaign_id: createdCampaignId!,
+          source_campaign_id: campaignId,
+          event_type: "DELIVERY_ENABLED",
+          previous_status: "PAUSED",
+          new_status: "ACTIVE",
+          source: normalizedAction,
+          created_at: activatedAtIso,
+          metadata_json: {
+            activation_trigger: "ATM_DUPLICATION",
+            source_campaign_id: campaignId,
+            new_campaign_id: createdCampaignId!,
+            duplication_mode: "SIMPLE",
+            initial_status: "PAUSED",
+            activation_delay_seconds: activationDelaySeconds,
+            created_entities: {
+              campaigns_count: 1,
+              adsets_count: 0,
+              ads_count: 0,
+            },
+            activated_at: activatedAtIso,
+          },
+        });
+      }
+
       const finishTime = Date.now();
       job.completed_at = new Date(finishTime).toISOString();
       job.duration_ms = finishTime - startTime;
@@ -320,6 +424,8 @@ export async function duplicateCampaign(options: DuplicationOptions): Promise<Du
         createdCampaignId,
         createdAdsetIds: [],
         createdAdIds: [],
+        finalStatus,
+        activatedAt: activatedAtIso,
       };
     }
 
@@ -454,6 +560,91 @@ export async function duplicateCampaign(options: DuplicationOptions): Promise<Du
       );
     }
 
+    // 1. Registra evento de auditoria: CAMPAIGN_DUPLICATED (inicialmente criada como PAUSED)
+    await persistCampaignStatusHistory({
+      store_id: storeId,
+      campaign_id: createdCampaignId!,
+      source_campaign_id: campaignId,
+      event_type: "CAMPAIGN_DUPLICATED",
+      previous_status: null,
+      new_status: "PAUSED",
+      source: normalizedAction,
+      metadata_json: {
+        duplication_mode: "FULL_CLONE",
+        budget: duplicatedBudgetUnits,
+        adsets_count: createdAdsetIds.length,
+        ads_count: createdAdIds.length,
+      },
+    });
+
+    let finalStatus: "ACTIVE" | "PAUSED" = "PAUSED";
+    let activatedAtIso: string | null = null;
+
+    // Se activateAfterDuplication = true (padrão da ATM):
+    // FLUXO: CREATE PAUSED -> VALIDATE HIERARCHY -> ACTIVATE CAMPAIGN -> ACTIVATE ADSETS -> ACTIVATE ADS -> REGISTER DELIVERY_ENABLED EVENT
+    if (activateAfterDuplication) {
+      // 2. ACTIVATE CAMPAIGN
+      const actCampRes = await customFetch(`${GRAPH_BASE}/${createdCampaignId}?access_token=${accessToken}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ACTIVE" }),
+      });
+      const actCampData = await actCampRes.json().catch(() => ({}));
+      if (!actCampRes.ok) {
+        console.warn(`[duplicateCampaign] Falha ao ativar campanha ${createdCampaignId}:`, actCampData?.error?.message);
+      }
+
+      // 3. ACTIVATE ADSETS
+      for (const asId of createdAdsetIds) {
+        await customFetch(`${GRAPH_BASE}/${asId}?access_token=${accessToken}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "ACTIVE" }),
+        });
+      }
+
+      // 4. ACTIVATE ADS
+      for (const adId of createdAdIds) {
+        await customFetch(`${GRAPH_BASE}/${adId}?access_token=${accessToken}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "ACTIVE" }),
+        });
+      }
+
+      finalStatus = "ACTIVE";
+      activatedAtIso = new Date().toISOString();
+      const activationDelaySeconds = Number(((Date.now() - startTime) / 1000).toFixed(2));
+
+      // 5. REGISTER DELIVERY_ENABLED EVENT
+      await persistCampaignStatusHistory({
+        store_id: storeId,
+        campaign_id: createdCampaignId!,
+        source_campaign_id: campaignId,
+        event_type: "DELIVERY_ENABLED",
+        previous_status: "PAUSED",
+        new_status: "ACTIVE",
+        source: normalizedAction,
+        created_at: activatedAtIso,
+        metadata_json: {
+          activation_trigger: "ATM_DUPLICATION",
+          source_campaign_id: campaignId,
+          new_campaign_id: createdCampaignId!,
+          duplication_mode: "FULL_CLONE",
+          initial_status: "PAUSED",
+          activation_delay_seconds: activationDelaySeconds,
+          created_entities: {
+            campaigns_count: 1,
+            adsets_count: createdAdsetIds.length,
+            ads_count: createdAdIds.length,
+          },
+          activated_adsets: createdAdsetIds.length,
+          activated_ads: createdAdIds.length,
+          activated_at: activatedAtIso,
+        },
+      });
+    }
+
     const finishTime = Date.now();
     job.completed_at = new Date(finishTime).toISOString();
     job.duration_ms = finishTime - startTime;
@@ -466,6 +657,8 @@ export async function duplicateCampaign(options: DuplicationOptions): Promise<Du
       createdCampaignId,
       createdAdsetIds,
       createdAdIds,
+      finalStatus,
+      activatedAt: activatedAtIso,
     };
   } catch (err: any) {
     // -------------------------------------------------------------------------
