@@ -280,6 +280,65 @@ Contas de anúncio configuradas em USD com vendas ocorrendo em BRL geravam disto
 - RLS habilitado para garantia total de isolamento multi-tenant.
 - Métricas detalhadas preservadas em coluna `metrics` (JSONB).
 
+---
+
+## 10. Campaign Intelligence Bridge™ — Modo Copilot (Fase 10.1)
+
+### 10.1 Arquitetura e Fusão de Sinais
+A **Campaign Intelligence Bridge** conecta o motor financeiro (**Campaign Profit Engine**) e o motor de segurança jurídica/operacional de contas (**Meta Asset Intelligence Guard**) para geração de recomendações auditáveis assistidas (`requires_approval: true`), sem execução autônoma na Meta Graph API.
+
+```
+Campaign Profit Engine (Score 0-100, BRL) ──┐
+                                            ▼
+                               Campaign Intelligence Bridge
+                                            ▲
+Meta Asset Intelligence Guard (Health 0-100)─┘
+                                            │
+                                            ▼
+               public.campaign_intelligence_recommendations
+                               (status: pending_review)
+```
+
+### 10.2 Confidence Score Tri-Fator
+Diferente de uma simples média, o índice de confiança contábil-operacional pondera maturidade estatística:
+$$\text{confidence\_score} = 50\% \times \text{profit\_score} + 30\% \times \text{asset\_health\_score} + 20\% \times \text{data\_maturity\_score}$$
+* **Data Maturity Score:**
+  - $< 5$ pedidos: 40 pontos (estatisticamente preliminar)
+  - $5 \dots 20$ pedidos: 70 pontos (volume representativo)
+  - $> 20$ pedidos: 100 pontos (amostra madura)
+
+### 10.3 Refinamento de Governança do Asset Guard na Escala (`asset_permission`)
+Ao avaliar ações de aumento orçamentário (`SCALE`), o nível de permissão retornado é:
+* `SAFE` ($\text{asset\_score} \ge 85$): Permite `SCALE` normal (+20% a +30%).
+* `RESTRICTED` ($\text{asset\_score} \in [70, 84]$): Permite somente escala conservadora (poda de segurança para no máximo +15% diário).
+* `BLOCKED` ($\text{asset\_score} < 70$): Impede qualquer escala (`action: "NO_ACTION"` com `reason: BLOCKED_BY_ASSET_GUARD` e `blocked_by_asset_guard: true`).
+
+### 10.4 Cooldown e Deduplicação Determinística (`recommendation_hash`)
+* Composição: `${store_id}:${campaign_id}:${action}:${budget_change_percent}:${date_window_24h}`.
+* Se existir recomendação idêntica dentro da janela de 24 horas: nenhum novo registro é criado (`skipped: true, deduped: true`).
+* Persistência na tabela `public.campaign_intelligence_recommendations` (Migration `025_create_campaign_intelligence_recommendations.sql`).
+
+### 10.5 Motivação Comercial e Finalidade Estratégica
+
+#### Por que o Confidence Score não mede apenas performance financeira?
+A confiança da recomendação não representa apenas resultado financeiro momentâneo. Ela quantifica o **grau de certeza e solidez da decisão**, fundindo três pilares indissociáveis:
+1. **Resultado Financeiro (`profit_score` — 50%)**: Garante que a campanha gera lucro líquido contábil real em BRL.
+2. **Saúde e Integridade do Ativo (`asset_health_score` — 30%)**: Garante que o ativo Meta (conta, BM, score de entrega, histórico de billing) suporta a manobra sem risco de restrição, ban ou elevação de CPM.
+3. **Volume Estatístico de Conversões (`data_maturity_score` — 20%)**: Avalia a robustez da amostragem para distinguir consistência de variância aleatória.
+
+> **Princípio Fundamental:** Uma campanha pode apresentar lucro elevado (ex.: ROAS 5.0x com 2 compras) e ainda assim possuir baixa confiança global devido à escassa amostragem estatística. Essa regra protege o gestor contra falsos positivos e decisões precipitadas de escala em dados imaturos.
+
+#### Por que o Recommendation Cooldown é mandatório?
+Em mídia de performance, alterações sucessivas de orçamento no mesmo dia desestabilizam o leilão, reiniciam a fase de aprendizado e encarecem o CPA. O cooldown via `recommendation_hash` atua estrategicamente como:
+- **Proteção Contra Ansiedade Algorítmica**: Impede que execuções frequentes de análise gerem recomendações duplicadas ou cumulativas em cascata.
+- **Filtro de Ruído para o Gestor**: Mantém uma única recomendação consolidada e auditável por campanha a cada 24 horas, eliminando poluição de backlog.
+- **Respeito ao Tempo de Resposta do Leilão**: Assegura a janela mínima necessária para o algoritmo da Meta calibrar antes de qualquer nova movimentação.
+
+#### O Papel do Modo Copilot
+O verdadeiro diferencial do ATM não é automatizar botões de API na Meta. O diferencial é **construir uma camada de inteligência com discernimento analítico superior ao gestor médio**, onde cada sugestão é explicável, embasada e sujeita à aprovação humana soberana (`requires_approval: true`).
+
+
+
 
 
 

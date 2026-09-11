@@ -59,20 +59,27 @@
 ---
 
 ### ✅ Fase 10 — Financial Normalization & Campaign Profit Intelligence Layer™
-- **Status**: Concluída e auditada (**24 PASS | 0 FAIL**).
-- **Módulos Criados**:
-  - `supabase/migrations/024_create_campaign_profit_intelligence.sql`: Tabela `public.campaign_profit_snapshots` para registro contábil e auditoria diária.
-  - `web/src/lib/intelligence/campaign-profit-engine.ts`: Motor matemático com normalização cambial estrita (`spend_original`, `currency_original` preservados; conversão para `spend_brl`), ponderação dos 5 pilares do **Campaign Profit Score** (0 a 100), classificação de Tiers (`GREEN`, `YELLOW`, `RED`) e decisões prescritivas (`SCALE`, `MAINTAIN`, `REDUCE`, `PAUSE`).
-  - `scripts/test-campaign-profit-engine.js`: Suíte automatizada cobrindo os 5 cenários mandatórios.
-- **Proteção Contra Falso ROAS**: Imunização contra contas em USD comparadas com receita em BRL (detecção de distorção cambial e corte automático de escala).
-- **Preservação**: Nenhuma alteração em `events`, `orders`, `revenue_ledger`, `attribution-engine.ts`, `identity-stitcher.ts`, webhooks ou sync do Meta existente. Nenhuma UI criada. Nenhum acionamento automático de autopilot.
+- **Status**: Concluída, commitada e enviada para `origin/main` (Commit `d3ae049` — **29 PASS | 0 FAIL**).
+- **Módulos**: `supabase/migrations/024_create_campaign_profit_intelligence.sql`, `web/src/lib/intelligence/campaign-profit-engine.ts`, `scripts/test-campaign-profit-engine.js`.
+- **Guardrails**: `LEARNING_PHASE_PROTECTION`, `SCALE_VOLUME_GATE` e `RED_TIER_GOVERNANCE`.
 
 ---
 
-## 2. Testes de Validação do Sistema
+### ✅ Fase 10.1 — Campaign Intelligence Bridge (Copilot Mode)
+- **Status**: Concluída e auditada (**35 PASS | 0 FAIL**).
+- **Módulos Criados**:
+  - `supabase/migrations/025_create_campaign_intelligence_recommendations.sql`: Tabela `public.campaign_intelligence_recommendations` com governança assistida (`requires_approval: true`), status `pending_review`, `asset_permission` (`SAFE`, `RESTRICTED`, `BLOCKED`) e deduplicação via `recommendation_hash`.
+  - `web/src/lib/intelligence/campaign-intelligence-bridge.ts`: Fusão de sinais contábeis com saúde de ativos, Confidence Score Tri-Fator (50% profit, 30% asset, 20% data maturity) com salvamento de componentes em `evidence_json`, Cooldown de 24h anti-duplicação (`recommendation_hash`) e governança de Asset Guard (`asset_permission`).
+  - `scripts/test-campaign-intelligence-bridge.js`: Suíte automatizada cobrindo os 6 cenários mandatórios e os 3 refinamentos.
+- **Preservação**: Zero escrita na Meta API, zero UI, zero auto-escala.
+
+---
+
+## 2. Mapa dos Testes Automatizados Disponíveis
 
 Para validar a qualquer momento no terminal:
 ```bash
+node scripts/test-campaign-intelligence-bridge.js
 node scripts/test-campaign-profit-engine.js
 node scripts/test-meta-performance-observability.js
 node scripts/test-meta-cache-and-concurrency.js
@@ -81,15 +88,15 @@ node scripts/test-asset-intelligence-guard.js
 node scripts/test-meta-asset-health-engine.js
 node scripts/test-dashboard-financial-conciliation.js
 ```
-*(Todos retornam 100% PASS — Total: 58 testes aprovados)*
+*(Todos retornam 100% PASS — Total: 98 testes aprovados)*
 
 ---
 
-## 3. Arquivos da Fase 10 (Aguardando Autorização para Commit)
+## 3. Arquivos da Fase 10.1 (Aguardando Autorização para Commit)
 
-- **Novo**: `supabase/migrations/024_create_campaign_profit_intelligence.sql`
-- **Novo**: `web/src/lib/intelligence/campaign-profit-engine.ts`
-- **Novo**: `scripts/test-campaign-profit-engine.js`
+- **Novo**: `supabase/migrations/025_create_campaign_intelligence_recommendations.sql`
+- **Novo**: `web/src/lib/intelligence/campaign-intelligence-bridge.ts`
+- **Novo**: `scripts/test-campaign-intelligence-bridge.js`
 - **Modificado**: `CEREBRO_TECNICO.md`
 - **Modificado**: `docs/ESTADO_ATUAL_RETOMADA.md`
 
