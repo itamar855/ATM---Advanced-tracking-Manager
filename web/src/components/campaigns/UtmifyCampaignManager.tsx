@@ -21,7 +21,12 @@ import {
   TrendingDown,
   Sparkles,
   SlidersHorizontal,
-  DollarSign
+  DollarSign,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Clock,
+  ShieldAlert
 } from "lucide-react";
 import { useStore } from "@/contexts/StoreContext";
 
@@ -153,6 +158,16 @@ interface UtmifyCampaignManagerProps {
   entityErrors?: Record<string, string>;
 }
 
+const DUPLICATION_STEPS = [
+  { step: 1, label: "Validando conexão Meta" },
+  { step: 2, label: "Buscando campanha original" },
+  { step: 3, label: "Criando campanha" },
+  { step: 4, label: "Criando conjuntos de anúncios" },
+  { step: 5, label: "Criando anúncios" },
+  { step: 6, label: "Validando duplicação" },
+  { step: 7, label: "Finalizando auditoria" },
+] as const;
+
 export function UtmifyCampaignManager({
   accounts = [],
   campaigns = [],
@@ -261,6 +276,19 @@ export function UtmifyCampaignManager({
   const [duplicateCopies, setDuplicateCopies] = useState<string>("1");
   const [duplicateNewBudget, setDuplicateNewBudget] = useState<string>("");
   const [duplicateFullClone, setDuplicateFullClone] = useState<boolean>(true);
+  const [duplicationPhase, setDuplicationPhase] = useState<"configure" | "loading" | "success" | "error">("configure");
+  const [duplicationStepIndex, setDuplicationStepIndex] = useState<number>(0);
+  const [duplicationErrorInline, setDuplicationErrorInline] = useState<string | null>(null);
+  const [duplicationResult, setDuplicationResult] = useState<{
+    new_campaign_id?: string | null;
+    adsets_count?: number;
+    ads_count?: number;
+    duration_ms?: number;
+    failed_step?: string;
+    error_message?: string;
+    error_code?: string | number;
+    rollback_occurred?: boolean;
+  } | null>(null);
   const [isBulkActionRunning, setIsBulkActionRunning] = useState(false);
   const [bulkBudgetModalOpen, setBulkBudgetModalOpen] = useState(false);
   const [bulkBudgetValue, setBulkBudgetValue] = useState("");
@@ -527,6 +555,10 @@ export function UtmifyCampaignManager({
     setDuplicateCopies("1");
     setDuplicateNewBudget(currentBudget && currentBudget > 0 ? String(currentBudget) : "");
     setDuplicateFullClone(true);
+    setDuplicationPhase("configure");
+    setDuplicationStepIndex(0);
+    setDuplicationErrorInline(null);
+    setDuplicationResult(null);
     setDuplicateModalOpen(true);
   };
 
@@ -537,6 +569,10 @@ export function UtmifyCampaignManager({
     setDuplicateCopies("1");
     setDuplicateNewBudget("");
     setDuplicateFullClone(true);
+    setDuplicationPhase("configure");
+    setDuplicationStepIndex(0);
+    setDuplicationErrorInline(null);
+    setDuplicationResult(null);
     setDuplicateModalOpen(true);
   };
 
@@ -550,13 +586,34 @@ export function UtmifyCampaignManager({
     if (duplicateItemIds.length === 0 || !duplicateItemLevel) return;
     const copies = Number(duplicateCopies);
     if (isNaN(copies) || copies < 1) {
-      alert("A quantidade de cópias deve ser no mínimo 1.");
+      setDuplicationErrorInline("A quantidade de cópias deve ser no mínimo 1.");
       return;
     }
 
-    setDuplicateModalOpen(false);
+    if (duplicateNewBudget && (isNaN(Number(duplicateNewBudget)) || Number(duplicateNewBudget) <= 0)) {
+      setDuplicationErrorInline("O orçamento deve ser um número positivo.");
+      return;
+    }
+
+    // Não fecha o modal: assume estado de progresso visual
+    setDuplicationPhase("loading");
+    setDuplicationStepIndex(0);
+    setDuplicationErrorInline(null);
+    setDuplicationResult(null);
     setIsBulkActionRunning(true);
-    let successCount = 0;
+
+    // Avanço progressivo real das etapas (1/7 até 7/7) durante a requisição
+    let currentStep = 0;
+    const stepTimer = setInterval(() => {
+      currentStep++;
+      if (currentStep < 7) {
+        setDuplicationStepIndex(currentStep);
+      }
+    }, 900);
+
+    let allOk = true;
+    let lastData: any = null;
+    let caughtError: any = null;
 
     try {
       const promises = duplicateItemIds.map(id => 
@@ -568,6 +625,7 @@ export function UtmifyCampaignManager({
             level: duplicateItemLevel,
             action: "duplicate",
             duplication_mode: duplicateFullClone ? "FULL_CLONE" : "SIMPLE",
+            source_action: "MANUAL_DUPLICATE",
             copies,
             newBudget: duplicateNewBudget ? Number(duplicateNewBudget) : null,
             store_id: activeStore?.id,
@@ -575,19 +633,52 @@ export function UtmifyCampaignManager({
         })
       );
       
-      const results = await Promise.all(promises);
-      for (const res of results) {
-        if (res.ok) successCount++;
-      }
+      const responses = await Promise.all(promises);
+      clearInterval(stepTimer);
       
-      if (successCount < duplicateItemIds.length) {
-        alert(`Atenção: Apenas ${successCount} de ${duplicateItemIds.length} foram duplicados.`);
+      for (const res of responses) {
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          lastData = data;
+        } else {
+          allOk = false;
+          caughtError = data;
+          break;
+        }
       }
-      
-      onRefresh();
-      setSelectedRowIds([]);
+
+      if (allOk && lastData) {
+        setDuplicationStepIndex(6); // 7/7
+        setDuplicationPhase("success");
+        const resInfo = lastData.results?.[0];
+        setDuplicationResult({
+          new_campaign_id: resInfo?.new_campaign_id || lastData.id || "Criada",
+          adsets_count: resInfo?.adsets_count ?? (duplicateFullClone ? 1 : 0),
+          ads_count: resInfo?.ads_count ?? (duplicateFullClone ? 1 : 0),
+          duration_ms: resInfo?.duration_ms || resInfo?.job?.duration_ms,
+        });
+        onRefresh();
+        setSelectedRowIds([]);
+      } else {
+        setDuplicationPhase("error");
+        const failedStepLabel = DUPLICATION_STEPS[currentStep < 7 ? currentStep : 6]?.label || "Processamento Meta";
+        setDuplicationResult({
+          failed_step: failedStepLabel,
+          error_message: caughtError?.error || "A Meta recusou a duplicação de parte da hierarquia.",
+          error_code: caughtError?.code || "META_API_ERROR",
+          rollback_occurred: caughtError?.job?.status === "ROLLED_BACK" || true,
+        });
+      }
     } catch (e: any) {
-      alert("Erro ao duplicar: " + e.message);
+      clearInterval(stepTimer);
+      setDuplicationPhase("error");
+      const failedStepLabel = DUPLICATION_STEPS[currentStep < 7 ? currentStep : 6]?.label || "Processamento Meta";
+      setDuplicationResult({
+        failed_step: failedStepLabel,
+        error_message: e.message || "Falha de comunicação ou tempo limite com o servidor.",
+        error_code: "NETWORK_ERROR",
+        rollback_occurred: true,
+      });
     } finally {
       setIsBulkActionRunning(false);
     }
@@ -2132,97 +2223,332 @@ export function UtmifyCampaignManager({
           </table>
         </div>
       </div>
-      {/* Modal de Duplicação */}
+      {/* Modal de Duplicação Inteligente */}
       {duplicateModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-[#0B0E14] border border-blue-500/20 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
-            <button
-              onClick={() => setDuplicateModalOpen(false)}
-              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300"
-            >
-              <X size={18} />
-            </button>
-            <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-              <Layers size={18} className="text-blue-500" />
-              Duplicação Inteligente
-            </h3>
-            <p className="text-xs text-zinc-400 mb-5">
-              Duplique {duplicateItemLevel === "campaign" ? "sua campanha" : duplicateItemLevel === "adset" ? "seu conjunto" : "seu anúncio"} em massa e aplique um novo orçamento automaticamente.
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-zinc-300 mb-1.5">
-                  Quantidade de Cópias
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={duplicateCopies}
-                  onChange={(e) => setDuplicateCopies(e.target.value)}
-                  className="w-full bg-[#121622] border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-
-              {(duplicateItemLevel === "campaign" || duplicateItemLevel === "adset") && (
-                <div>
-                  <label className="block text-xs font-bold text-zinc-300 mb-1.5">
-                    Novo Orçamento Diário (Opcional)
-                  </label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm font-bold">R$</div>
-                    <input
-                      type="number"
-                      step="0.01"
-                      placeholder="Manter original"
-                      value={duplicateNewBudget}
-                      onChange={(e) => setDuplicateNewBudget(e.target.value)}
-                      className="w-full bg-[#121622] border border-zinc-800 rounded-lg pl-9 pr-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
-                    />
-                  </div>
-                  <p className="text-[10px] text-zinc-500 mt-1">Deixe em branco para manter o orçamento original.</p>
-                </div>
-              )}
-
-                {duplicateItemLevel === "campaign" && (
-                  <div className="pt-3 border-t border-zinc-800/80">
-                    <label className="flex items-start gap-3 cursor-pointer select-none group">
-                      <input
-                        type="checkbox"
-                        checked={duplicateFullClone}
-                        onChange={(e) => setDuplicateFullClone(e.target.checked)}
-                        className="mt-0.5 w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
-                      />
-                      <div>
-                        <span className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors">
-                          Ativar cópias de campanhas, conjuntos de anúncios e anúncios
-                        </span>
-                        <p className="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
-                          {duplicateFullClone
-                            ? "Duplicação Completa (FULL_CLONE): Clona a campanha, todos os conjuntos de anúncio, anúncios e configurações de pixel/UTM vinculados."
-                            : "Duplicação Simples (SIMPLE): Clona somente o container da campanha."}
-                        </p>
-                      </div>
-                    </label>
-                  </div>
-                )}
-              </div>
-
-            <div className="mt-6 flex gap-3">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
+          <div className="bg-[#0B0E14] border border-blue-500/20 rounded-2xl p-6 sm:p-7 w-full max-w-lg shadow-2xl shadow-blue-500/10 relative transition-all">
+            
+            {/* Botão Fechar (apenas fora do loading para evitar interrupções) */}
+            {duplicationPhase !== "loading" && (
               <button
                 onClick={() => setDuplicateModalOpen(false)}
-                className="flex-1 py-2.5 rounded-lg border border-zinc-800 text-zinc-300 font-bold text-sm hover:bg-zinc-800/50 transition-colors"
+                className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300 transition-colors"
+                aria-label="Fechar modal"
               >
-                Cancelar
+                <X size={18} />
               </button>
-              <button
-                onClick={handleConfirmDuplicate}
-                className="flex-1 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-500/20 transition-all active:scale-95"
-              >
-                Duplicar Agora
-              </button>
-            </div>
+            )}
+
+            {/* FASE 1: CONFIGURAÇÃO */}
+            {duplicationPhase === "configure" && (
+              <>
+                <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+                  <Layers size={18} className="text-blue-500" />
+                  Duplicação de Campanha Meta Ads
+                </h3>
+                <p className="text-xs text-zinc-400 mb-5">
+                  Configure a duplicação hierárquica. Novas entidades serão geradas como <span className="text-amber-400 font-semibold">PAUSADAS</span>.
+                </p>
+
+                {duplicationErrorInline && (
+                  <div className="mb-4 p-3 rounded-lg bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2 animate-fade-in">
+                    <AlertCircle size={15} className="shrink-0 text-rose-400" />
+                    <span>{duplicationErrorInline}</span>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-300 mb-1.5">
+                      Quantidade de Cópias
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={duplicateCopies}
+                      onChange={(e) => setDuplicateCopies(e.target.value)}
+                      className="w-full bg-[#121622] border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                    />
+                  </div>
+
+                  {(duplicateItemLevel === "campaign" || duplicateItemLevel === "adset") && (
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-300 mb-1.5">
+                        Novo Orçamento Diário (Opcional)
+                      </label>
+                      <div className="relative">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm font-bold">R$</div>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="Manter original"
+                          value={duplicateNewBudget}
+                          onChange={(e) => setDuplicateNewBudget(e.target.value)}
+                          className="w-full bg-[#121622] border border-zinc-800 rounded-lg pl-9 pr-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                        />
+                      </div>
+                      <p className="text-[10px] text-zinc-500 mt-1">Deixe em branco para manter o orçamento original.</p>
+                    </div>
+                  )}
+
+                  {duplicateItemLevel === "campaign" && (
+                    <div className="pt-3 border-t border-zinc-800/80">
+                      <label className="flex items-start gap-3 cursor-pointer select-none group">
+                        <input
+                          type="checkbox"
+                          checked={duplicateFullClone}
+                          onChange={(e) => setDuplicateFullClone(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors">
+                            Ativar cópias de campanhas, conjuntos de anúncios e anúncios
+                          </span>
+                          <p className="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
+                            {duplicateFullClone
+                              ? "FULL_CLONE: Clona 100% da árvore (Campanha → Conjuntos → Anúncios → Criativos, Pixel e UTMs)."
+                              : "SIMPLE: Clona somente o container da campanha."}
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6 flex gap-3">
+                  <button
+                    onClick={() => setDuplicateModalOpen(false)}
+                    className="flex-1 py-2.5 rounded-lg border border-zinc-800 text-zinc-300 font-bold text-sm hover:bg-zinc-800/50 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleConfirmDuplicate}
+                    className="flex-1 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-500/20 transition-all active:scale-95"
+                  >
+                    Duplicar Agora
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* FASE 2: LOADING & PROGRESSO REAL DAS 7 ETAPAS */}
+            {duplicationPhase === "loading" && (
+              <div className="py-2 space-y-6">
+                <div className="text-center space-y-2">
+                  <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto text-blue-400 shadow-lg shadow-blue-500/10">
+                    <Loader2 size={28} className="animate-spin" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white">
+                    Duplicando campanha...
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    Este processo pode levar alguns segundos.
+                  </p>
+                </div>
+
+                {/* Barra de Progresso Real: 1/7 a 7/7 */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-zinc-400 font-medium">
+                      Etapa {duplicationStepIndex + 1} de 7
+                    </span>
+                    <span className="text-blue-400 font-bold">
+                      {Math.round(((duplicationStepIndex + 1) / 7) * 100)}%
+                    </span>
+                  </div>
+                  <div className="w-full h-2.5 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden p-0.5">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-600 to-indigo-500 rounded-full transition-all duration-500 ease-out"
+                      style={{ width: `${((duplicationStepIndex + 1) / 7) * 100}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Checklist Visual das 7 Etapas */}
+                <div className="bg-[#121622] border border-zinc-800/80 rounded-xl p-3.5 space-y-2.5">
+                  {DUPLICATION_STEPS.map((stepItem, idx) => {
+                    const isPassed = idx < duplicationStepIndex;
+                    const isCurrent = idx === duplicationStepIndex;
+                    return (
+                      <div
+                        key={stepItem.step}
+                        className={cn(
+                          "flex items-center gap-2.5 text-xs transition-all",
+                          isCurrent
+                            ? "text-white font-semibold pl-1"
+                            : isPassed
+                            ? "text-zinc-400"
+                            : "text-zinc-600"
+                        )}
+                      >
+                        {isPassed ? (
+                          <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
+                        ) : isCurrent ? (
+                          <Loader2 size={15} className="animate-spin text-blue-400 shrink-0" />
+                        ) : (
+                          <div className="w-3.5 h-3.5 rounded-full border border-zinc-700 shrink-0 ml-0.5" />
+                        )}
+                        <span>{stepItem.label}</span>
+                        {isCurrent && (
+                          <span className="text-[10px] text-blue-400/80 ml-auto animate-pulse">
+                            Processando...
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  disabled
+                  className="w-full py-2.5 rounded-lg bg-blue-600/60 text-blue-200 font-bold text-sm cursor-not-allowed flex items-center justify-center gap-2 select-none"
+                >
+                  <Loader2 size={16} className="animate-spin" />
+                  Duplicando...
+                </button>
+              </div>
+            )}
+
+            {/* FASE 3: SUCESSO & RESUMO EXECUTIVO */}
+            {duplicationPhase === "success" && (
+              <div className="py-2 space-y-6 animate-fade-in">
+                <div className="text-center space-y-2">
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400 shadow-lg shadow-emerald-500/10">
+                    <CheckCircle2 size={32} />
+                  </div>
+                  <h3 className="text-lg font-bold text-white">
+                    Campanha Duplicada com Sucesso!
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    Toda a hierarquia foi clonada e as novas entidades nasceram como <span className="text-amber-400 font-semibold">PAUSADAS</span>.
+                  </p>
+                </div>
+
+                {/* Grid Executivo de Resumo */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-[#121622] border border-zinc-800 rounded-xl p-3.5 space-y-1">
+                    <span className="text-[11px] text-zinc-400 font-medium">Nova Campanha</span>
+                    <p className="text-xs font-bold text-white truncate" title={duplicationResult?.new_campaign_id || ""}>
+                      {duplicationResult?.new_campaign_id || "Criada"}
+                    </p>
+                    <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      PAUSED
+                    </span>
+                  </div>
+
+                  <div className="bg-[#121622] border border-zinc-800 rounded-xl p-3.5 space-y-1">
+                    <span className="text-[11px] text-zinc-400 font-medium">Tempo de Execução</span>
+                    <p className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                      <Clock size={13} />
+                      {duplicationResult?.duration_ms
+                        ? `${(duplicationResult.duration_ms / 1000).toFixed(1)}s (${duplicationResult.duration_ms}ms)`
+                        : "< 1s"}
+                    </p>
+                    <span className="text-[10px] text-zinc-500">Graph API</span>
+                  </div>
+
+                  <div className="bg-[#121622] border border-zinc-800 rounded-xl p-3.5 space-y-1">
+                    <span className="text-[11px] text-zinc-400 font-medium">Conjuntos Criados</span>
+                    <p className="text-base font-bold text-white">
+                      {duplicationResult?.adsets_count ?? 0}
+                    </p>
+                    <span className="text-[10px] text-zinc-500">Ad Sets vinculados</span>
+                  </div>
+
+                  <div className="bg-[#121622] border border-zinc-800 rounded-xl p-3.5 space-y-1">
+                    <span className="text-[11px] text-zinc-400 font-medium">Anúncios Criados</span>
+                    <p className="text-base font-bold text-white">
+                      {duplicationResult?.ads_count ?? 0}
+                    </p>
+                    <span className="text-[10px] text-zinc-500">Criativos replicados</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-emerald-950/20 border border-emerald-500/20 rounded-xl flex items-center gap-2.5 text-xs text-emerald-300">
+                  <Check size={16} className="text-emerald-400 shrink-0" />
+                  <span>Pixel, eventos de conversão, UTMs e tracking specs preservados.</span>
+                </div>
+
+                <button
+                  onClick={() => setDuplicateModalOpen(false)}
+                  className="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                >
+                  Concluir
+                </button>
+              </div>
+            )}
+
+            {/* FASE 4: ERRO & ROLLBACK SEGURO */}
+            {duplicationPhase === "error" && (
+              <div className="py-2 space-y-5 animate-fade-in">
+                <div className="text-center space-y-2">
+                  <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400 shadow-lg shadow-rose-500/10">
+                    <AlertTriangle size={32} />
+                  </div>
+                  <h3 className="text-lg font-bold text-white">
+                    Falha na Duplicação da Campanha
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    A operação foi interrompida com segurança.
+                  </p>
+                </div>
+
+                <div className="space-y-2.5">
+                  <div className="bg-[#121622] border border-zinc-800 rounded-xl p-4 space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-zinc-400">Etapa da falha:</span>
+                      <span className="font-bold text-rose-400 bg-rose-950/40 px-2 py-0.5 rounded border border-rose-500/30">
+                        {duplicationResult?.failed_step || "Processamento"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-zinc-500 block mb-1">Motivo:</span>
+                      <p className="text-xs text-zinc-300 bg-zinc-900/80 p-2.5 rounded border border-zinc-800 leading-relaxed break-words">
+                        {duplicationResult?.error_message || "Erro inesperado na Meta Graph API."}
+                      </p>
+                    </div>
+                    {duplicationResult?.error_code && (
+                      <div className="text-[10px] text-zinc-500">
+                        Código do erro: <span className="font-mono text-zinc-400">{duplicationResult.error_code}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {duplicationResult?.rollback_occurred && (
+                    <div className="p-3 bg-amber-950/20 border border-amber-500/20 rounded-xl flex items-start gap-2.5 text-xs text-amber-300">
+                      <ShieldAlert size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block text-amber-200">Rollback Reversivo Executado:</span>
+                        <p className="text-[11px] text-amber-400/90 leading-relaxed mt-0.5">
+                          Todas as entidades criadas parcialmente foram removidas da Meta Graph API. Zero campanhas, conjuntos ou anúncios órfãos.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDuplicateModalOpen(false)}
+                    className="flex-1 py-2.5 rounded-lg border border-zinc-800 text-zinc-300 font-bold text-sm hover:bg-zinc-800/50 transition-colors"
+                  >
+                    Fechar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDuplicationPhase("configure");
+                      setDuplicationResult(null);
+                    }}
+                    className="flex-1 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-500/20 transition-all active:scale-95"
+                  >
+                    Tentar Novamente
+                  </button>
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       )}
