@@ -3,6 +3,7 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
 import { getUsdBrlRate } from "@/lib/currency";
 import { clearCampaignsMemoryCache, getCachedEntityMetrics } from "../list/route";
+import { duplicateCampaign, DuplicationMode, normalizeSourceAction } from "@/lib/meta/campaign-hierarchical-duplicator";
 
 export const dynamic = "force-dynamic";
 
@@ -18,13 +19,17 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, level, action, value, accountCurrency, store_id } = body as {
+    const { id, level, action, value, accountCurrency, store_id, duplication_mode, source_action } = body as {
       id: string;
       level: "campaign" | "adset" | "ad";
       action: "status" | "name" | "rename" | "budget" | "duplicate" | "delete";
       value?: any;
       accountCurrency?: string;
       store_id?: string;
+      duplication_mode?: DuplicationMode;
+      source_action?: string;
+      copies?: number;
+      newBudget?: number | string | null;
     };
 
     if (!id || !action || !store_id) {
@@ -154,26 +159,86 @@ export async function POST(request: NextRequest) {
 
       payload = { daily_budget: budgetCents };
     } else if (action === "duplicate") {
+      const duplicationMode: DuplicationMode = body.duplication_mode === "SIMPLE" ? "SIMPLE" : "FULL_CLONE";
+      const sourceAction = normalizeSourceAction(body.source_action);
       const copies = Number(body.copies) || 1;
-      const rawNewBudget = body.newBudget !== undefined && body.newBudget !== null && body.newBudget !== ""
-        ? Number(String(body.newBudget).replace(",", ".").trim())
-        : null;
-      let targetBudget = rawNewBudget !== null && !isNaN(rawNewBudget) && rawNewBudget > 0 ? rawNewBudget : null;
-
-      if (targetBudget !== null && targetBudget > 0) {
-        if (curr === "USD") {
-          targetBudget = targetBudget / usdBrlRate;
+      
+      let targetBudget: number | null = null;
+      if (body.newBudget !== undefined && body.newBudget !== null && String(body.newBudget).trim() !== "") {
+        const rawNewBudget = Number(String(body.newBudget).replace(",", ".").trim());
+        if (isNaN(rawNewBudget) || rawNewBudget <= 0) {
+          return NextResponse.json(
+            { ok: false, error: "Valor de novo orçamento inválido para duplicação. Não é permitida alteração silenciosa ou inválida de orçamento." },
+            { status: 400 }
+          );
         }
-        targetBudget = Math.round(targetBudget * 100);
+        let val = rawNewBudget;
+        if (curr === "USD") {
+          val = val / usdBrlRate;
+        }
+        targetBudget = Math.round(val * 100);
       }
 
+      // Se for nível campanha, utiliza o motor de duplicação hierárquica (FULL_CLONE ou SIMPLE)
+      if (level === "campaign") {
+        const duplicationResults = [];
+
+        for (let i = 0; i < copies; i++) {
+          const result = await duplicateCampaign({
+            campaignId: id,
+            accessToken: token,
+            storeId: store_id,
+            duplicationMode,
+            sourceAction,
+            newDailyBudgetCents: targetBudget,
+          });
+
+          if (!result.ok) {
+            clearCampaignsMemoryCache(store_id);
+            return NextResponse.json(
+              {
+                ok: false,
+                error: `Falha na duplicação da campanha: ${result.error}`,
+                job: result.job,
+              },
+              { status: 400 }
+            );
+          }
+
+          duplicationResults.push(result);
+        }
+
+        clearCampaignsMemoryCache(store_id);
+        return NextResponse.json({
+          ok: true,
+          action,
+          id,
+          duplication_mode: duplicationMode,
+          source_action: sourceAction,
+          results: duplicationResults.map((r) => ({
+            new_campaign_id: r.createdCampaignId,
+            adsets_count: r.createdAdsetIds?.length || 0,
+            ads_count: r.createdAdIds?.length || 0,
+            budget_validation: {
+              original_budget: r.job.original_budget,
+              duplicated_budget: r.job.duplicated_budget,
+              budget_change_percent: r.job.budget_change_percent,
+              budget_warning: r.job.budget_warning,
+            },
+            duration_ms: r.job.duration_ms,
+            job: r.job,
+          })),
+        });
+      }
+
+      // Caso seja adset ou ad individual, mantém cópia do objeto (sempre PAUSED por segurança)
       graphUrl = `https://graph.facebook.com/v23.0/${id}/copies`;
       
       const copyPromises = Array.from({ length: copies }).map(async () => {
         const res = await fetch(`${graphUrl}?access_token=${token}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status_option: "ACTIVE" })
+          body: JSON.stringify({ status_option: "PAUSED" })
         });
         
         const data = await res.json();
@@ -184,7 +249,7 @@ export async function POST(request: NextRequest) {
         
         const newCopiedId = data.copied_campaign_id || data.copied_adset_id || data.copied_ad_id || data.id || data.new_campaign_id;
 
-        if (targetBudget !== null && targetBudget > 0 && newCopiedId && (level === "campaign" || level === "adset")) {
+        if (targetBudget !== null && targetBudget > 0 && newCopiedId && level === "adset") {
           const budUrl = `https://graph.facebook.com/v23.0/${newCopiedId}?access_token=${token}`;
           await fetch(budUrl, {
             method: "POST",

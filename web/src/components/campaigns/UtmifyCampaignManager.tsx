@@ -260,6 +260,7 @@ export function UtmifyCampaignManager({
   const [duplicateItemLevel, setDuplicateItemLevel] = useState<"campaign" | "adset" | "ad" | null>(null);
   const [duplicateCopies, setDuplicateCopies] = useState<string>("1");
   const [duplicateNewBudget, setDuplicateNewBudget] = useState<string>("");
+  const [duplicateFullClone, setDuplicateFullClone] = useState<boolean>(true);
   const [isBulkActionRunning, setIsBulkActionRunning] = useState(false);
   const [bulkBudgetModalOpen, setBulkBudgetModalOpen] = useState(false);
   const [bulkBudgetValue, setBulkBudgetValue] = useState("");
@@ -525,6 +526,7 @@ export function UtmifyCampaignManager({
     setDuplicateItemLevel(level);
     setDuplicateCopies("1");
     setDuplicateNewBudget(currentBudget && currentBudget > 0 ? String(currentBudget) : "");
+    setDuplicateFullClone(true);
     setDuplicateModalOpen(true);
   };
 
@@ -534,6 +536,7 @@ export function UtmifyCampaignManager({
     setDuplicateItemLevel(activeTab as "campaign" | "adset" | "ad");
     setDuplicateCopies("1");
     setDuplicateNewBudget("");
+    setDuplicateFullClone(true);
     setDuplicateModalOpen(true);
   };
 
@@ -564,6 +567,7 @@ export function UtmifyCampaignManager({
             id,
             level: duplicateItemLevel,
             action: "duplicate",
+            duplication_mode: duplicateFullClone ? "FULL_CLONE" : "SIMPLE",
             copies,
             newBudget: duplicateNewBudget ? Number(duplicateNewBudget) : null,
             store_id: activeStore?.id,
@@ -2180,7 +2184,30 @@ export function UtmifyCampaignManager({
                   <p className="text-[10px] text-zinc-500 mt-1">Deixe em branco para manter o orçamento original.</p>
                 </div>
               )}
-            </div>
+
+                {duplicateItemLevel === "campaign" && (
+                  <div className="pt-3 border-t border-zinc-800/80">
+                    <label className="flex items-start gap-3 cursor-pointer select-none group">
+                      <input
+                        type="checkbox"
+                        checked={duplicateFullClone}
+                        onChange={(e) => setDuplicateFullClone(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors">
+                          Ativar cópias de campanhas, conjuntos de anúncios e anúncios
+                        </span>
+                        <p className="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
+                          {duplicateFullClone
+                            ? "Duplicação Completa (FULL_CLONE): Clona a campanha, todos os conjuntos de anúncio, anúncios e configurações de pixel/UTM vinculados."
+                            : "Duplicação Simples (SIMPLE): Clona somente o container da campanha."}
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                )}
+              </div>
 
             <div className="mt-6 flex gap-3">
               <button
