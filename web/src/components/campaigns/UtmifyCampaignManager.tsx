@@ -150,12 +150,13 @@ interface UtmifyCampaignManagerProps {
   untrackedSalesCount?: number;
   datePreset: string;
   setDatePreset: (preset: string) => void;
-  onRefresh: () => void;
+  onRefresh: (selectedCampId?: string | null, selectedAsId?: string | null) => void;
   onLoadAdsets?: (campaignId: string) => Promise<void>;
   onLoadAds?: (adsetId: string) => Promise<void>;
   isRefreshing?: boolean;
   apiError?: string | null;
   entityErrors?: Record<string, string>;
+  lastUpdatedAt?: Date | string | null;
 }
 
 const DUPLICATION_STEPS = [
@@ -182,6 +183,7 @@ export function UtmifyCampaignManager({
   isRefreshing = false,
   apiError = null,
   entityErrors = {},
+  lastUpdatedAt = null,
 }: UtmifyCampaignManagerProps) {
   const { activeStore } = useStore();
 
@@ -1329,9 +1331,16 @@ export function UtmifyCampaignManager({
 
           {/* Lado Direito: Status de Atualização + Botão Atualizar */}
           <div className="flex items-center gap-3">
-            <span className="text-xs text-zinc-400">Atualizado há 1 minuto</span>
+            <span className="text-xs text-zinc-400">
+              {lastUpdatedAt
+                ? `Atualizado às ${new Date(lastUpdatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+                : "Atualizado agora"}
+            </span>
             <button
-              onClick={onRefresh}
+              onClick={() => onRefresh(
+                selectedCampaignId || (selectedCampaignIds.length === 1 ? selectedCampaignIds[0] : null),
+                selectedAdsetId || (selectedAdsetIds.length === 1 ? selectedAdsetIds[0] : null)
+              )}
               disabled={isRefreshing}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-[0_0_15px_rgba(37,99,235,0.4)] transition-all active:scale-95 disabled:opacity-50"
             >

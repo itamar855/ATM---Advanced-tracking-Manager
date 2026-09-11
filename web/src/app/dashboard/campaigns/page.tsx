@@ -29,6 +29,7 @@ function CampaignsContent() {
   const [ads, setAds] = useState<AdItem[]>([]);
   const [untrackedSalesCount, setUntrackedSalesCount] = useState(0);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
 
   // 1. Carrega imediatamente dados em cache local (0ms de espera ao navegar)
   useEffect(() => {
@@ -50,6 +51,9 @@ function CampaignsContent() {
           if (cached.untracked_sales_count !== undefined) {
             setUntrackedSalesCount(cached.untracked_sales_count);
           }
+          if (cached.timestamp) {
+            setLastUpdatedAt(new Date(cached.timestamp));
+          }
           setLoading(false);
           setIsRefreshing(true);
         }
@@ -57,9 +61,9 @@ function CampaignsContent() {
     } catch {}
   }, [datePreset, activeStore?.id]);
 
-  const loadData = async (silent = false) => {
+  const loadData = async (silent = false, isManualRefresh = false) => {
     if (!activeStore?.id) return;
-    if (loadingRef.current) return;
+    if (loadingRef.current && !isManualRefresh) return;
     loadingRef.current = true;
 
     // Se já temos contas na tela (via cache ou estado), atualiza em background silenciosamente
@@ -72,7 +76,9 @@ function CampaignsContent() {
     setApiError(null);
 
     try {
-      const url = `/api/v1/meta/campaigns/list?date_preset=${datePreset}&store_id=${activeStore.id}${silent ? "&refresh=true" : ""}`;
+      const refreshParam = silent || isManualRefresh ? "&refresh=true" : "";
+      const busterParam = isManualRefresh ? `&_t=${Date.now()}` : "";
+      const url = `/api/v1/meta/campaigns/list?date_preset=${datePreset}&store_id=${activeStore.id}${refreshParam}${busterParam}`;
       const res = await fetch(url, {
         cache: "no-store",
       });
@@ -97,6 +103,7 @@ function CampaignsContent() {
         }
 
         setUntrackedSalesCount(untracked);
+        setLastUpdatedAt(new Date());
 
         if (data.warning || data.notice) {
           setApiError(data.warning || data.notice);
@@ -133,15 +140,16 @@ function CampaignsContent() {
   };
 
   // Carregamento sob demanda: Ao selecionar Campanha, busca seus AdSets (Fase 2 e Fase 3)
-  const loadAdsetsForCampaign = async (campaignId: string) => {
+  const loadAdsetsForCampaign = async (campaignId: string, forceRefresh = false) => {
     if (!activeStore?.id) return;
-    if (inFlightCampaignsRef.current.has(campaignId)) {
+    if (inFlightCampaignsRef.current.has(campaignId) && !forceRefresh) {
       return; // Bloqueia duplo clique / requisição em voo
     }
     inFlightCampaignsRef.current.add(campaignId);
 
     try {
-      const url = `/api/v1/meta/campaigns/list?campaign_id=${campaignId}&store_id=${activeStore.id}&date_preset=${datePreset}`;
+      const refreshParam = forceRefresh ? `&refresh=true&_t=${Date.now()}` : "";
+      const url = `/api/v1/meta/campaigns/list?campaign_id=${campaignId}&store_id=${activeStore.id}&date_preset=${datePreset}${refreshParam}`;
       const res = await fetch(url, { cache: "no-store" });
       const data = await res.json();
       if (data.ok) {
@@ -152,7 +160,7 @@ function CampaignsContent() {
           return next;
         });
 
-        if (Array.isArray(data.adsets) && data.adsets.length > 0) {
+        if (Array.isArray(data.adsets)) {
           setAdsets((prev) => {
             const filtered = prev.filter((as) => as.campaign_id !== campaignId);
             const next = [...filtered, ...data.adsets];
@@ -187,15 +195,16 @@ function CampaignsContent() {
   };
 
   // Carregamento sob demanda: Ao selecionar AdSet, busca seus Ads (Fase 2 e Fase 3)
-  const loadAdsForAdset = async (adsetId: string) => {
+  const loadAdsForAdset = async (adsetId: string, forceRefresh = false) => {
     if (!activeStore?.id) return;
-    if (inFlightAdsetsRef.current.has(adsetId)) {
+    if (inFlightAdsetsRef.current.has(adsetId) && !forceRefresh) {
       return; // Bloqueia duplo clique / requisição em voo
     }
     inFlightAdsetsRef.current.add(adsetId);
 
     try {
-      const url = `/api/v1/meta/campaigns/list?adset_id=${adsetId}&store_id=${activeStore.id}&date_preset=${datePreset}`;
+      const refreshParam = forceRefresh ? `&refresh=true&_t=${Date.now()}` : "";
+      const url = `/api/v1/meta/campaigns/list?adset_id=${adsetId}&store_id=${activeStore.id}&date_preset=${datePreset}${refreshParam}`;
       const res = await fetch(url, { cache: "no-store" });
       const data = await res.json();
       if (data.ok) {
@@ -205,7 +214,7 @@ function CampaignsContent() {
           return next;
         });
 
-        if (Array.isArray(data.ads) && data.ads.length > 0) {
+        if (Array.isArray(data.ads)) {
           setAds((prev) => {
             const filtered = prev.filter((ad) => ad.adset_id !== adsetId);
             const next = [...filtered, ...data.ads];
@@ -268,20 +277,37 @@ function CampaignsContent() {
         untrackedSalesCount={untrackedSalesCount}
         datePreset={datePreset}
         setDatePreset={setDatePreset}
-        onRefresh={() => {
+        onRefresh={async (selectedCampId, selectedAsId) => {
           try {
             if (activeStore?.id) {
               const cacheKey = `atm_camp_cache_${activeStore.id}_${datePreset}`;
               sessionStorage.removeItem(cacheKey);
             }
           } catch {}
-          loadData(true);
+
+          if (!selectedCampId) {
+            setAdsets([]);
+          }
+          if (!selectedAsId) {
+            setAds([]);
+          }
+
+          const refreshPromises: Promise<any>[] = [loadData(true, true)];
+          if (selectedCampId) {
+            refreshPromises.push(loadAdsetsForCampaign(selectedCampId, true));
+          }
+          if (selectedAsId) {
+            refreshPromises.push(loadAdsForAdset(selectedAsId, true));
+          }
+
+          await Promise.allSettled(refreshPromises);
         }}
         onLoadAdsets={loadAdsetsForCampaign}
         onLoadAds={loadAdsForAdset}
         entityErrors={entityErrors}
         isRefreshing={isRefreshing}
         apiError={apiError}
+        lastUpdatedAt={lastUpdatedAt}
       />
     </div>
   );

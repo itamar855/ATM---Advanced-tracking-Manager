@@ -146,6 +146,9 @@ export async function GET(request: NextRequest) {
       : `${storeId}_${datePreset}_${requestedAccountId || "all"}`;
 
     const nowMs = Date.now();
+    if (isRefresh) {
+      clearCampaignsMemoryCache(storeId);
+    }
     const cached = MEMORY_CACHE.get(cacheKey);
     if (!isRefresh && cached && nowMs - cached.timestamp < CACHE_TTL_MS) {
       return NextResponse.json(cached.data, {
@@ -717,8 +720,12 @@ export async function GET(request: NextRequest) {
         });
       }
 
+      const responseHeaders: Record<string, string> = isRefresh
+        ? { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" }
+        : { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" };
+
       return NextResponse.json(responsePayload, {
-        headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" },
+        headers: responseHeaders,
       });
     }
 
@@ -954,8 +961,12 @@ export async function GET(request: NextRequest) {
         });
       }
 
+      const responseHeaders: Record<string, string> = isRefresh
+        ? { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" }
+        : { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" };
+
       return NextResponse.json(responsePayload, {
-        headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" },
+        headers: responseHeaders,
       });
     }
 
@@ -1147,8 +1158,12 @@ export async function GET(request: NextRequest) {
         JSON.stringify({ since: dateRange.since, until: dateRange.until })
       );
 
+      const allowedCampStatuses = isRefresh
+        ? ["ACTIVE", "PAUSED", "IN_PROCESS", "WITH_ISSUES"]
+        : ["ACTIVE", "PAUSED"];
+
       const campStatusFilter = encodeURIComponent(
-        JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED"] }])
+        JSON.stringify([{ field: "effective_status", operator: "IN", value: allowedCampStatuses }])
       );
 
       const campUrl = `https://graph.facebook.com/v23.0/${cleanAccId}/campaigns?fields=id,name,status,effective_status,daily_budget,lifetime_budget,updated_time&filtering=${campStatusFilter}&access_token=${token}&limit=100`;
@@ -1506,10 +1521,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const responseHeaders: Record<string, string> = isRefresh
+      ? { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" }
+      : { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" };
+
     return NextResponse.json(finalResponse, {
-      headers: {
-        "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
-      },
+      headers: responseHeaders,
     });
   } catch (error: any) {
     console.error("[Campaigns List Multi-Tier API Error]:", error);
