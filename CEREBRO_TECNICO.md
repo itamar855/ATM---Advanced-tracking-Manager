@@ -411,6 +411,47 @@ Em vez de retornar apenas códigos brutos de máquina (`SCALE_BUDGET_PERCENT, +3
 ### 11.7 Estrutura de Perfil (`confidence_profile`)
 A estrutura de perfis de risco está arquitetada na tabela e nos tipos para expansão futura, com o baseline **`BALANCED`** (50% profit, 30% asset, 20% maturidade) travado como padrão para garantir que nenhuma variação artificial altere o aprendizado nesta fase.
 
+---
+
+## 12. Motor de Maturidade das Decisões do ATM™ (Fase 10.3)
+
+### 12.1 Objetivo Estratégico
+Transformar o histórico auditado de recomendações em uma camada analítica consolidada que responde à pergunta executiva do gestor:
+> **"O ATM está tomando boas decisões?"**
+
+Sem depender de interface visual (zero UI) e sem tocar na Meta Graph API (zero write API), o motor sintetiza o volume de acertos, erros e pendências, quantificando o valor econômico entregue em R$ (BRL).
+
+### 12.2 Validação Estrita de Maturidade Estatística
+O status **`HIGH_PERFORMANCE_MATURE`** não é concedido apenas por uma alta taxa de acerto em decisões defensivas (redução ou pausa). Ele exige cumulativamente:
+1. `total_evaluated >= 20` (Volume estatístico suficiente).
+2. `decisive_hit_rate_percent >= 75%` (Mínimo de 75% de acertos nas decisões conclusivas).
+3. **`total_scale_evaluated >= 5`** (No mínimo 5 recomendações de escala de orçamento avaliadas e auditadas).
+
+Se a conta possuir alta assertividade mas menos de 5 escalas avaliadas, o status permanece em **`PROMISING_ACCUMULATION`**, apontando nas áreas de atenção o volume restante de escalas para a maturidade plena.
+
+### 12.3 Categorização do Impacto das Decisões (`decision_impact_type`)
+O valor gerado é decomposto em três dimensões contábeis:
+* **`PROFIT_GENERATION`** (Geração de Lucro): Lucro incremental consolidado gerado por recomendações de escala (`SCALE_BUDGET_PERCENT`) onde $\Delta \text{profit} > 0$.
+* **`LOSS_PREVENTION`** (Prevenção de Prejuízo): Capital protegido e sangramento estancado por intervenções de redução (`REDUCE_BUDGET_PERCENT`) ou pausa imediata (`PAUSE_CAMPAIGN`).
+* **`STABILITY_MAINTENANCE`** (Preservação de Estabilidade): Quantidade de campanhas em equilíbrio contábil mantidas ativas (`NO_ACTION`) sem oscilações desnecessárias.
+* **`total_value_delivered_brl`**: Soma de lucro gerado + prejuízo evitado.
+
+### 12.4 Idade da Inteligência (`intelligence_age_days`)
+Mede o tempo de maturação do aprendizado algorítmico para a loja:
+* **`0 a 7 dias`**: `EARLY_LEARNING` (Aprendizado Inicial).
+* **`8 a 30 dias`**: `INITIAL_CALIBRATION` (Calibração Inicial).
+* **`31 a 90 dias`**: `OPERATIONAL_LEARNING` (Aprendizado Operacional).
+* **`90+ dias`**: `MATURE_MODEL` (Modelo Maduro).
+
+### 12.5 Veredito Executivo em Português Brasileiro
+O motor sintetiza os dados em um relatório estruturado:
+* **Headline Executivo**: Resposta direta e sem jargões obscuros (*"Sim. O ATM demonstra alta assertividade..."*).
+* **Ação Mais Assertiva**: Identifica qual intervenção possui melhor equilíbrio entre taxa de acerto, amostragem e retorno financeiro.
+* **Áreas de Atenção**: Alerta sobre escalas preliminares, desfechos de erro a calibrar e pendências temporais.
+* **Índice de Confiabilidade**: Score de 0 a 100 indicando a robustez estatística da amostra.
+* **Pontos Chave**: Bullet points contábeis com dados em reais (BRL).
+
+
 
 
 
