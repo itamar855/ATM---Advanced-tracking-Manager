@@ -74,6 +74,7 @@ export interface CampaignItem {
   account_id: string;
   account_name: string;
   status: "active" | "paused";
+  effective_status?: string;
   budget: number;
   budget_type: string;
   is_cbo?: boolean;
@@ -150,7 +151,7 @@ interface UtmifyCampaignManagerProps {
   untrackedSalesCount?: number;
   datePreset: string;
   setDatePreset: (preset: string) => void;
-  onRefresh: (selectedCampId?: string | null, selectedAsId?: string | null) => void;
+  onRefresh: (selectedCampId?: string | null, selectedAsId?: string | null) => Promise<void> | void;
   onLoadAdsets?: (campaignId: string) => Promise<void>;
   onLoadAds?: (adsetId: string) => Promise<void>;
   isRefreshing?: boolean;
@@ -158,6 +159,13 @@ interface UtmifyCampaignManagerProps {
   entityErrors?: Record<string, string>;
   lastUpdatedAt?: Date | string | null;
 }
+
+const POST_DUPLICATION_SYNC_STEPS = [
+  { step: 1, label: "Duplicação confirmada" },
+  { step: 2, label: "Buscando nova campanha" },
+  { step: 3, label: "Sincronizando dados" },
+  { step: 4, label: "Finalizando atualização" },
+] as const;
 
 const DUPLICATION_STEPS = [
   { step: 1, label: "Validando conexão Meta" },
@@ -283,6 +291,7 @@ export function UtmifyCampaignManager({
   const [duplicationErrorInline, setDuplicationErrorInline] = useState<string | null>(null);
   const [duplicationResult, setDuplicationResult] = useState<{
     new_campaign_id?: string | null;
+    status?: string | null;
     adsets_count?: number;
     ads_count?: number;
     duration_ms?: number;
@@ -291,6 +300,16 @@ export function UtmifyCampaignManager({
     error_code?: string | number;
     rollback_occurred?: boolean;
   } | null>(null);
+  const [syncingAfterDuplication, setSyncingAfterDuplication] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<number>(0);
+  const [syncedCampaignId, setSyncedCampaignId] = useState<string | null>(null);
+  const [syncStepIndex, setSyncStepIndex] = useState<number>(0);
+
+  // Identificação exclusiva por new_campaign_id retornado pela duplicação (Regra 2)
+  const createdSyncedCampaign = useMemo(() => {
+    if (!duplicationResult?.new_campaign_id) return null;
+    return campaigns.find((c) => c.id === duplicationResult.new_campaign_id) || null;
+  }, [campaigns, duplicationResult?.new_campaign_id]);
   const [isBulkActionRunning, setIsBulkActionRunning] = useState(false);
   const [bulkBudgetModalOpen, setBulkBudgetModalOpen] = useState(false);
   const [bulkBudgetValue, setBulkBudgetValue] = useState("");
@@ -651,17 +670,48 @@ export function UtmifyCampaignManager({
 
       if (allOk && lastData) {
         setDuplicationStepIndex(6); // 7/7
-        setDuplicationPhase("success");
         const resInfo = lastData.results?.[0];
+        const newCampId = (resInfo?.new_campaign_id || lastData.id || null) as string | null;
+
+        // Inicia etapa pós-duplicação na UX da ATM (Regra 1: Estados internos reais)
+        setSyncingAfterDuplication(true);
+        setSyncedCampaignId(newCampId);
+        setSyncStepIndex(0); // 1. Duplicação confirmada
+        setSyncProgress(25);
+
+        // 2. Buscando nova campanha
+        await new Promise((r) => setTimeout(r, 450));
+        setSyncStepIndex(1);
+        setSyncProgress(50);
+
+        // 3. Sincronizando dados (executa refresh para buscar dados frescos da Meta)
+        setSyncStepIndex(2);
+        setSyncProgress(75);
+        try {
+          await onRefresh();
+        } catch (syncErr) {
+          console.warn("[ATM Duplication] Falha no refresh pós-duplicação:", syncErr);
+        }
+
+        // 4. Finalizando atualização
+        setSyncStepIndex(3);
+        setSyncProgress(100);
+        await new Promise((r) => setTimeout(r, 400));
+
+        setSyncingAfterDuplication(false);
+        setDuplicationPhase("success");
+
         setDuplicationResult({
-          new_campaign_id: resInfo?.new_campaign_id || lastData.id || "Criada",
+          new_campaign_id: newCampId || "Criada",
+          status: "PAUSED",
           adsets_count: resInfo?.adsets_count ?? (duplicateFullClone ? 1 : 0),
           ads_count: resInfo?.ads_count ?? (duplicateFullClone ? 1 : 0),
           duration_ms: resInfo?.duration_ms || resInfo?.job?.duration_ms,
         });
-        onRefresh();
+
         setSelectedRowIds([]);
       } else {
+        setSyncingAfterDuplication(false);
         setDuplicationPhase("error");
         const failedStepLabel = DUPLICATION_STEPS[currentStep < 7 ? currentStep : 6]?.label || "Processamento Meta";
         setDuplicationResult({
@@ -673,6 +723,7 @@ export function UtmifyCampaignManager({
       }
     } catch (e: any) {
       clearInterval(stepTimer);
+      setSyncingAfterDuplication(false);
       setDuplicationPhase("error");
       const failedStepLabel = DUPLICATION_STEPS[currentStep < 7 ? currentStep : 6]?.label || "Processamento Meta";
       setDuplicationResult({
@@ -2237,10 +2288,16 @@ export function UtmifyCampaignManager({
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
           <div className="bg-[#0B0E14] border border-blue-500/20 rounded-2xl p-6 sm:p-7 w-full max-w-lg shadow-2xl shadow-blue-500/10 relative transition-all">
             
-            {/* Botão Fechar (apenas fora do loading para evitar interrupções) */}
-            {duplicationPhase !== "loading" && (
+            {/* Botão Fechar (apenas fora do loading e do sync para evitar interrupções) */}
+            {duplicationPhase !== "loading" && !syncingAfterDuplication && (
               <button
-                onClick={() => setDuplicateModalOpen(false)}
+                onClick={() => {
+                  setDuplicateModalOpen(false);
+                  setDuplicationPhase("configure");
+                  setDuplicationResult(null);
+                  setSyncingAfterDuplication(false);
+                  setSyncedCampaignId(null);
+                }}
                 className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300 transition-colors"
                 aria-label="Fechar modal"
               >
@@ -2420,44 +2477,118 @@ export function UtmifyCampaignManager({
               </div>
             )}
 
-            {/* FASE 3: SUCESSO & RESUMO EXECUTIVO */}
-            {duplicationPhase === "success" && (
-              <div className="py-2 space-y-6 animate-fade-in">
+            {/* ETAPA PÓS-DUPLICAÇÃO: SINCRONIZANDO COM META ADS (Regra 1) */}
+            {syncingAfterDuplication && (
+              <div className="py-4 space-y-6 animate-fade-in">
+                <div className="text-center space-y-2">
+                  <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center mx-auto text-blue-400 shadow-lg shadow-blue-500/10">
+                    <RotateCw size={28} className="animate-spin text-blue-400" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white">
+                    Sincronizando com Meta Ads...
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    Garantindo que a nova campanha esteja pronta e atualizada na ATM.
+                  </p>
+                </div>
+
+                {/* Barra de Progresso das Etapas Internas ATM */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-zinc-400 font-medium">Sincronização interna</span>
+                    <span className="font-mono text-blue-400 font-bold">
+                      {syncStepIndex + 1}/{POST_DUPLICATION_SYNC_STEPS.length} ({syncProgress}%)
+                    </span>
+                  </div>
+                  <div className="h-2 w-full bg-zinc-800/80 rounded-full overflow-hidden p-0.5 border border-zinc-700/50">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-500 rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${syncProgress}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Lista de Estados Internos da ATM */}
+                <div className="space-y-2 bg-[#121622] p-4 rounded-xl border border-zinc-800">
+                  {POST_DUPLICATION_SYNC_STEPS.map((stepItem, idx) => {
+                    const isDone = syncStepIndex > idx;
+                    const isCurrent = syncStepIndex === idx;
+                    return (
+                      <div
+                        key={stepItem.step}
+                        className={cn(
+                          "flex items-center gap-3 text-xs py-1 transition-colors",
+                          isDone
+                            ? "text-emerald-400 font-medium"
+                            : isCurrent
+                            ? "text-blue-400 font-bold"
+                            : "text-zinc-600"
+                        )}
+                      >
+                        {isDone ? (
+                          <CheckCircle2 size={15} className="shrink-0 text-emerald-400" />
+                        ) : isCurrent ? (
+                          <Loader2 size={15} className="shrink-0 animate-spin text-blue-400" />
+                        ) : (
+                          <div className="w-3.5 h-3.5 rounded-full border border-zinc-700 shrink-0 ml-0.5" />
+                        )}
+                        <span>{stepItem.label}</span>
+                        {isCurrent && (
+                          <span className="text-[10px] text-blue-400/80 ml-auto animate-pulse">
+                            Processando...
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* FASE 3: NOVA CAMPANHA DISPONÍVEL (Regra 2: Identificação exclusivamente por new_campaign_id) */}
+            {duplicationPhase === "success" && !syncingAfterDuplication && (
+              <div className="py-2 space-y-5 animate-fade-in">
                 <div className="text-center space-y-2">
                   <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400 shadow-lg shadow-emerald-500/10">
                     <CheckCircle2 size={32} />
                   </div>
                   <h3 className="text-lg font-bold text-white">
-                    Campanha Duplicada com Sucesso!
+                    Nova campanha disponível
                   </h3>
                   <p className="text-xs text-zinc-400">
-                    Toda a hierarquia foi clonada e as novas entidades nasceram como <span className="text-amber-400 font-semibold">PAUSADAS</span>.
+                    Hierarquia sincronizada com a Meta Ads e disponível na tabela da ATM.
                   </p>
+                </div>
+
+                {/* Card de Identificação Exclusiva da Campanha Criada */}
+                <div className="bg-[#121622] border border-zinc-800 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <span className="text-[11px] text-zinc-400 font-medium block">Nome da Campanha</span>
+                      <p className="text-sm font-bold text-white truncate" title={createdSyncedCampaign?.name || "Campanha Clonada"}>
+                        {createdSyncedCampaign?.name || "Campanha Clonada"}
+                      </p>
+                    </div>
+                    <span className={cn(
+                      "shrink-0 text-[10px] font-bold px-2 py-0.5 rounded border uppercase",
+                      (createdSyncedCampaign?.effective_status || createdSyncedCampaign?.status || duplicationResult?.status) === "ACTIVE"
+                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                        : "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                    )}>
+                      {createdSyncedCampaign?.effective_status || createdSyncedCampaign?.status || duplicationResult?.status || "PAUSED"}
+                    </span>
+                  </div>
+
+                  <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs">
+                    <span className="text-zinc-500 text-[11px]">ID da Campanha</span>
+                    <span className="font-mono text-zinc-300 font-medium select-all">
+                      {duplicationResult?.new_campaign_id || "—"}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Grid Executivo de Resumo */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-[#121622] border border-zinc-800 rounded-xl p-3.5 space-y-1">
-                    <span className="text-[11px] text-zinc-400 font-medium">Nova Campanha</span>
-                    <p className="text-xs font-bold text-white truncate" title={duplicationResult?.new_campaign_id || ""}>
-                      {duplicationResult?.new_campaign_id || "Criada"}
-                    </p>
-                    <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                      PAUSED
-                    </span>
-                  </div>
-
-                  <div className="bg-[#121622] border border-zinc-800 rounded-xl p-3.5 space-y-1">
-                    <span className="text-[11px] text-zinc-400 font-medium">Tempo de Execução</span>
-                    <p className="text-xs font-bold text-emerald-400 flex items-center gap-1">
-                      <Clock size={13} />
-                      {duplicationResult?.duration_ms
-                        ? `${(duplicationResult.duration_ms / 1000).toFixed(1)}s (${duplicationResult.duration_ms}ms)`
-                        : "< 1s"}
-                    </p>
-                    <span className="text-[10px] text-zinc-500">Graph API</span>
-                  </div>
-
                   <div className="bg-[#121622] border border-zinc-800 rounded-xl p-3.5 space-y-1">
                     <span className="text-[11px] text-zinc-400 font-medium">Conjuntos Criados</span>
                     <p className="text-base font-bold text-white">
@@ -2475,16 +2606,35 @@ export function UtmifyCampaignManager({
                   </div>
                 </div>
 
+                {duplicationResult?.duration_ms ? (
+                  <div className="bg-[#121622] border border-zinc-800 rounded-xl px-3.5 py-2 flex items-center justify-between text-xs">
+                    <span className="text-zinc-400 flex items-center gap-1.5">
+                      <Clock size={13} className="text-zinc-500" />
+                      Tempo de duplicação
+                    </span>
+                    <span className="font-mono text-emerald-400 font-semibold">
+                      {(duplicationResult.duration_ms / 1000).toFixed(1)}s ({duplicationResult.duration_ms}ms)
+                    </span>
+                  </div>
+                ) : null}
+
                 <div className="p-3 bg-emerald-950/20 border border-emerald-500/20 rounded-xl flex items-center gap-2.5 text-xs text-emerald-300">
                   <Check size={16} className="text-emerald-400 shrink-0" />
                   <span>Pixel, eventos de conversão, UTMs e tracking specs preservados.</span>
                 </div>
 
                 <button
-                  onClick={() => setDuplicateModalOpen(false)}
-                  className="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                  onClick={() => {
+                    setDuplicateModalOpen(false);
+                    setDuplicationPhase("configure");
+                    setDuplicationResult(null);
+                    setSyncingAfterDuplication(false);
+                    setSyncedCampaignId(null);
+                  }}
+                  className="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
                 >
-                  Concluir
+                  <Check size={16} />
+                  <span>Concluir e Ver na Tabela</span>
                 </button>
               </div>
             )}
