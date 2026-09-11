@@ -8,13 +8,14 @@ import {
 } from "@/lib/meta/graph-service";
 import { MetaAdAccount } from "@/lib/meta/types";
 import { metaCache } from "@/lib/meta/meta-cache";
+import { performanceMonitor } from "@/lib/meta/performance-monitor";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/v1/meta/accounts
  * Retorna as Business Managers, Contas de Anúncio e Seleção ativa para a loja especificada.
- * Suporta cache em memória com TTL de 5 minutos, isolamento multi-tenant e bypass com ?refresh=true.
+ * Suporta cache em memória (TTL 5m), Cooldown inteligente anti-rate-limit e telemetria assíncrona.
  */
 export async function GET(request: NextRequest) {
   const startTime = performance.now();
@@ -81,12 +82,62 @@ export async function GET(request: NextRequest) {
 
     const effectiveStoreId = storeId || currentIntegration?.store_id || "default_store";
 
-    // 4. Verificação de Cache Multi-Tenant (Se não for forçado refresh)
+    // 4. Verificação de Cooldown da Loja (Proteção contra excesso de chamadas Graph API)
+    const cooldownStatus = performanceMonitor.checkCooldown(effectiveStoreId, refresh);
+    if (cooldownStatus.inCooldown && !refresh) {
+      // Cooldown ativo: Nunca bloqueia a leitura de cache existente!
+      const staleCache = metaCache.get<any>("accounts", effectiveStoreId, accessToken);
+      if (staleCache.data) {
+        const totalDurationMs = Math.round(performance.now() - startTime);
+        performanceMonitor.log({
+          tenant_id: effectiveStoreId,
+          endpoint: "/api/v1/meta/accounts",
+          operation: "GET_ACCOUNTS",
+          context: "integration",
+          criticality: "medium",
+          duration_ms: totalDurationMs,
+          cache_status: "COOLDOWN",
+          graph_calls_count: 0,
+          status_code: 200,
+          error_message: cooldownStatus.reason || undefined,
+        });
+
+        return NextResponse.json({
+          ...staleCache.data,
+          _cooldown: {
+            active: true,
+            remainingMs: cooldownStatus.remainingMs,
+            cooldownUntil: cooldownStatus.cooldownUntilIso,
+            reason: cooldownStatus.reason,
+          },
+          _cache: {
+            hit: true,
+            cooldown: true,
+            ageMs: staleCache.ageMs,
+            durationMs: totalDurationMs,
+          },
+        });
+      }
+    }
+
+    // 5. Verificação de Cache Multi-Tenant (Se não for forçado refresh)
     if (!refresh) {
       const cached = metaCache.get<any>("accounts", effectiveStoreId, accessToken);
       if (cached.hit && cached.data) {
         const totalDurationMs = Math.round(performance.now() - startTime);
-        console.log(`[GET /api/v1/meta/accounts] [CACHE HIT] store_id=${effectiveStoreId} (idade: ${cached.ageMs}ms, restante: ${cached.remainingTtlMs}ms) respondido em ${totalDurationMs}ms`);
+
+        performanceMonitor.log({
+          tenant_id: effectiveStoreId,
+          endpoint: "/api/v1/meta/accounts",
+          operation: "GET_ACCOUNTS",
+          context: "integration",
+          criticality: "low",
+          duration_ms: totalDurationMs,
+          cache_status: "HIT",
+          graph_calls_count: 0,
+          status_code: 200,
+        });
+
         return NextResponse.json({
           ...cached.data,
           _cache: {
@@ -104,7 +155,7 @@ export async function GET(request: NextRequest) {
     const savedProfileName = currentIntegration?.config?.profile_name || undefined;
     const savedPixelId = currentIntegration?.pixel_id || "1104875232197441";
 
-    // 5. Descoberta exaustiva da hierarquia de BMs e Contas
+    // 6. Descoberta exaustiva da hierarquia de BMs e Contas
     const graphStartTime = performance.now();
     const [profile, permissions] = await Promise.all([
       discoverFullMetaHierarchy(accessToken, savedProfileName),
@@ -112,7 +163,11 @@ export async function GET(request: NextRequest) {
     ]);
     const graphDurationMs = Math.round(performance.now() - graphStartTime);
 
-    // 6. Coleta todas as contas planas para compatibilidade
+    // Registra chamada live no monitor de rate limit
+    const liveCallsCount = 3 + profile.businesses.length * 2;
+    performanceMonitor.registerGraphCalls(effectiveStoreId, liveCallsCount);
+
+    // 7. Coleta todas as contas planas para compatibilidade
     const allAccounts: MetaAdAccount[] = [];
     profile.businesses.forEach((bm) => {
       bm.accounts.forEach((acc) => {
@@ -122,7 +177,7 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    // 7. Recupera seleção de contas e BMs salvas no banco
+    // 8. Recupera seleção de contas e BMs salvas no banco
     const savedSelected = currentIntegration?.config?.ad_account_ids;
     const selectedAccountIds: string[] = Array.isArray(savedSelected) ? savedSelected : [];
 
@@ -148,11 +203,23 @@ export async function GET(request: NextRequest) {
       },
     };
 
-    // 8. Grava no cache por 5 minutos (300.000 ms) com isolamento por storeId e token
+    // 9. Grava no cache por 5 minutos (300.000 ms) com isolamento por storeId e token
     metaCache.set("accounts", effectiveStoreId, accessToken, responsePayload, 5 * 60 * 1000);
 
     const totalDurationMs = Math.round(performance.now() - startTime);
-    console.log(`[GET /api/v1/meta/accounts] Sucesso: Meta Graph levou ${graphDurationMs}ms, resposta total em ${totalDurationMs}ms (gravado em cache)`);
+
+    // Telemetria assíncrona não-bloqueante
+    performanceMonitor.log({
+      tenant_id: effectiveStoreId,
+      endpoint: "/api/v1/meta/accounts",
+      operation: "GET_ACCOUNTS",
+      context: "integration",
+      criticality: graphDurationMs > 2000 ? "high" : graphDurationMs > 800 ? "medium" : "low",
+      duration_ms: totalDurationMs,
+      cache_status: refresh ? "BYPASS" : "MISS",
+      graph_calls_count: liveCallsCount,
+      status_code: 200,
+    });
 
     return NextResponse.json({
       ...responsePayload,
@@ -164,6 +231,21 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     const totalDurationMs = Math.round(performance.now() - startTime);
+    const storeIdFallback = new URL(request.url).searchParams.get("store_id") || "unknown_store";
+
+    performanceMonitor.log({
+      tenant_id: storeIdFallback,
+      endpoint: "/api/v1/meta/accounts",
+      operation: "GET_ACCOUNTS",
+      context: "integration",
+      criticality: "high",
+      duration_ms: totalDurationMs,
+      cache_status: "MISS",
+      graph_calls_count: 1,
+      status_code: 500,
+      error_message: error.message,
+    });
+
     console.error(`[GET /api/v1/meta/accounts Error] Falhou após ${totalDurationMs}ms:`, error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }

@@ -19,6 +19,7 @@ import {
   MetaAssetHealthResult,
   MetaAssetMetricsInput,
 } from "./meta-asset-health-engine";
+import { performanceMonitor } from "@/lib/meta/performance-monitor";
 
 export interface SyncAssetOptions {
   storeId: string;
@@ -38,6 +39,7 @@ export interface SyncAssetResult {
  * Coleta sinais reais da Meta e sincroniza a saúde de ativos da loja no Supabase.
  */
 export async function syncMetaAssetsHealth(options: SyncAssetOptions): Promise<SyncAssetResult> {
+  const syncStartTime = performance.now();
   const { storeId, adAccountId } = options;
   const supabase = createAdminClient();
 
@@ -261,6 +263,21 @@ export async function syncMetaAssetsHealth(options: SyncAssetOptions): Promise<S
       errors.push({ asset_id: cleanId, error: err.message || "Erro desconhecido" });
     }
   }
+
+  const syncDurationMs = Math.round(performance.now() - syncStartTime);
+
+  performanceMonitor.log({
+    tenant_id: storeId,
+    endpoint: "/api/v1/intelligence/assets/sync",
+    operation: "SYNC_META_ASSETS",
+    context: "asset_sync",
+    criticality: syncDurationMs > 3000 ? "high" : syncDurationMs > 1000 ? "medium" : "low",
+    duration_ms: syncDurationMs,
+    cache_status: "MISS",
+    graph_calls_count: accountIdsToSync.length * 3,
+    status_code: results.length > 0 ? 200 : 500,
+    error_message: errors.length > 0 ? errors.map((e) => e.error).join(" | ") : undefined,
+  });
 
   return {
     success: results.length > 0,

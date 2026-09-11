@@ -232,6 +232,20 @@ O Campaign Action Engine não pode tomar decisões de escala e aumento orçament
 - **TTL e Invalidação**: TTL padrão de 5 minutos para contas e 45s para a Dashboard, com invalidação atômica manual via parâmetro `?refresh=true` e no salvamento de configurações (POST).
 - **Polling Inteligente**: Frontend suspende polling quando a aba do navegador estiver oculta (`document.visibilityState === "hidden"`), preservando limites de cota da Graph API.
 
+### 8.6 Meta Performance Observability Layer & Cooldown Protection
+- **Módulo**: `web/src/lib/meta/performance-monitor.ts`.
+- **Tabela**: `public.meta_performance_logs` (Migration `023_create_meta_performance_logs.sql`).
+- **Arquitetura Fire-and-Forget**: A persistência é estritamente desacoplada e assíncrona; nenhuma resposta ao usuário aguarda escrita no banco de dados.
+- **Filtro de Amostragem Inteligente (Anti-Inundação)**:
+  - Cache HITs sub-50ms usam amostragem de 1% (`Math.random() < 0.01`), impedindo o acúmulo de milhões de linhas irrelevantes no banco.
+  - Erros (`status_code >= 400` ou `error_message`), Cooldowns, Graph API lenta (>1000ms) e Cache MISS são gravados 100%.
+- **Governança de Cooldown**:
+  - Se uma loja atinge a taxa limite de chamadas live (25 chamadas em 30s), entra em Cooldown recuperável (45s).
+  - Nunca bloqueia leitura de cache: o usuário continua recebendo dados locais imediatamente.
+  - Suporta override/bypass imediato quando o usuário clica em atualizar manualmente (`refresh=true`).
+- **Contextos de Negócio**: Métricas catalogadas por contexto (`dashboard`, `integration`, `asset_sync`, `campaign_sync`) e criticidade operacional (`low`, `medium`, `high`).
+
+
 
 
 

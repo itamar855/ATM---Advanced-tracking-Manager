@@ -53,6 +53,13 @@
   - `web/src/app/dashboard/page.tsx`: Polling otimizado para 45s com suspensão automática quando a aba do navegador estiver em segundo plano (`document.visibilityState === "hidden"`).
 - **Auditoria**: `node scripts/test-meta-cache-and-concurrency.js` (**8 PASS | 0 FAIL**).
 
+#### ✅ Fase 9.5 — Meta Performance Observability Layer & Cooldown Protection
+- **Módulos Criados/Otimizados**:
+  - `supabase/migrations/023_create_meta_performance_logs.sql`: Tabela de telemetria operacional com contextos (`dashboard`, `integration`, `asset_sync`, `campaign_sync`), criticidade (`low`, `medium`, `high`) e isolamento RLS.
+  - `web/src/lib/meta/performance-monitor.ts`: Motor de telemetria assíncrono (*fire-and-forget*), amostragem inteligente de 1% para cache HITs <50ms (evita explosão de dados no banco), e gerenciamento de Cooldown.
+  - **Governança de Cooldown**: Nunca bloqueia leitura de cache existente, possui `cooldown_until` e `reason` estruturados, e permite bypass manual via `refresh=true`.
+- **Auditoria**: `node scripts/test-meta-performance-observability.js` (**9 PASS | 0 FAIL**).
+
 ---
 
 ## 2. Testes de Validação da Fase 9
@@ -63,21 +70,19 @@ node scripts/test-meta-asset-health-engine.js
 node scripts/test-meta-asset-sync.js
 node scripts/test-asset-intelligence-guard.js
 node scripts/test-meta-cache-and-concurrency.js
+node scripts/test-meta-performance-observability.js
 ```
-*(Todos retornam 100% PASS — Total: 25 testes aprovados)*
+*(Todos retornam 100% PASS — Total: 34 testes aprovados)*
 
 ---
 
-## 3. Arquivos da Fase 9 Incluídos nesta Atualização
+## 3. Arquivos da Fase 9.5 (Prontos para Commit quando Autorizado)
 
-- **Modificado**: `web/src/app/api/v1/intelligence/actions/execute/route.ts`
-- **Novo**: `supabase/migrations/022_create_asset_intelligence_snapshots.sql`
-- **Novo**: `web/src/lib/intelligence/meta-asset-health-engine.ts`
-- **Novo**: `web/src/lib/intelligence/meta-asset-sync.ts`
-- **Novo**: `web/src/lib/intelligence/asset-intelligence-guard.ts`
-- **Novo**: `web/src/app/api/v1/intelligence/assets/sync/route.ts`
-- **Novo**: `scripts/test-meta-asset-health-engine.js`
-- **Novo**: `scripts/test-meta-asset-sync.js`
-- **Novo**: `scripts/test-asset-intelligence-guard.js`
+- **Novo**: `supabase/migrations/023_create_meta_performance_logs.sql`
+- **Novo**: `web/src/lib/meta/performance-monitor.ts`
+- **Novo**: `scripts/test-meta-performance-observability.js`
+- **Modificado**: `web/src/app/api/v1/meta/accounts/route.ts`
+- **Modificado**: `web/src/app/api/v1/dashboard/metrics/route.ts`
+- **Modificado**: `web/src/lib/intelligence/meta-asset-sync.ts`
 - **Modificado**: `CEREBRO_TECNICO.md`
 - **Modificado**: `docs/ESTADO_ATUAL_RETOMADA.md`

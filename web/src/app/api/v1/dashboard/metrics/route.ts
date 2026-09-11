@@ -4,6 +4,7 @@ import { resolveMetaAccessToken } from "@/lib/meta/token";
 import { getUsdBrlRate, convertToBrl } from "@/lib/currency";
 import { resolveAccountDateRange, AccountDateRange } from "@/lib/date-utils";
 import { metaCache } from "@/lib/meta/meta-cache";
+import { performanceMonitor } from "@/lib/meta/performance-monitor";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,19 @@ export async function GET(request: NextRequest) {
       const cached = metaCache.get<any>(cacheScope, storeId, cacheTokenKey);
       if (cached.hit && cached.data) {
         const durationMs = Math.round(performance.now() - startTime);
-        console.log(`[GET /api/v1/dashboard/metrics] [CACHE HIT] store_id=${storeId} preset=${datePreset} acc=${selectedAccountId} (idade: ${cached.ageMs}ms) respondido em ${durationMs}ms`);
+
+        performanceMonitor.log({
+          tenant_id: storeId,
+          endpoint: "/api/v1/dashboard/metrics",
+          operation: "GET_DASHBOARD_METRICS",
+          context: "dashboard",
+          criticality: "low",
+          duration_ms: durationMs,
+          cache_status: "HIT",
+          graph_calls_count: 0,
+          status_code: 200,
+        });
+
         return NextResponse.json({
           ...cached.data,
           _cache: {
@@ -681,7 +694,18 @@ export async function GET(request: NextRequest) {
     metaCache.set(cacheScope, storeId, cacheTokenKey, responsePayload, 45 * 1000);
 
     const totalDurationMs = Math.round(performance.now() - startTime);
-    console.log(`[GET /api/v1/dashboard/metrics] Cálculo concluído e cache gravado em ${totalDurationMs}ms para store_id=${storeId} preset=${datePreset}`);
+
+    performanceMonitor.log({
+      tenant_id: storeId,
+      endpoint: "/api/v1/dashboard/metrics",
+      operation: "GET_DASHBOARD_METRICS",
+      context: "dashboard",
+      criticality: totalDurationMs > 2000 ? "high" : totalDurationMs > 800 ? "medium" : "low",
+      duration_ms: totalDurationMs,
+      cache_status: refresh ? "BYPASS" : "MISS",
+      graph_calls_count: hasCostSnapshots ? 0 : availableAccounts.length * 2,
+      status_code: 200,
+    });
 
     return NextResponse.json({
       ...responsePayload,
@@ -692,6 +716,21 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     const totalDurationMs = Math.round(performance.now() - startTime);
+    const storeIdFallback = new URL(request.url).searchParams.get("store_id") || "unknown_store";
+
+    performanceMonitor.log({
+      tenant_id: storeIdFallback,
+      endpoint: "/api/v1/dashboard/metrics",
+      operation: "GET_DASHBOARD_METRICS",
+      context: "dashboard",
+      criticality: "high",
+      duration_ms: totalDurationMs,
+      cache_status: "MISS",
+      graph_calls_count: 0,
+      status_code: 500,
+      error_message: error.message,
+    });
+
     console.error(`[Dashboard Metrics API Error] Falhou após ${totalDurationMs}ms:`, error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
