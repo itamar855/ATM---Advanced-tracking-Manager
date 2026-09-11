@@ -1,24 +1,66 @@
 import { decrypt } from "@/lib/encryption";
 
 /**
- * Normaliza e resolve o token de acesso da Meta a partir de qualquer formato:
- * 1. String pura com prefixo EAA...
- * 2. String hexadecimal de coluna BYTEA do PostgreSQL (\x7b... ou \\x7b...)
- * 3. Objeto ou string JSON contendo { access_token: "..." }
+ * Validador estrito de token puro da Meta.
+ * Tokens legítimos começam com EAA (ex: EAAB para tokens de BM/System User, EAAP para User Tokens),
+ * contêm apenas caracteres alfanuméricos, underscore e hífen, com comprimento mínimo >= 20.
+ * Garante terminantemente que JSON, HEX, escapes de BYTEA ou strings corrompidas nunca sejam considerados tokens.
+ */
+export function isCleanMetaToken(val: string | null | undefined): boolean {
+  if (!val || typeof val !== "string") return false;
+  const trimmed = val.trim();
+  if (
+    trimmed.startsWith("{") ||
+    trimmed.startsWith("[") ||
+    trimmed.startsWith("\\x") ||
+    trimmed.startsWith("\\\\x") ||
+    trimmed.includes(":") ||
+    trimmed.includes('"') ||
+    trimmed.includes("'")
+  ) {
+    return false;
+  }
+  return /^EAA[A-Za-z0-9_-]{20,}$/.test(trimmed);
+}
+
+/**
+ * Normaliza e resolve o token de acesso da Meta a partir de qualquer formato histórico:
+ * 1. String pura com prefixo EAA... (EAAB, EAAP, etc.)
+ * 2. String hexadecimal de coluna BYTEA do PostgreSQL (\x... ou \\x...)
+ * 3. Objeto ou string JSON contendo { access_token: "..." }, { token: "..." } ou embutido
  * 4. String criptografada via AES-256-GCM (decrypt)
  * 5. String com aspas envolventes ou espaços
+ * 6. Recuperação resiliente de substring EAAB/EAAP embutida em payloads antigos
+ *
+ * REGRA ABSOLUTA: NUNCA retorna JSON, HEX, objeto ou token malformado.
  */
 export function resolveMetaAccessToken(raw: any): string | null {
   if (!raw) return null;
 
+  // Se for Buffer do Node.js
+  if (typeof Buffer !== "undefined" && Buffer.isBuffer(raw)) {
+    raw = raw.toString("utf8");
+  }
+
   // 1. Se já for um objeto JS
   if (typeof raw === "object") {
-    if (raw.access_token && typeof raw.access_token === "string") {
-      return resolveMetaAccessToken(raw.access_token);
+    if (raw.access_token) {
+      const resolved = resolveMetaAccessToken(raw.access_token);
+      if (resolved) return resolved;
     }
-    if (raw.token && typeof raw.token === "string") {
-      return resolveMetaAccessToken(raw.token);
+    if (raw.token) {
+      const resolved = resolveMetaAccessToken(raw.token);
+      if (resolved) return resolved;
     }
+    // Varredura segura em propriedades
+    for (const key of Object.keys(raw)) {
+      const val = raw[key];
+      if (typeof val === "string" || (val && typeof val === "object")) {
+        const nested = resolveMetaAccessToken(val);
+        if (nested) return nested;
+      }
+    }
+    return null;
   }
 
   let str = String(raw).trim();
@@ -39,28 +81,24 @@ export function resolveMetaAccessToken(raw: any): string | null {
           if (nested) return nested;
         }
       }
-    } catch (e) {
-      console.warn("[resolveMetaAccessToken] Falha ao decodificar hex BYTEA:", e);
+    } catch {
+      // Ignora erro de decodificação hex
     }
   }
 
-  // 3. Se for string JSON { "access_token": ... }
-  if (str.startsWith("{") && str.endsWith("}")) {
+  // 3. Se for string JSON
+  if ((str.startsWith("{") && str.endsWith("}")) || (str.startsWith("[") && str.endsWith("]"))) {
     try {
       const parsed = JSON.parse(str);
-      if (parsed.access_token) {
-        return resolveMetaAccessToken(parsed.access_token);
-      }
-      if (parsed.token) {
-        return resolveMetaAccessToken(parsed.token);
-      }
+      const nested = resolveMetaAccessToken(parsed);
+      if (nested) return nested;
     } catch {
       // Se não for JSON válido, segue o fluxo
     }
   }
 
-  // 4. Se for token puro direto da Meta (começa com EAA)
-  if (str.startsWith("EAA")) {
+  // 4. Se for token puro direto da Meta (começa com EAA, ex: EAAB, EAAP)
+  if (isCleanMetaToken(str)) {
     return str;
   }
 
@@ -68,7 +106,6 @@ export function resolveMetaAccessToken(raw: any): string | null {
   try {
     const decrypted = decrypt(str).trim();
     if (decrypted) {
-      // O valor descriptografado pode ser EAA... ou um JSON
       const nested = resolveMetaAccessToken(decrypted);
       if (nested) return nested;
     }
@@ -76,11 +113,12 @@ export function resolveMetaAccessToken(raw: any): string | null {
     // Não era uma string criptografada com AES-256-GCM
   }
 
-  // 6. Último recurso: verifica se contém uma substring de token Meta (EAA...)
-  const match = str.match(/EAA[A-Za-z0-9_-]+/);
-  if (match) {
+  // 6. Recuperação segura de token Meta embutido em payloads antigos (EAAB, EAAP, EAA...)
+  const match = str.match(/EAA[A-Za-z0-9_-]{20,}/);
+  if (match && isCleanMetaToken(match[0])) {
     return match[0];
   }
 
+  // NUNCA retornar JSON, HEX ou string arbitrária
   return null;
 }

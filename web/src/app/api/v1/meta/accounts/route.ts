@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { resolveMetaAccessToken } from "@/lib/meta/token";
+import { decrypt } from "@/lib/encryption";
+import { isCleanMetaToken, resolveMetaAccessToken } from "@/lib/meta/token";
 import {
   discoverFullMetaHierarchy,
   fetchTokenPermissions,
@@ -307,16 +308,60 @@ export async function POST(request: NextRequest) {
       }
     }
 
+/**
+ * Validação rigorosa antes de persistir access_token_enc no banco de dados:
+ * Permite apenas:
+ * a) Token Meta válido puro iniciando com "EA" (ex: EAAB, EAAP, EAA...)
+ * b) Ciphertext ATM criptografado via AES-256-GCM que descriptografa para um token Meta válido iniciando com "EA"
+ *
+ * Bloqueia expressamente qualquer objeto JSON, formatação HEX de BYTEA (\x...),
+ * array ou payload de configuração acidental.
+ */
+function isValidMetaTokenForStorage(tokenCandidate: string): boolean {
+  if (!tokenCandidate || typeof tokenCandidate !== "string") return false;
+  const trimmed = tokenCandidate.trim();
+
+  // Impede terminantemente salvar JSON, arrays, escapes de BYTEA ou fragmentos de configuração
+  if (
+    trimmed.startsWith("{") ||
+    trimmed.startsWith("[") ||
+    trimmed.startsWith("\\x") ||
+    trimmed.startsWith("\\\\x") ||
+    trimmed.includes('"') ||
+    trimmed.includes("'")
+  ) {
+    return false;
+  }
+
+  // a) Token Meta válido puro (começando com EA)
+  if (isCleanMetaToken(trimmed) || /^EA[A-Za-z0-9_-]{20,}$/.test(trimmed)) {
+    return true;
+  }
+
+  // b) Ciphertext ATM válido
+  try {
+    const decrypted = decrypt(trimmed).trim();
+    if (isCleanMetaToken(decrypted) || /^EA[A-Za-z0-9_-]{20,}$/.test(decrypted)) {
+      return true;
+    }
+  } catch {
+    // Não é um ciphertext AES válido
+  }
+
+  return false;
+}
+
     // Normaliza e limpa o token de qualquer formatação corrompida (hex, json, etc)
     const cleanedToken = resolveMetaAccessToken(finalToken);
     if (cleanedToken) {
       finalToken = cleanedToken;
     }
 
-    if (!finalToken) {
+    // Validação estrita antes de persistir no banco: impede salvar JSON/configuração
+    if (!finalToken || !isValidMetaTokenForStorage(finalToken)) {
       return NextResponse.json({
         ok: false,
-        error: "Access Token é obrigatório. Conecte com o Facebook ou insira seu token.",
+        error: "Access Token Meta inválido ou corrompido. O token deve começar com 'EA' ou ser um ciphertext válido. Salvamento bloqueado.",
       }, { status: 400 });
     }
 

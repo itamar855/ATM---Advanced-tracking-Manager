@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     },
   };
 
-  let token = directToken ? (resolveMetaAccessToken(directToken) || directToken.trim()) : "";
+  let token = directToken ? (resolveMetaAccessToken(directToken) || "") : "";
 
   // 1. Consulta no Banco de Dados
   if (!token && storeId) {
@@ -97,7 +97,11 @@ export async function GET(request: NextRequest) {
           token = resolved;
           debugLog.database.decrypted_successfully = true;
         } else {
-          token = storeInt.access_token_enc.toString();
+          // Token corrompido ou malformado: NUNCA passar raw toString() para a Meta!
+          debugLog.database.decrypted_successfully = false;
+          debugLog.diagnosis_summary.recommendations.push(
+            "Token encontrado para esta loja, mas está em formato inválido ou corrompido (JSON/HEX). Chamadas à Graph API foram bloqueadas para prevenir OAuthException 190."
+          );
         }
       } else {
         // Fallback global
@@ -117,7 +121,11 @@ export async function GET(request: NextRequest) {
             token = resolved;
             debugLog.database.decrypted_successfully = true;
           } else {
-            token = fallbackInt.access_token_enc.toString();
+            // Token corrompido ou malformado: NUNCA passar raw toString() para a Meta!
+            debugLog.database.decrypted_successfully = false;
+            debugLog.diagnosis_summary.recommendations.push(
+              "Token de integração ativa encontrado, mas está em formato inválido ou corrompido (JSON/HEX). Chamadas à Graph API foram bloqueadas para prevenir OAuthException 190."
+            );
           }
         }
       }
@@ -129,7 +137,11 @@ export async function GET(request: NextRequest) {
   if (token) {
     debugLog.database.token_masked = `${token.slice(0, 7)}...${token.slice(-6)}`;
   } else {
-    debugLog.diagnosis_summary.recommendations.push("Nenhum token encontrado no banco de dados ou informado na requisição.");
+    debugLog.diagnosis_summary.token_valid = false;
+    debugLog.diagnosis_summary.is_connected = false;
+    if (debugLog.diagnosis_summary.recommendations.length === 0) {
+      debugLog.diagnosis_summary.recommendations.push("Nenhum token válido encontrado no banco de dados ou informado na requisição.");
+    }
     return NextResponse.json(debugLog, { status: 200 });
   }
 
