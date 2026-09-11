@@ -59,9 +59,24 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const result = await processEventQueue(100);
+    const parts = [
+      `${result.succeeded} entregues`,
+      `${result.failed} com falha temporária`,
+    ];
+    if (result.rejected > 0) {
+      parts.push(`${result.rejected} rejeitados permanentemente (Dead Letter)`);
+    }
+
     return NextResponse.json({
       ok: true,
-      message: `Fila processada com sucesso: ${result.succeeded} entregues, ${result.failed} com falha.`,
+      message: `Fila processada: ${parts.join(", ")}.`,
+      stats: {
+        delivered: result.succeeded,
+        temporary_failures: result.failed,
+        permanent_rejected: result.rejected,
+        retried: result.retried,
+        total_processed: result.totalProcessed,
+      },
       result,
     });
   } catch (error: any) {

@@ -2,6 +2,7 @@ import { createAdminClient } from "../supabase/server";
 import { sendMetaCAPIEvent, MetaEvent } from "../meta/capi";
 import { decrypt, hashEmail, hashPhone, hashState, sha256Hash } from "../encryption";
 import { getVisitorIdentity, normalizeEmail, normalizePhone } from "./identity-stitcher";
+import { classifyCapiError } from "./capi-error-classifier";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rridxhzbkitgcodzyctu.supabase.co";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzcxNTUzMCwiZXhwIjoyMTAzMjkxNTMwfQ.gGxjPtKXABAYM4r6RsHcebVwwHsdpMD-RyRnxJn3QxE";
@@ -11,6 +12,7 @@ export interface QueueProcessResult {
   succeeded: number;
   failed: number;
   retried: number;
+  rejected: number;
   errors: Array<{ eventId: string; error: string }>;
 }
 
@@ -59,6 +61,7 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
     succeeded: 0,
     failed: 0,
     retried: 0,
+    rejected: 0,
     errors: [],
   };
 
@@ -70,14 +73,17 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
 
   const supabase = createAdminClient();
   const nowMs = Date.now();
+  const sevenDaysAgoIso = new Date(nowMs - 7 * 24 * 3600 * 1000).toISOString();
 
   // 1. Busca eventos pendentes/falhos e eventos em buffer (PageView, ViewContent, AddToCart, InitiateCheckout)
+  // Restringe a busca pela janela permitida de 7 dias da Meta CAPI para evitar travamento da fila
   const [{ data: pendingEvents }, { data: bufferedEvents }] = await Promise.all([
     supabase
       .from("events")
       .select("*")
       .in("status", ["pending", "failed", "processing"])
       .lt("attempt_count", 5)
+      .gte("created_at", sevenDaysAgoIso)
       .order("created_at", { ascending: true })
       .limit(Math.floor(maxEvents / 2)),
     supabase
@@ -173,9 +179,42 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
       user_data.external_id = [sha256Hash(`visitor:${metaResp.fbp || customData.fbp}`)];
     }
 
+    const eventTimeSec = Math.floor(new Date(ev.created_at || Date.now()).getTime() / 1000);
+    const nowSec = Math.floor(nowMs / 1000);
+    const SEVEN_DAYS_SECONDS = 7 * 24 * 3600; // 604800s
+
+    // ── Validação rigorosa da janela de 7 dias da Meta CAPI ──
+    // Se o evento for anterior a 7 dias, rejeita localmente (Dead Letter Queue) sem chamar a Meta API.
+    if ((nowSec - eventTimeSec) > SEVEN_DAYS_SECONDS) {
+      result.rejected++;
+      result.errors.push({
+        eventId: ev.event_id,
+        error: "Registro de data e hora do evento anterior a 7 dias (expirado na janela Meta CAPI)",
+      });
+
+      await supabase
+        .from("events")
+        .update({
+          status: "rejected",
+          meta_response: {
+            ...(ev.meta_response || {}),
+            rejection_reason: "expired_meta_7d_window",
+            rejection_type: "PERMANENT",
+            rejected_at: new Date().toISOString(),
+            meta_error_code: 100,
+            meta_error_subcode: 2804003,
+            error: "Rejeitado localmente: Registro de data e hora do evento anterior a 7 dias",
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", ev.id);
+
+      continue;
+    }
+
     const metaEvent: MetaEvent = {
       event_name: ev.event_name,
-      event_time: Math.floor(new Date(ev.created_at || Date.now()).getTime() / 1000),
+      event_time: eventTimeSec,
       event_id: ev.event_id,
       event_source_url: metaResp.event_source_url || metaResp.custom_data?.event_source_url || metaResp.order_details?.event_source_url || "https://checkout.loja.com",
       action_source: "website",
@@ -257,39 +296,92 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
           })
           .eq("id", ev.id);
       } else {
-        result.failed++;
-        result.errors.push({ eventId: ev.event_id, error: capiResult.error || "Rejeitado pela Meta" });
+        const classification = classifyCapiError(capiResult.response, 400);
+
+        if (classification.isPermanent || currentAttempt >= 5) {
+          result.rejected++;
+          result.errors.push({ eventId: ev.event_id, error: capiResult.error || classification.description });
+
+          await supabase
+            .from("events")
+            .update({
+              status: "rejected",
+              attempt_count: currentAttempt,
+              meta_response: {
+                ...(ev.meta_response || {}),
+                rejection_reason: classification.reason,
+                rejection_type: "PERMANENT",
+                rejected_at: new Date().toISOString(),
+                meta_error_code: classification.errorCode || null,
+                meta_error_subcode: classification.errorSubcode || null,
+                error: capiResult.error || classification.description,
+                last_attempt_at: new Date().toISOString(),
+              },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", ev.id);
+        } else {
+          result.failed++;
+          result.retried++;
+          result.errors.push({ eventId: ev.event_id, error: capiResult.error || classification.description });
+
+          await supabase
+            .from("events")
+            .update({
+              status: "failed",
+              attempt_count: currentAttempt,
+              meta_response: {
+                ...(ev.meta_response || {}),
+                temporary_error_reason: classification.reason,
+                error: capiResult.error || classification.description,
+                last_attempt_at: new Date().toISOString(),
+              },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", ev.id);
+        }
+      }
+    } catch (e: any) {
+      const classification = classifyCapiError(e);
+      if (classification.isPermanent || currentAttempt >= 5) {
+        result.rejected++;
+        result.errors.push({ eventId: ev.event_id, error: e.message || classification.description });
 
         await supabase
           .from("events")
           .update({
-            status: currentAttempt >= 5 ? "rejected" : "failed",
+            status: "rejected",
             attempt_count: currentAttempt,
             meta_response: {
               ...(ev.meta_response || {}),
-              error: capiResult.error || "Falha no envio Meta CAPI",
-              last_attempt_at: new Date().toISOString(),
+              rejection_reason: classification.reason,
+              rejection_type: "PERMANENT",
+              rejected_at: new Date().toISOString(),
+              error: e.message,
+              last_error: e.message,
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", ev.id);
+      } else {
+        result.failed++;
+        result.retried++;
+        result.errors.push({ eventId: ev.event_id, error: e.message });
+
+        await supabase
+          .from("events")
+          .update({
+            status: "failed",
+            attempt_count: currentAttempt,
+            meta_response: {
+              ...(ev.meta_response || {}),
+              temporary_error_reason: classification.reason,
+              last_error: e.message,
             },
             updated_at: new Date().toISOString(),
           })
           .eq("id", ev.id);
       }
-    } catch (e: any) {
-      result.failed++;
-      result.errors.push({ eventId: ev.event_id, error: e.message });
-
-      await supabase
-        .from("events")
-        .update({
-          status: "failed",
-          attempt_count: currentAttempt,
-          meta_response: {
-            ...(ev.meta_response || {}),
-            last_error: e.message,
-          },
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", ev.id);
     }
   }
 
