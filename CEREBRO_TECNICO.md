@@ -245,6 +245,42 @@ O Campaign Action Engine não pode tomar decisões de escala e aumento orçament
   - Suporta override/bypass imediato quando o usuário clica em atualizar manualmente (`refresh=true`).
 - **Contextos de Negócio**: Métricas catalogadas por contexto (`dashboard`, `integration`, `asset_sync`, `campaign_sync`) e criticidade operacional (`low`, `medium`, `high`).
 
+---
+
+## 9. Financial Normalization & Campaign Profit Intelligence Layer™ (Fase 10)
+
+### 9.1 Motivação e Imunização contra Falso ROAS
+Contas de anúncio configuradas em USD com vendas ocorrendo em BRL geravam distorções severas:
+- **Exemplo Real:** Gasto de $ 100 USD vs Receita de R$ 350 BRL.
+- Sem normalização cambial, a visualização superficial aparentava um ROAS de $3.5\times$.
+- Com a taxa comercial real (USD 1 = R$ 5,40), o custo operacional real é de R$ 540,00, gerando um ROAS real de $0.65\times$ e prejuízo de -R$ 190,00.
+- A Camada 10 detecta ativamente essa anomalia (`false_roas_detected: true`) e força ação defensiva imediata (`PAUSE` ou `REDUCE`).
+
+### 9.2 As 3 Camadas da Fase 10
+1. **Camada 1 — Currency Normalization Engine:**
+   - Converte gastos para a moeda operacional BRL (`spend_brl`) utilizando taxa de câmbio comercial do dia.
+   - **Regra de Imutabilidade:** Valores originais (`spend_original`, `currency_original`) são estritamente preservados para auditoria.
+   - Registra `exchange_rate` e `conversion_timestamp`.
+2. **Camada 2 — Campaign Profit Score (5 Pilares Ponderados: 0 a 100):**
+   - **Profitability Score (40%):** Lucro líquido real deduzido de COGS e custos operacionais, margem e ROI em BRL.
+   - **CPA Efficiency Score (25%):** CPA real versus CPA máximo aceitável definido pelo lojista.
+   - **ROAS Stability Score (15%):** Consistência temporal e alinhamento com ROAS target.
+   - **Conversion Volume Score (10%):** Confiabilidade estatística contra conversões isoladas de sorte (volume de pedidos).
+   - **Spend Efficiency Score (10%):** Capacidade de alocar orçamento sustentavelmente mantendo retorno positivo.
+3. **Camada 3 — Financial Decision Ready API:**
+   - Classificação em 3 Tiers:
+     - 🟢 **GREEN ($\ge 85$):** Ação `SCALE` (+20% ou +30% de orçamento diário).
+     - 🟡 **YELLOW ($70 \dots 84$):** Ação `MAINTAIN` (0% de alteração, manter e observar).
+     - 🔴 **RED ($< 70$):** Ação `REDUCE` (-20%) ou `PAUSE` (-100% em caso de prejuízo severo, CPA descontrolado ou falso ROAS).
+   - Justificativa textual auditável (`reason`) para governança financeira.
+
+### 9.3 Tabela de Snapshots Diários (`campaign_profit_snapshots`)
+- Migration: `supabase/migrations/024_create_campaign_profit_intelligence.sql`.
+- Chave composta única: `(store_id, campaign_id, date)`.
+- RLS habilitado para garantia total de isolamento multi-tenant.
+- Métricas detalhadas preservadas em coluna `metrics` (JSONB).
+
+
 
 
 

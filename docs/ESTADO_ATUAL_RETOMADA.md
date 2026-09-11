@@ -53,36 +53,43 @@
   - `web/src/app/dashboard/page.tsx`: Polling otimizado para 45s com suspensão automática quando a aba do navegador estiver em segundo plano (`document.visibilityState === "hidden"`).
 - **Auditoria**: `node scripts/test-meta-cache-and-concurrency.js` (**8 PASS | 0 FAIL**).
 
-#### ✅ Fase 9.5 — Meta Performance Observability Layer & Cooldown Protection
-- **Módulos Criados/Otimizados**:
-  - `supabase/migrations/023_create_meta_performance_logs.sql`: Tabela de telemetria operacional com contextos (`dashboard`, `integration`, `asset_sync`, `campaign_sync`), criticidade (`low`, `medium`, `high`) e isolamento RLS.
-  - `web/src/lib/meta/performance-monitor.ts`: Motor de telemetria assíncrono (*fire-and-forget*), amostragem inteligente de 1% para cache HITs <50ms (evita explosão de dados no banco), e gerenciamento de Cooldown.
-  - **Governança de Cooldown**: Nunca bloqueia leitura de cache existente, possui `cooldown_until` e `reason` estruturados, e permite bypass manual via `refresh=true`.
+### ✅ Fase 9.5 — Meta Performance Observability Layer & Cooldown Protection
 - **Auditoria**: `node scripts/test-meta-performance-observability.js` (**9 PASS | 0 FAIL**).
 
 ---
 
-## 2. Testes de Validação da Fase 9
-
-Para validar a qualquer momento no terminal:
-```bash
-node scripts/test-meta-asset-health-engine.js
-node scripts/test-meta-asset-sync.js
-node scripts/test-asset-intelligence-guard.js
-node scripts/test-meta-cache-and-concurrency.js
-node scripts/test-meta-performance-observability.js
-```
-*(Todos retornam 100% PASS — Total: 34 testes aprovados)*
+### ✅ Fase 10 — Financial Normalization & Campaign Profit Intelligence Layer™
+- **Status**: Concluída e auditada (**24 PASS | 0 FAIL**).
+- **Módulos Criados**:
+  - `supabase/migrations/024_create_campaign_profit_intelligence.sql`: Tabela `public.campaign_profit_snapshots` para registro contábil e auditoria diária.
+  - `web/src/lib/intelligence/campaign-profit-engine.ts`: Motor matemático com normalização cambial estrita (`spend_original`, `currency_original` preservados; conversão para `spend_brl`), ponderação dos 5 pilares do **Campaign Profit Score** (0 a 100), classificação de Tiers (`GREEN`, `YELLOW`, `RED`) e decisões prescritivas (`SCALE`, `MAINTAIN`, `REDUCE`, `PAUSE`).
+  - `scripts/test-campaign-profit-engine.js`: Suíte automatizada cobrindo os 5 cenários mandatórios.
+- **Proteção Contra Falso ROAS**: Imunização contra contas em USD comparadas com receita em BRL (detecção de distorção cambial e corte automático de escala).
+- **Preservação**: Nenhuma alteração em `events`, `orders`, `revenue_ledger`, `attribution-engine.ts`, `identity-stitcher.ts`, webhooks ou sync do Meta existente. Nenhuma UI criada. Nenhum acionamento automático de autopilot.
 
 ---
 
-## 3. Arquivos da Fase 9.5 (Prontos para Commit quando Autorizado)
+## 2. Testes de Validação do Sistema
 
-- **Novo**: `supabase/migrations/023_create_meta_performance_logs.sql`
-- **Novo**: `web/src/lib/meta/performance-monitor.ts`
-- **Novo**: `scripts/test-meta-performance-observability.js`
-- **Modificado**: `web/src/app/api/v1/meta/accounts/route.ts`
-- **Modificado**: `web/src/app/api/v1/dashboard/metrics/route.ts`
-- **Modificado**: `web/src/lib/intelligence/meta-asset-sync.ts`
+Para validar a qualquer momento no terminal:
+```bash
+node scripts/test-campaign-profit-engine.js
+node scripts/test-meta-performance-observability.js
+node scripts/test-meta-cache-and-concurrency.js
+node scripts/test-meta-asset-sync.js
+node scripts/test-asset-intelligence-guard.js
+node scripts/test-meta-asset-health-engine.js
+node scripts/test-dashboard-financial-conciliation.js
+```
+*(Todos retornam 100% PASS — Total: 58 testes aprovados)*
+
+---
+
+## 3. Arquivos da Fase 10 (Aguardando Autorização para Commit)
+
+- **Novo**: `supabase/migrations/024_create_campaign_profit_intelligence.sql`
+- **Novo**: `web/src/lib/intelligence/campaign-profit-engine.ts`
+- **Novo**: `scripts/test-campaign-profit-engine.js`
 - **Modificado**: `CEREBRO_TECNICO.md`
 - **Modificado**: `docs/ESTADO_ATUAL_RETOMADA.md`
+
