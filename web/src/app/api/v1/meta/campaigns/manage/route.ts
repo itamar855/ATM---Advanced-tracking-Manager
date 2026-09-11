@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { id, level, action, value, accountCurrency, store_id, duplication_mode, source_action } = body as {
       id: string;
-      level: "campaign" | "adset" | "ad";
+      level: "campaign" | "adset" | "ad" | string;
       action: "status" | "name" | "rename" | "budget" | "duplicate" | "delete";
       value?: any;
       accountCurrency?: string;
@@ -35,6 +35,13 @@ export async function POST(request: NextRequest) {
     if (!id || !action || !store_id) {
       return NextResponse.json({ ok: false, error: "ID, action e store_id são obrigatórios" }, { status: 400 });
     }
+
+    const normalizedLevel: "campaign" | "adset" | "ad" =
+      level === "campaigns" || level === "campaign"
+        ? "campaign"
+        : level === "adsets" || level === "adset"
+          ? "adset"
+          : "ad";
 
     const supabase = createAdminClient();
 
@@ -113,8 +120,8 @@ export async function POST(request: NextRequest) {
       }
 
       // Captura segura de métricas antes da alteração na Meta (100% backend)
-      if (level === "campaign" || level === "adset") {
-        budgetSnapshot = getCachedEntityMetrics(store_id, id, level);
+      if (normalizedLevel === "campaign" || normalizedLevel === "adset") {
+        budgetSnapshot = getCachedEntityMetrics(store_id, id, normalizedLevel);
         if (budgetSnapshot) {
           snapshotSource = "cache";
           datePresetUsed = budgetSnapshot.date_preset;
@@ -180,7 +187,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Se for nível campanha, utiliza o motor de duplicação hierárquica (FULL_CLONE ou SIMPLE)
-      if (level === "campaign") {
+      if (normalizedLevel === "campaign") {
         const duplicationResults = [];
         const activateAfterDuplication = body.activate_after_duplication !== undefined
           ? Boolean(body.activate_after_duplication)
@@ -238,7 +245,19 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      // Trava de segurança absoluta: NUNCA permitir duplicação de campanha cair no fallback /copies
+      if ((normalizedLevel as string) === "campaign" || String(level).toLowerCase().includes("campaign")) {
+        throw new Error(
+          "Legacy campaign duplication blocked. Use hierarchical duplicator."
+        );
+      }
+
       // Caso seja adset ou ad individual, mantém cópia do objeto (sempre PAUSED por segurança)
+      console.warn("[Meta Duplication Warning] Legacy duplication fallback triggered for non-campaign entity:", {
+        id,
+        level,
+        normalizedLevel,
+      });
       graphUrl = `https://graph.facebook.com/v23.0/${id}/copies`;
       
       const copyPromises = Array.from({ length: copies }).map(async () => {
@@ -256,7 +275,7 @@ export async function POST(request: NextRequest) {
         
         const newCopiedId = data.copied_campaign_id || data.copied_adset_id || data.copied_ad_id || data.id || data.new_campaign_id;
 
-        if (targetBudget !== null && targetBudget > 0 && newCopiedId && level === "adset") {
+        if (targetBudget !== null && targetBudget > 0 && newCopiedId && normalizedLevel === "adset") {
           const budUrl = `https://graph.facebook.com/v23.0/${newCopiedId}?access_token=${token}`;
           await fetch(budUrl, {
             method: "POST",
@@ -329,7 +348,7 @@ export async function POST(request: NextRequest) {
           source: "atm_user",
           action: "budget",
           entity_id: id,
-          entity_type: level,
+          entity_type: normalizedLevel,
           entity_name: entityName,
           previous_budget: previousBudget !== null ? Number(previousBudget.toFixed(2)) : null,
           new_budget: Number(normalizedValue),

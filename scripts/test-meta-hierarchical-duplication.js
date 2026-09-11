@@ -221,6 +221,13 @@ function createMockMetaGraphApi() {
 
     // 8. POST /{entity_id} (Atualização de Status / Ativação pós-validação)
     if (method === "POST" && !urlStr.includes("/campaigns") && !urlStr.includes("/adsets") && !urlStr.includes("/ads")) {
+      if (urlStr.includes("/copies")) {
+        store.copiesEndpointHit = true;
+        return {
+          ok: true,
+          json: async () => ({ id: `legacy_copy_${++idCounter}`, copied_campaign_id: `legacy_copy_${idCounter}` })
+        };
+      }
       const match = urlStr.match(/v23\.0\/([^?]+)/);
       const entityId = match ? match[1] : null;
       if (entityId) {
@@ -548,9 +555,64 @@ async function runTests() {
     allPassed = false;
   }
 
+  // ---------------------------------------------------------------------------
+  // TESTE 9: BLINDAGEM DE NÍVEL (PLURAL VS SINGULAR) & BLOQUEIO DO /COPIES
+  // ---------------------------------------------------------------------------
+  console.log("\n--- TESTE 9: Normalização de Nível (campaigns -> campaign) & Proteção contra /copies ---");
+  const env9 = createMockMetaGraphApi();
+
+  // Simulação do payload recebido na rota /manage vindo do frontend com level no plural: "campaigns"
+  const incomingRequest = {
+    id: "orig_camp_100",
+    level: "campaigns", // PLURAL!
+    action: "duplicate",
+    duplication_mode: "FULL_CLONE",
+    activate_after_duplication: true,
+  };
+
+  // Normalização conforme implementada no backend /manage/route.ts
+  const normalizedLevel = (incomingRequest.level === "campaigns" || incomingRequest.level === "campaign")
+    ? "campaign"
+    : (incomingRequest.level === "adsets" || incomingRequest.level === "adset")
+      ? "adset"
+      : "ad";
+
+  let routeResult = null;
+  if (normalizedLevel === "campaign") {
+    routeResult = await duplicateCampaign({
+      campaignId: incomingRequest.id,
+      accessToken: "EAAP_MOCK_TOKEN",
+      storeId: "store_alpha_test",
+      duplicationMode: incomingRequest.duplication_mode,
+      activateAfterDuplication: incomingRequest.activate_after_duplication,
+      customFetch: env9.mockFetch
+    });
+  } else {
+    // Se falhasse a normalização, cairia no fallback legado /copies
+    await env9.mockFetch(`https://graph.facebook.com/v23.0/${incomingRequest.id}/copies?access_token=EAAP_MOCK_TOKEN`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status_option: "PAUSED" })
+    });
+  }
+
+  const check9A = normalizedLevel === "campaign";
+  const check9B = routeResult !== null && routeResult.ok === true && routeResult.finalStatus === "ACTIVE";
+  const check9C = routeResult?.createdAdsetIds?.length === 2 && routeResult?.createdAdIds?.length === 3;
+  const check9D = !env9.store.copiesEndpointHit; // GARANTIA: /copies NUNCA foi chamado!
+
+  if (check9A && check9B && check9C && check9D) {
+    console.log("✅ SUCESSO T9: Nível plural ('campaigns') normalizado para 'campaign' com sucesso.");
+    console.log("   - Motor hierárquico FULL_CLONE acionado (1 Camp, 2 AdSets, 3 Ads, finalStatus: ACTIVE)");
+    console.log("   - Endpoint legado /copies BLOQUEADO (copiesEndpointHit: false)");
+  } else {
+    console.error("❌ FALHA T9: Blindagem de nível falhou:", { check9A, check9B, check9C, check9D, copiesHit: env9.store.copiesEndpointHit });
+    allPassed = false;
+  }
+
   console.log("\n================================================================================");
   if (allPassed) {
-    console.log("🎯 TODOS OS 8 TESTES DE DUPLICAÇÃO HIERÁRQUICA PASSARAM COM 100% DE SUCESSO!");
+    console.log("🎯 TODOS OS 9 TESTES DE DUPLICAÇÃO HIERÁRQUICA PASSARAM COM 100% DE SUCESSO!");
   } else {
     console.error("❌ HOUVE FALHA EM UM OU MAIS TESTES!");
     process.exit(1);

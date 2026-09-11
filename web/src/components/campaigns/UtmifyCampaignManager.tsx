@@ -572,9 +572,16 @@ export function UtmifyCampaignManager({
 
   // ── Ação de Duplicar e Alterar Orçamento ──────────────────────────────
 
-  const handleOpenDuplicate = (id: string, level: "campaign" | "adset" | "ad", currentBudget?: number) => {
+  const normalizeDuplicateLevel = (tab: string | null | undefined): "campaign" | "adset" | "ad" => {
+    if (!tab) return "campaign";
+    if (tab === "campaigns" || tab === "campaign") return "campaign";
+    if (tab === "adsets" || tab === "adset") return "adset";
+    return "ad";
+  };
+
+  const handleOpenDuplicate = (id: string, level: "campaign" | "adset" | "ad" | string, currentBudget?: number) => {
     setDuplicateItemIds([id]);
-    setDuplicateItemLevel(level);
+    setDuplicateItemLevel(normalizeDuplicateLevel(level));
     setDuplicateCopies("1");
     setDuplicateNewBudget(currentBudget && currentBudget > 0 ? String(currentBudget) : "");
     setDuplicateFullClone(true);
@@ -588,7 +595,7 @@ export function UtmifyCampaignManager({
   const handleOpenBulkDuplicate = () => {
     if (selectedRowIds.length === 0) return;
     setDuplicateItemIds(selectedRowIds);
-    setDuplicateItemLevel(activeTab as "campaign" | "adset" | "ad");
+    setDuplicateItemLevel(normalizeDuplicateLevel(activeTab));
     setDuplicateCopies("1");
     setDuplicateNewBudget("");
     setDuplicateFullClone(true);
@@ -638,6 +645,8 @@ export function UtmifyCampaignManager({
     let lastData: any = null;
     let caughtError: any = null;
 
+    const targetDuplicateLevel = normalizeDuplicateLevel(duplicateItemLevel || activeTab);
+
     try {
       const promises = duplicateItemIds.map(id => 
         fetch("/api/v1/meta/campaigns/manage", {
@@ -645,7 +654,7 @@ export function UtmifyCampaignManager({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             id,
-            level: duplicateItemLevel,
+            level: targetDuplicateLevel,
             action: "duplicate",
             duplication_mode: duplicateFullClone ? "FULL_CLONE" : "SIMPLE",
             source_action: "MANUAL_DUPLICATE",
@@ -2342,7 +2351,7 @@ export function UtmifyCampaignManager({
                     />
                   </div>
 
-                  {(duplicateItemLevel === "campaign" || duplicateItemLevel === "adset") && (
+                  {(normalizeDuplicateLevel(duplicateItemLevel) === "campaign" || normalizeDuplicateLevel(duplicateItemLevel) === "adset") && (
                     <div>
                       <label className="block text-xs font-bold text-zinc-300 mb-1.5">
                         Novo Orçamento Diário (Opcional)
@@ -2362,7 +2371,7 @@ export function UtmifyCampaignManager({
                     </div>
                   )}
 
-                  {duplicateItemLevel === "campaign" && (
+                  {normalizeDuplicateLevel(duplicateItemLevel) === "campaign" && (
                     <div className="pt-3 border-t border-zinc-800/80 space-y-3">
                       <label className="flex items-start gap-3 cursor-pointer select-none group">
                         <input

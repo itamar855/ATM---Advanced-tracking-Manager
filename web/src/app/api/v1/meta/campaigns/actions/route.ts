@@ -58,9 +58,11 @@ export async function POST(request: NextRequest) {
       const deleteResult = await deleteResponse.json();
       return NextResponse.json({ ok: deleteResult.success });
     } else if (action === "duplicate") {
-      // Duplicar via Graph API
-      url = `https://graph.facebook.com/${apiVersion}/${campaign_id}/copies`;
-      bodyPayload = { status: "PAUSED" }; // Duplica em rascunho/pausada por segurança
+      // Bloqueio permanente de /copies para campanhas:
+      return NextResponse.json(
+        { ok: false, error: "Legacy campaign duplication blocked. Use /api/v1/meta/campaigns/manage with hierarchical duplicator." },
+        { status: 400 }
+      );
     } else {
       return NextResponse.json({ ok: false, error: "Ação não suportada" }, { status: 400 });
     }
