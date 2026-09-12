@@ -445,16 +445,24 @@ export async function GET(request: NextRequest) {
         }
 
         const rawCampaign = String(
-          customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || ""
+          customData.utm_campaign || orderDetails.utm_campaign || tracking.utm_campaign || metaResp.utm_campaign || ""
         ).trim();
         const rawMedium = String(
-          customData.utm_medium || orderDetails.utm_medium || tracking.utm_medium || ""
+          customData.utm_medium ||
+            orderDetails.utm_medium ||
+            tracking.utm_medium ||
+            metaResp.utm_medium ||
+            customData.utm_term ||
+            orderDetails.utm_term ||
+            tracking.utm_term ||
+            metaResp.utm_term ||
+            ""
         ).trim();
         const rawContent = String(
-          customData.utm_content || orderDetails.utm_content || tracking.utm_content || ""
+          customData.utm_content || orderDetails.utm_content || tracking.utm_content || metaResp.utm_content || ""
         ).trim();
         const rawSource = String(
-          customData.utm_source || orderDetails.utm_source || tracking.utm_source || ""
+          customData.utm_source || orderDetails.utm_source || tracking.utm_source || metaResp.utm_source || ""
         ).trim();
 
         const campId = rawCampaign.includes("|") ? rawCampaign.split("|")[1].trim() : rawCampaign;
@@ -533,7 +541,7 @@ export async function GET(request: NextRequest) {
           .select("id, event_name, meta_response, created_at")
           .eq("store_id", storeId)
           .in("event_name", ["Purchase", "InitiateCheckout"])
-          .eq("status", "accepted")
+          .in("status", ["accepted", "buffered", "completed", "processed"])
           .gte("created_at", dateRange.startUtc)
           .lte("created_at", dateRange.endUtc)
           .order("created_at", { ascending: false })
@@ -620,8 +628,15 @@ export async function GET(request: NextRequest) {
         cleanName: String(as.name || "").toLowerCase().replace(/[^a-z0-9]/g, ""),
       }));
 
+      const campNameClean = String(campMeta?.name || campData?.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
       parsedPurchases.forEach((p) => {
         const pAdsetNameClean = p.adsetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const pCampNameClean = p.campName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const isCampMatch =
+          (p.campId && p.campId === requestedCampaignId) ||
+          (campNameClean && pCampNameClean && (campNameClean.includes(pCampNameClean) || pCampNameClean.includes(campNameClean)));
+
         let bestAdset = normalizedAdsets.find((as) => p.adsetId && as.id === p.adsetId);
         if (!bestAdset && pAdsetNameClean) {
           bestAdset = normalizedAdsets.find((as) => as.cleanName === pAdsetNameClean);
@@ -631,6 +646,11 @@ export async function GET(request: NextRequest) {
             (as) => as.cleanName && (as.cleanName.includes(pAdsetNameClean) || pAdsetNameClean.includes(as.cleanName))
           );
         }
+        // Fallback: se pertence comprovadamente a esta campanha e há conjuntos, mas o adset não veio preenchido nos UTMs
+        if (!bestAdset && isCampMatch && normalizedAdsets.length > 0) {
+          bestAdset = normalizedAdsets[0];
+        }
+
         if (bestAdset) {
           const prev = adsetAttribution.get(bestAdset.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
           adsetAttribution.set(bestAdset.id, {
@@ -643,6 +663,11 @@ export async function GET(request: NextRequest) {
 
       parsedICs.forEach((ic) => {
         const pAdsetNameClean = ic.adsetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const pCampNameClean = ic.campName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const isCampMatch =
+          (ic.campId && ic.campId === requestedCampaignId) ||
+          (campNameClean && pCampNameClean && (campNameClean.includes(pCampNameClean) || pCampNameClean.includes(campNameClean)));
+
         let bestAdset = normalizedAdsets.find((as) => ic.adsetId && as.id === ic.adsetId);
         if (!bestAdset && pAdsetNameClean) {
           bestAdset = normalizedAdsets.find((as) => as.cleanName === pAdsetNameClean);
@@ -652,6 +677,10 @@ export async function GET(request: NextRequest) {
             (as) => as.cleanName && (as.cleanName.includes(pAdsetNameClean) || pAdsetNameClean.includes(as.cleanName))
           );
         }
+        if (!bestAdset && isCampMatch && normalizedAdsets.length > 0) {
+          bestAdset = normalizedAdsets[0];
+        }
+
         if (bestAdset) {
           adsetIcAttribution.set(bestAdset.id, (adsetIcAttribution.get(bestAdset.id) || 0) + 1);
         }
@@ -678,7 +707,7 @@ export async function GET(request: NextRequest) {
 
         const asIsCBO = !as.daily_budget && !as.lifetime_budget;
         const asRawBudget = as.daily_budget ? Number(as.daily_budget) / 100 : Number(as.lifetime_budget || 0) / 100;
-        const asBudget = asRawBudget;
+        const asBudgetBrl = convertToBrl(asRawBudget, currency, usdBrlRate);
         const asIsActive =
           as.effective_status === "ACTIVE" || (as.effective_status === undefined && as.status === "ACTIVE");
 
@@ -702,8 +731,9 @@ export async function GET(request: NextRequest) {
           exchange_rate_used: usdBrlRate,
           status: asIsActive ? "active" : "paused",
           effective_status: as.effective_status || as.status,
-          budget: asBudget,
-          budget_original: asBudget,
+          budget: asBudgetBrl,
+          budget_original: asRawBudget,
+          budget_converted: asBudgetBrl,
           budget_type: asIsCBO ? "CBO" : as.daily_budget ? "Diário" : "Vitalício",
           is_cbo: asIsCBO,
           spend: asSpend,
@@ -822,7 +852,7 @@ export async function GET(request: NextRequest) {
           .select("id, event_name, meta_response, created_at")
           .eq("store_id", storeId)
           .in("event_name", ["Purchase", "InitiateCheckout"])
-          .eq("status", "accepted")
+          .in("status", ["accepted", "buffered", "completed", "processed"])
           .gte("created_at", dateRange.startUtc)
           .lte("created_at", dateRange.endUtc)
           .order("created_at", { ascending: false })
@@ -891,8 +921,15 @@ export async function GET(request: NextRequest) {
         cleanName: String(ad.name || "").toLowerCase().replace(/[^a-z0-9]/g, ""),
       }));
 
+      const adsetNameClean = String(adsetMeta?.name || adsetData?.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
       parsedPurchases.forEach((p) => {
         const pAdNameClean = p.adName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const pAdsetNameClean = p.adsetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const isAdsetMatch =
+          (p.adsetId && p.adsetId === requestedAdsetId) ||
+          (adsetNameClean && pAdsetNameClean && (adsetNameClean.includes(pAdsetNameClean) || pAdsetNameClean.includes(adsetNameClean)));
+
         let bestAd = normalizedAds.find((ad) => p.adId && ad.id === p.adId);
         if (!bestAd && pAdNameClean) {
           bestAd = normalizedAds.find((ad) => ad.cleanName === pAdNameClean);
@@ -902,6 +939,10 @@ export async function GET(request: NextRequest) {
             (ad) => ad.cleanName && (ad.cleanName.includes(pAdNameClean) || pAdNameClean.includes(ad.cleanName))
           );
         }
+        if (!bestAd && isAdsetMatch && normalizedAds.length > 0) {
+          bestAd = normalizedAds[0];
+        }
+
         if (bestAd) {
           const prev = adAttribution.get(bestAd.id) || { grossRevenue: 0, netRevenue: 0, count: 0 };
           adAttribution.set(bestAd.id, {
@@ -914,6 +955,11 @@ export async function GET(request: NextRequest) {
 
       parsedICs.forEach((ic) => {
         const pAdNameClean = ic.adName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const pAdsetNameClean = ic.adsetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const isAdsetMatch =
+          (ic.adsetId && ic.adsetId === requestedAdsetId) ||
+          (adsetNameClean && pAdsetNameClean && (adsetNameClean.includes(pAdsetNameClean) || pAdsetNameClean.includes(adsetNameClean)));
+
         let bestAd = normalizedAds.find((ad) => ic.adId && ad.id === ic.adId);
         if (!bestAd && pAdNameClean) {
           bestAd = normalizedAds.find((ad) => ad.cleanName === pAdNameClean);
@@ -923,6 +969,10 @@ export async function GET(request: NextRequest) {
             (ad) => ad.cleanName && (ad.cleanName.includes(pAdNameClean) || pAdNameClean.includes(ad.cleanName))
           );
         }
+        if (!bestAd && isAdsetMatch && normalizedAds.length > 0) {
+          bestAd = normalizedAds[0];
+        }
+
         if (bestAd) {
           adIcAttribution.set(bestAd.id, (adIcAttribution.get(bestAd.id) || 0) + 1);
         }
@@ -1197,7 +1247,7 @@ export async function GET(request: NextRequest) {
       .select("id, event_name, meta_response, created_at")
       .eq("store_id", storeId)
       .in("event_name", ["Purchase", "InitiateCheckout"])
-      .eq("status", "accepted")
+      .in("status", ["accepted", "buffered", "completed", "processed"])
       .gte("created_at", queryStartUtc)
       .lte("created_at", queryEndUtc)
       .order("created_at", { ascending: false })
@@ -1481,7 +1531,7 @@ export async function GET(request: NextRequest) {
             : Number(camp.lifetime_budget || 0) / 100
           : 0;
 
-        const campBudget = rawBudget;
+        const campBudgetBrl = convertToBrl(rawBudget, currency, usdBrlRate);
         const isActive =
           camp.effective_status === "ACTIVE" || (camp.effective_status === undefined && camp.status === "ACTIVE");
 
@@ -1498,8 +1548,9 @@ export async function GET(request: NextRequest) {
           exchange_rate_used: usdBrlRate,
           status: isActive ? "active" : "paused",
           effective_status: camp.effective_status || camp.status,
-          budget: campBudget,
-          budget_original: campBudget,
+          budget: campBudgetBrl,
+          budget_original: rawBudget,
+          budget_converted: campBudgetBrl,
           budget_type: isCBO ? (camp.daily_budget ? "CBO" : "CBO (Vitalício)") : "ABO",
           is_cbo: isCBO,
           adset_count: 0,

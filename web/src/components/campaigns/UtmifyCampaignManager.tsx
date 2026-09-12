@@ -993,6 +993,7 @@ export function UtmifyCampaignManager({
 
   const totals = useMemo(() => {
     let count = filteredData.length;
+    let budget = 0;
     let cycle = 0;
     let historicSpent = 0;
     let spend = 0;
@@ -1002,6 +1003,7 @@ export function UtmifyCampaignManager({
     let ic = 0;
 
     filteredData.forEach((item: any) => {
+      budget += (item.budget_converted ?? item.budget) || 0;
       cycle += item.cycle || 0;
       historicSpent += item.historic_spent || 0;
       spend += (item.spend_converted ?? item.spend) || 0;
@@ -1018,7 +1020,7 @@ export function UtmifyCampaignManager({
     const margin = revenue > 0 ? (profit / revenue) * 100 : (spend > 0 ? -100 : 0);
     const roi = spend > 0 ? revenue / spend : 0;
 
-    return { count, cycle, historicSpent, spend, revenue, grossRevenue, profit, roas, sales, cpa, ic, cpi, margin, roi };
+    return { count, budget, cycle, historicSpent, spend, revenue, grossRevenue, profit, roas, sales, cpa, ic, cpi, margin, roi };
   }, [filteredData]);
 
   // ── Contexto de Moeda Dinâmica ──────────────────────────────────────────
@@ -1727,7 +1729,7 @@ export function UtmifyCampaignManager({
                           }}
                           className="font-mono text-zinc-300 font-bold hover:text-blue-400 flex items-center gap-1 text-[11px] cursor-pointer"
                         >
-                          <span>{row.budget ? fmtBrl(row.budget, (row as any).currency) : "N/D"}</span>
+                          <span>{row.budget ? formatCurrency((row as any).budget_converted ?? row.budget, "BRL") : "N/D"}</span>
                           <Edit2 size={10} className="text-zinc-500" />
                         </button>
                       )}
@@ -2093,8 +2095,13 @@ export function UtmifyCampaignManager({
 
                                 <div className="flex flex-col items-end">
                                   <span className="font-bold text-white text-xs">
-                                    {row.budget > 0 ? fmtBrl(row.budget, (row as any).currency_original || (row as any).currency) : "N/A"}
+                                    {row.budget > 0 ? formatCurrency((row as any).budget_converted ?? row.budget, "BRL") : "N/A"}
                                   </span>
+                                  {(row as any).currency_original && (row as any).currency_original !== "BRL" && (row as any).budget_original !== undefined && (row as any).budget_original > 0 && (
+                                    <span className="text-[10px] text-zinc-500 block leading-tight font-normal" title="Orçamento na moeda nativa da conta">
+                                      {formatCurrency((row as any).budget_original, (row as any).currency_original)}
+                                    </span>
+                                  )}
                                   {row.budget > 0 && (
                                     <span className="text-[9px] text-zinc-400 font-normal leading-tight">
                                       Diário
@@ -2370,7 +2377,9 @@ export function UtmifyCampaignManager({
 
                 {activeTab !== "accounts" && (
                   <>
-                    <td className="py-3 px-2 text-right text-zinc-300">{fmtBrl(0)}</td>
+                    <td className="py-3 px-2 text-right text-zinc-300">
+                      {totals.budget > 0 ? formatCurrency(totals.budget, "BRL") : "N/A"}
+                    </td>
                     <td className="py-3 px-2 text-center">N/A</td>
                   </>
                 )}
