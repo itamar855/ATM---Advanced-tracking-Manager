@@ -333,6 +333,22 @@ export async function POST(request: NextRequest) {
     if (action === "budget") {
       try {
         const normalizedValue = String(value ?? "").replace(",", ".").trim();
+        const rateUsed = budgetSnapshot?.exchange_rate_used || usdBrlRate || 1.0;
+        const oldMetrics = budgetSnapshot
+          ? {
+              sales: budgetSnapshot.sales,
+              spend: budgetSnapshot.spend_original ?? budgetSnapshot.spend,
+              spend_original: budgetSnapshot.spend_original ?? budgetSnapshot.spend,
+              spend_converted: budgetSnapshot.spend_converted ?? budgetSnapshot.spend,
+              revenue: budgetSnapshot.revenue,
+              profit: budgetSnapshot.profit,
+              cpa: budgetSnapshot.cpa,
+              roas: budgetSnapshot.roas,
+              roi: budgetSnapshot.roi,
+              currency_original: budgetSnapshot.currency_original || curr,
+            }
+          : null;
+
         await supabase.from("meta_entity_history").insert({
           store_id,
           user_id: userId,
@@ -346,7 +362,7 @@ export async function POST(request: NextRequest) {
           new_budget: Number(normalizedValue),
           sales_at_update: budgetSnapshot ? budgetSnapshot.sales : null,
           revenue_at_update: budgetSnapshot ? Number(budgetSnapshot.revenue.toFixed(2)) : null,
-          spend_at_update: budgetSnapshot ? Number(budgetSnapshot.spend.toFixed(2)) : null,
+          spend_at_update: budgetSnapshot ? Number((budgetSnapshot.spend_converted ?? budgetSnapshot.spend).toFixed(2)) : null,
           profit_at_update: budgetSnapshot ? Number(budgetSnapshot.profit.toFixed(2)) : null,
           roas_at_update: budgetSnapshot ? Number(budgetSnapshot.roas.toFixed(2)) : null,
           cpa_at_update: budgetSnapshot ? Number(budgetSnapshot.cpa.toFixed(2)) : null,
@@ -355,7 +371,12 @@ export async function POST(request: NextRequest) {
             date_preset: datePresetUsed,
             timezone: timezoneUsed,
             currency: curr,
-            usd_rate: usdBrlRate,
+            currency_original: budgetSnapshot?.currency_original || curr,
+            currency_analysis: "BRL",
+            exchange_rate: rateUsed,
+            exchange_rate_used: rateUsed,
+            usd_rate: rateUsed,
+            old_metrics: oldMetrics,
           },
         });
       } catch (histErr) {

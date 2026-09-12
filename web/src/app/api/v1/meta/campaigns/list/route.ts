@@ -39,15 +39,22 @@ export function getCachedEntityMetrics(storeId: string, entityId: string, level:
       const found = items?.find((item: any) => item.id === entityId);
       if (found) {
         const acc = entry.data?.accounts?.find((a: any) => a.id === found.account_id);
+        const rate = Number(found.exchange_rate_used || entry.data?.usdBrlRate || 1.0);
         return {
           name: found.name || "",
           budget: Number(found.budget || 0),
+          budget_original: Number(found.budget_original ?? found.budget ?? 0),
+          spend_original: Number(found.spend_original || 0),
+          spend: Number(found.spend || 0),
+          spend_converted: Number(found.spend_converted ?? found.spend ?? 0),
           sales: Number(found.sales || 0),
           revenue: Number(found.revenue || 0),
-          spend: Number(found.spend || 0),
           profit: Number(found.profit || 0),
           roas: Number(found.roas || 0),
           cpa: Number(found.cpa || 0),
+          roi: Number(found.roi || 0),
+          currency_original: found.currency_original || found.currency || "USD",
+          exchange_rate_used: rate,
           date_preset: entry.datePreset || "today",
           timezone: acc?.timezone_name || entry.timezoneName || "America/Sao_Paulo",
           snapshot_source: "cache" as const,
@@ -664,10 +671,10 @@ export async function GET(request: NextRequest) {
         const asNetRevenue = asAttr.netRevenue;
         const asSales = asAttr.count;
         const asProfit = asNetRevenue - asSpend;
-        const asRoas = asSpend > 0 ? asGrossRevenue / asSpend : asGrossRevenue > 0 ? 99.9 : 0;
+        const asRoas = asSpend > 0 ? asGrossRevenue / asSpend : 0;
         const asCpa = asSales > 0 ? asSpend / asSales : 0;
         const asMargin = asNetRevenue > 0 ? (asProfit / asNetRevenue) * 100 : asSpend > 0 ? -100 : 0;
-        const asRoi = asSpend > 0 ? asProfit / asSpend : 0;
+        const asRoi = asSpend > 0 ? asNetRevenue / asSpend : 0;
 
         const asIsCBO = !as.daily_budget && !as.lifetime_budget;
         const asRawBudget = as.daily_budget ? Number(as.daily_budget) / 100 : Number(as.lifetime_budget || 0) / 100;
@@ -690,13 +697,21 @@ export async function GET(request: NextRequest) {
           account_id: cleanAccId,
           account_name: `Conta ${cleanAccId.replace("act_", "")}`,
           currency: accCurrency,
+          currency_original: accCurrency,
+          currency_analysis: "BRL",
+          exchange_rate_used: usdBrlRate,
           status: asIsActive ? "active" : "paused",
           effective_status: as.effective_status || as.status,
           budget: asBudget,
+          budget_original: asBudget,
           budget_type: asIsCBO ? "CBO" : as.daily_budget ? "Diário" : "Vitalício",
           is_cbo: asIsCBO,
           spend: asSpend,
+          spend_original: asRawSpend,
+          spend_converted: asSpend,
           revenue: asNetRevenue,
+          gross_revenue: asGrossRevenue,
+          net_revenue: asNetRevenue,
           profit: asProfit,
           roas: asRoas,
           sales: asSales,
@@ -716,6 +731,7 @@ export async function GET(request: NextRequest) {
                 profit: asHist.profit_at_update !== null ? Number(asHist.profit_at_update) : null,
                 roas: asHist.roas_at_update !== null ? Number(asHist.roas_at_update) : null,
                 cpa: asHist.cpa_at_update !== null ? Number(asHist.cpa_at_update) : null,
+                roi: asHist.metadata?.old_metrics?.roi ?? (asHist.spend_at_update > 0 ? ((asHist.profit_at_update || 0) / asHist.spend_at_update) * 100 : null),
                 user_email: asHist.user_email,
                 source: asHist.source,
                 metadata: asHist.metadata,
@@ -927,10 +943,10 @@ export async function GET(request: NextRequest) {
         const adNetRevenue = adAttr.netRevenue;
         const adSales = adAttr.count;
         const adProfit = adNetRevenue - adSpend;
-        const adRoas = adSpend > 0 ? adGrossRevenue / adSpend : adGrossRevenue > 0 ? 99.9 : 0;
+        const adRoas = adSpend > 0 ? adGrossRevenue / adSpend : 0;
         const adCpa = adSales > 0 ? adSpend / adSales : 0;
         const adMargin = adNetRevenue > 0 ? (adProfit / adNetRevenue) * 100 : adSpend > 0 ? -100 : 0;
-        const adRoi = adSpend > 0 ? adProfit / adSpend : 0;
+        const adRoi = adSpend > 0 ? adNetRevenue / adSpend : 0;
 
         const adIsActive =
           ad.effective_status === "ACTIVE" || (ad.effective_status === undefined && ad.status === "ACTIVE");
@@ -950,12 +966,20 @@ export async function GET(request: NextRequest) {
           account_id: cleanAccId,
           account_name: `Conta ${cleanAccId.replace("act_", "")}`,
           currency: accCurrency,
+          currency_original: accCurrency,
+          currency_analysis: "BRL",
+          exchange_rate_used: usdBrlRate,
           status: adIsActive ? "active" : "paused",
           effective_status: ad.effective_status || ad.status,
           budget: 0,
+          budget_original: 0,
           budget_type: "AdSet/Campanha",
           spend: adSpend,
+          spend_original: adRawSpend,
+          spend_converted: adSpend,
           revenue: adNetRevenue,
+          gross_revenue: adGrossRevenue,
+          net_revenue: adNetRevenue,
           profit: adProfit,
           roas: adRoas,
           sales: adSales,
@@ -1392,11 +1416,10 @@ export async function GET(request: NextRequest) {
       const accNetRevenue = accAttr.netRevenue;
       const accSales = accAttr.count;
       const accProfit = accNetRevenue - periodSpendBrl;
-      const accRoas =
-        periodSpendBrl > 0 ? accGrossRevenue / periodSpendBrl : accGrossRevenue > 0 ? 99.9 : 0;
+      const accRoas = periodSpendBrl > 0 ? accGrossRevenue / periodSpendBrl : 0;
       const accCpa = accSales > 0 ? periodSpendBrl / accSales : 0;
       const accMargin = accNetRevenue > 0 ? (accProfit / accNetRevenue) * 100 : periodSpendBrl > 0 ? -100 : 0;
-      const accRoi = periodSpendBrl > 0 ? accProfit / periodSpendBrl : 0;
+      const accRoi = periodSpendBrl > 0 ? accNetRevenue / periodSpendBrl : 0;
 
       const metaAccIc = extractMetaIc(accountInsight?.actions);
       const fpAccIc = accountIcAttribution.get(accId) || 0;
@@ -1407,12 +1430,19 @@ export async function GET(request: NextRequest) {
         id: accId,
         name: accName,
         currency,
+        currency_original: currency,
+        currency_analysis: "BRL",
+        exchange_rate_used: usdBrlRate,
         status: accStatus,
         card: "N/A",
         cycle: cycleBrl,
         spend: periodSpendBrl,
+        spend_original: rawPeriodSpend,
+        spend_converted: periodSpendBrl,
         historic_spent: historicSpentBrl,
         revenue: accNetRevenue,
+        gross_revenue: accGrossRevenue,
+        net_revenue: accNetRevenue,
         profit: accProfit,
         roas: accRoas,
         sales: accSales,
@@ -1434,10 +1464,10 @@ export async function GET(request: NextRequest) {
         const cNetRevenue = cAttr.netRevenue;
         const cSales = cAttr.count;
         const cProfit = cNetRevenue - cSpend;
-        const cRoas = cSpend > 0 ? cGrossRevenue / cSpend : cGrossRevenue > 0 ? 99.9 : 0;
+        const cRoas = cSpend > 0 ? cGrossRevenue / cSpend : 0;
         const cCpa = cSales > 0 ? cSpend / cSales : 0;
         const cMargin = cNetRevenue > 0 ? (cProfit / cNetRevenue) * 100 : cSpend > 0 ? -100 : 0;
-        const cRoi = cSpend > 0 ? cProfit / cSpend : 0;
+        const cRoi = cSpend > 0 ? cNetRevenue / cSpend : 0;
 
         const metaCampIc = extractMetaIc(cIns.actions);
         const fpCampIc = campaignIcAttribution.get(camp.id) || 0;
@@ -1463,14 +1493,22 @@ export async function GET(request: NextRequest) {
           account_id: accId,
           account_name: accName,
           currency: currency,
+          currency_original: currency,
+          currency_analysis: "BRL",
+          exchange_rate_used: usdBrlRate,
           status: isActive ? "active" : "paused",
           effective_status: camp.effective_status || camp.status,
           budget: campBudget,
+          budget_original: campBudget,
           budget_type: isCBO ? (camp.daily_budget ? "CBO" : "CBO (Vitalício)") : "ABO",
           is_cbo: isCBO,
           adset_count: 0,
           spend: cSpend,
+          spend_original: cRawSpend,
+          spend_converted: cSpend,
           revenue: cNetRevenue,
+          gross_revenue: cGrossRevenue,
+          net_revenue: cNetRevenue,
           profit: cProfit,
           roas: cRoas,
           sales: cSales,
@@ -1490,6 +1528,7 @@ export async function GET(request: NextRequest) {
                 profit: cHist.profit_at_update !== null ? Number(cHist.profit_at_update) : null,
                 roas: cHist.roas_at_update !== null ? Number(cHist.roas_at_update) : null,
                 cpa: cHist.cpa_at_update !== null ? Number(cHist.cpa_at_update) : null,
+                roi: cHist.metadata?.old_metrics?.roi ?? (cHist.spend_at_update > 0 ? ((cHist.profit_at_update || 0) / cHist.spend_at_update) * 100 : null),
                 user_email: cHist.user_email,
                 source: cHist.source,
                 metadata: cHist.metadata,

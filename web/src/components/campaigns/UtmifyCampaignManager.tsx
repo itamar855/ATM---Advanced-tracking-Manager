@@ -36,12 +36,19 @@ export interface AccountItem {
   id: string;
   name: string;
   currency: string;
+  currency_original?: string;
+  currency_analysis?: string;
+  exchange_rate_used?: number;
   status: string;
   card: string;
   cycle: number;
   historic_spent: number;
   spend: number;
+  spend_original?: number;
+  spend_converted?: number;
   revenue: number;
+  gross_revenue?: number;
+  net_revenue?: number;
   profit: number;
   roas: number;
   sales: number;
@@ -62,6 +69,7 @@ export interface BudgetHistorySnapshot {
   profit: number | null;
   roas: number | null;
   cpa: number | null;
+  roi?: number | null;
   user_email: string | null;
   source: string;
   metadata?: any;
@@ -74,14 +82,22 @@ export interface CampaignItem {
   account_id: string;
   account_name: string;
   currency?: string;
+  currency_original?: string;
+  currency_analysis?: string;
+  exchange_rate_used?: number;
   status: "active" | "paused";
   effective_status?: string;
   budget: number;
+  budget_original?: number;
   budget_type: string;
   is_cbo?: boolean;
   adset_count?: number;
   spend: number;
+  spend_original?: number;
+  spend_converted?: number;
   revenue: number;
+  gross_revenue?: number;
+  net_revenue?: number;
   profit: number;
   roas: number;
   sales: number;
@@ -102,12 +118,20 @@ export interface AdsetItem {
   account_id: string;
   account_name: string;
   currency?: string;
+  currency_original?: string;
+  currency_analysis?: string;
+  exchange_rate_used?: number;
   status: "active" | "paused";
   budget: number;
+  budget_original?: number;
   budget_type: string;
   is_cbo?: boolean;
   spend: number;
+  spend_original?: number;
+  spend_converted?: number;
   revenue: number;
+  gross_revenue?: number;
+  net_revenue?: number;
   profit: number;
   roas: number;
   sales: number;
@@ -130,11 +154,19 @@ export interface AdItem {
   account_id: string;
   account_name: string;
   currency?: string;
+  currency_original?: string;
+  currency_analysis?: string;
+  exchange_rate_used?: number;
   status: "active" | "paused";
   budget: number;
+  budget_original?: number;
   budget_type: string;
   spend: number;
+  spend_original?: number;
+  spend_converted?: number;
   revenue: number;
+  gross_revenue?: number;
+  net_revenue?: number;
   profit: number;
   roas: number;
   sales: number;
@@ -152,6 +184,7 @@ interface UtmifyCampaignManagerProps {
   adsets: AdsetItem[];
   ads: AdItem[];
   untrackedSalesCount?: number;
+  usdBrlRate?: number;
   datePreset: string;
   setDatePreset: (preset: string) => void;
   onRefresh: (selectedCampId?: string | null, selectedAsId?: string | null) => Promise<void> | void;
@@ -186,6 +219,7 @@ export function UtmifyCampaignManager({
   adsets = [],
   ads = [],
   untrackedSalesCount = 0,
+  usdBrlRate = 5.40,
   datePreset,
   setDatePreset,
   onRefresh,
@@ -963,26 +997,28 @@ export function UtmifyCampaignManager({
     let historicSpent = 0;
     let spend = 0;
     let revenue = 0;
+    let grossRevenue = 0;
     let sales = 0;
     let ic = 0;
 
     filteredData.forEach((item: any) => {
       cycle += item.cycle || 0;
       historicSpent += item.historic_spent || 0;
-      spend += item.spend || 0;
-      revenue += item.revenue || 0;
+      spend += (item.spend_converted ?? item.spend) || 0;
+      revenue += (item.net_revenue ?? item.revenue) || 0;
+      grossRevenue += (item.gross_revenue ?? item.revenue) || 0;
       sales += item.sales || 0;
       ic += item.ic || 0;
     });
 
     const profit = revenue - spend;
-    const roas = spend > 0 ? revenue / spend : (revenue > 0 ? 99.9 : 0);
+    const roas = spend > 0 ? grossRevenue / spend : (grossRevenue > 0 ? 99.9 : 0);
     const cpa = sales > 0 ? spend / sales : 0;
     const cpi = ic > 0 ? spend / ic : 0;
     const margin = revenue > 0 ? (profit / revenue) * 100 : (spend > 0 ? -100 : 0);
-    const roi = spend > 0 ? profit / spend : 0;
+    const roi = spend > 0 ? revenue / spend : 0;
 
-    return { count, cycle, historicSpent, spend, revenue, profit, roas, sales, cpa, ic, cpi, margin, roi };
+    return { count, cycle, historicSpent, spend, revenue, grossRevenue, profit, roas, sales, cpa, ic, cpi, margin, roi };
   }, [filteredData]);
 
   // ── Contexto de Moeda Dinâmica ──────────────────────────────────────────
@@ -2055,9 +2091,16 @@ export function UtmifyCampaignManager({
                                   {row.budget_type?.includes("CBO") || row.is_cbo ? "CBO" : "ABO"}
                                 </span>
 
-                                <span className="font-bold text-white text-xs">
-                                  {row.budget > 0 ? fmtBrl(row.budget, (row as any).currency) : (activeTab === "campaigns" && !row.is_cbo ? "Sob CJs" : "N/A")}
-                                </span>
+                                <div className="flex flex-col items-end">
+                                  <span className="font-bold text-white text-xs">
+                                    {row.budget > 0 ? fmtBrl(row.budget, (row as any).currency_original || (row as any).currency) : "N/A"}
+                                  </span>
+                                  {row.budget > 0 && (
+                                    <span className="text-[9px] text-zinc-400 font-normal leading-tight">
+                                      Diário
+                                    </span>
+                                  )}
+                                </div>
 
                                 {/* Botão de Edição de Orçamento para CBO */}
                                 {activeTab === "campaigns" && (row.is_cbo || row.budget_type?.includes("CBO")) && (
@@ -2101,57 +2144,70 @@ export function UtmifyCampaignManager({
                             )}
                           </td>
 
-                          {/* Última Atualização */}
-                          <td className="py-2.5 px-2 text-center min-w-[130px]">
+                          {/* Última Atualização / Histórico UTMFY Standard */}
+                          <td className="py-2.5 px-2 text-center min-w-[150px]">
                             {(row as any).budget_history ? (
                               (() => {
-                                const rowCurr = (row as any).currency || activeCurrency;
+                                const hist = (row as any).budget_history;
+                                const meta = hist?.metadata || {};
+                                const oldMetrics = meta?.old_metrics || {};
+                                const rateUsed = meta?.exchange_rate_used || meta?.exchange_rate || meta?.usd_rate || (row as any).exchange_rate_used || 1.0;
+                                const rowCurr = meta?.currency_original || (row as any).currency_original || (row as any).currency || activeCurrency;
                                 const currSymbol = getCurrencySymbol(rowCurr);
-                                const formatBadgeVal = (v: number) => {
-                                  const space = currSymbol === "US$" || currSymbol === "R$" ? " " : "";
-                                  return `${currSymbol}${space}${Math.round(v)}`;
-                                };
+
+                                const prevBudgetFmt = hist.previous_budget !== null ? formatCurrency(hist.previous_budget, rowCurr) : "N/A";
+                                const newBudgetFmt = hist.new_budget !== null ? formatCurrency(hist.new_budget, rowCurr) : "N/A";
+
+                                const spendMetaFmt = oldMetrics.spend_original !== undefined
+                                  ? `${formatCurrency(oldMetrics.spend_original, rowCurr)} (${formatCurrency(oldMetrics.spend_converted || hist.spend, "BRL")})`
+                                  : hist.spend !== null ? formatCurrency(hist.spend, "BRL") : "N/A";
+
+                                const tooltipLines = [
+                                  `HISTÓRICO DE ALTERAÇÃO — PADRÃO UTMFY`,
+                                  `Data: ${new Date(hist.updated_at).toLocaleString("pt-BR")}`,
+                                  `Responsável: ${hist.user_email || "ATM (Usuário)"}`,
+                                  rowCurr !== "BRL" ? `Câmbio Congelado: 1 ${rowCurr} = R$ ${Number(rateUsed).toFixed(2)}` : null,
+                                  ``,
+                                  `ANTES:`,
+                                  `• Orçamento: ${prevBudgetFmt}`,
+                                  `• Gasto Meta: ${spendMetaFmt}`,
+                                  hist.sales !== null ? `• Vendas: ${hist.sales}` : null,
+                                  hist.revenue !== null ? `• Faturamento: ${formatCurrency(hist.revenue, "BRL")}` : null,
+                                  hist.profit !== null ? `• Lucro Líquido: ${formatCurrency(hist.profit, "BRL")}` : null,
+                                  hist.cpa !== null ? `• CPA: ${formatCurrency(hist.cpa, "BRL")}` : null,
+                                  hist.roas !== null ? `• ROAS: ${Number(hist.roas).toFixed(2)}` : null,
+                                  hist.roi !== null && hist.roi !== undefined ? `• ROI: ${Number(hist.roi).toFixed(2)}` : null,
+                                  ``,
+                                  `DEPOIS:`,
+                                  `• Novo Orçamento: ${newBudgetFmt}`,
+                                ].filter(Boolean).join("\n");
+
+                                const histRoiVal = hist.roi !== null && hist.roi !== undefined 
+                                  ? Number(hist.roi) 
+                                  : (hist.spend_at_update > 0 ? (hist.profit_at_update || 0) / hist.spend_at_update : 0);
 
                                 return (
                                   <div
                                     className="inline-flex flex-col items-center justify-center text-center cursor-help group/hist"
-                                    title={`Alterado em: ${new Date((row as any).budget_history.updated_at).toLocaleString("pt-BR")}\nResponsável: ${(row as any).budget_history.user_email || "ATM (Usuário)"}\nOrçamento: ${(row as any).budget_history.previous_budget !== null ? fmtBrl((row as any).budget_history.previous_budget, rowCurr) : "N/A"} ➔ ${fmtBrl((row as any).budget_history.new_budget, rowCurr)}\n${(row as any).budget_history.sales !== null ? `Métricas no momento da alteração:\n• ROAS: ${Number((row as any).budget_history.roas || 0).toFixed(2)}x\n• Vendas: ${(row as any).budget_history.sales}\n• CPA: ${fmtBrl((row as any).budget_history.cpa || 0, rowCurr)}\n• Faturamento: ${fmtBrl((row as any).budget_history.revenue || 0, rowCurr)}\n• Lucro Líquido: ${fmtBrl((row as any).budget_history.profit || 0, rowCurr)}` : "Métricas detalhadas não disponíveis no snapshot"}`}
+                                    title={tooltipLines}
                                   >
-                                    {/* Data / Hora */}
-                                    <span className="text-[10px] text-zinc-400 font-mono leading-tight">
-                                      {new Date((row as any).budget_history.updated_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}{" "}
-                                      {new Date((row as any).budget_history.updated_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                                    </span>
-
-                                    {/* Orçamento: Moeda X → Moeda Y */}
-                                    <div className="flex items-center gap-1 font-mono text-[10.5px] font-bold mt-0.5">
-                                      <span className="text-zinc-400">
-                                        {(row as any).budget_history.previous_budget !== null ? formatBadgeVal((row as any).budget_history.previous_budget) : "—"}
-                                      </span>
-                                      <span className={Number((row as any).budget_history.new_budget) >= Number((row as any).budget_history.previous_budget) ? "text-emerald-400" : "text-amber-400"}>
-                                        →
-                                      </span>
-                                      <span className={Number((row as any).budget_history.new_budget) >= Number((row as any).budget_history.previous_budget) ? "text-emerald-400 font-black" : "text-amber-400 font-black"}>
-                                        {formatBadgeVal((row as any).budget_history.new_budget)}
+                                    {/* Formato Exato UTMFY: Gasto: R$ X | Lucro: R$ Y | Vendas: Z | ROI: W */}
+                                    <div className="text-[10px] font-mono text-zinc-300 leading-tight">
+                                      Gasto: {formatCurrency(hist.spend_at_update ?? hist.spend ?? 0, "BRL")} | Lucro: {formatCurrency(hist.profit_at_update ?? hist.profit ?? 0, "BRL")} | Vendas: {hist.sales_at_update ?? hist.sales ?? 0} | ROI: {histRoiVal.toFixed(2)}
+                                    </div>
+                                    <div className="text-[9px] text-zinc-400 font-mono mt-0.5 flex items-center justify-center gap-1">
+                                      <span>🕐</span>
+                                      <span>
+                                        {new Date(hist.updated_at).toLocaleDateString("pt-BR")}{" "}
+                                        {new Date(hist.updated_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                                       </span>
                                     </div>
-
-                                    {/* Performance: ROAS, Vendas, CPA */}
-                                    {(row as any).budget_history.sales !== null ? (
-                                      <span className="text-[9.5px] font-mono text-zinc-400 mt-0.5">
-                                        <strong className="text-blue-400">{Number((row as any).budget_history.roas || 0).toFixed(1)}x</strong> • {(row as any).budget_history.sales}v • {fmtBrl((row as any).budget_history.cpa || 0, rowCurr)}
-                                      </span>
-                                    ) : (
-                                      <span className="text-[9px] font-mono text-zinc-500 mt-0.5">
-                                        {(row as any).budget_history.source}
-                                      </span>
-                                    )}
                                   </div>
                                 );
                               })()
                             ) : (
-                              <span className="text-zinc-400 font-mono text-[10px] block" title="Data reportada pela Meta Ads">
-                                {row.last_update}
+                              <span className="text-zinc-500 font-mono text-[11px] block text-center">
+                                N/A
                               </span>
                             )}
                           </td>
@@ -2165,17 +2221,24 @@ export function UtmifyCampaignManager({
 
                       {/* CPA */}
                       <td className="py-2.5 px-2 text-right font-mono text-zinc-400">
-                        {row.sales > 0 ? fmtBrl(row.cpa) : "N/A"}
+                        {row.sales > 0 ? formatCurrency(row.cpa, "BRL") : "N/A"}
                       </td>
 
-                      {/* GASTOS */}
-                      <td className="py-2.5 px-2 text-right font-mono font-bold text-zinc-300">
-                        {fmtBrl(row.spend)}
+                      {/* GASTOS (Padrão UTMFY: Convertido em BRL + Original Meta quando estrangeira) */}
+                      <td className="py-2.5 px-2 text-right font-mono">
+                        <span className="font-bold text-zinc-200 block">
+                          {formatCurrency(row.spend_converted ?? row.spend, "BRL")}
+                        </span>
+                        {row.currency_original && row.currency_original !== "BRL" && row.spend_original !== undefined && (
+                          <span className="text-[10px] text-zinc-500 block leading-tight font-normal" title="Gasto reportado pela Meta na moeda da conta">
+                            {formatCurrency(row.spend_original, row.currency_original)}
+                          </span>
+                        )}
                       </td>
 
                       {/* FATURAMENTO */}
                       <td className="py-2.5 px-2 text-right font-mono font-medium text-zinc-200">
-                        {fmtBrl(row.revenue)}
+                        {formatCurrency(row.revenue, "BRL")}
                       </td>
 
                       {/* LUCRO LÍQUIDO (Destaque em Verde / Vermelho) */}
@@ -2188,35 +2251,39 @@ export function UtmifyCampaignManager({
                               : "text-rose-400 font-semibold"
                           )}
                         >
-                          {row.profit >= 0 ? `+${fmtBrl(row.profit)}` : fmtBrl(row.profit)}
+                          {row.profit >= 0 ? `+${formatCurrency(row.profit, "BRL")}` : formatCurrency(row.profit, "BRL")}
                         </span>
                       </td>
 
-                      {/* ROAS */}
+                      {/* ROAS (Padrão UTMFY: Faturamento Bruto / Gasto) */}
                       <td className="py-2.5 px-2 text-center font-mono font-bold">
                         <span
                           className={cn(
-                            isPositiveRoas
+                            row.roas >= 2
+                              ? "text-emerald-400"
+                              : row.roas >= 1
                               ? "text-blue-400"
                               : row.roas > 0
                               ? "text-amber-400"
                               : "text-zinc-500"
                           )}
                         >
-                          {row.roas.toFixed(2)}
+                          {row.spend > 0 ? row.roas.toFixed(2) : "N/A"}
                         </span>
                       </td>
 
-                      {/* MARGEM */}
+                      {/* MARGEM (Padrão UTMFY: Lucro Líquido / Faturamento Líquido) */}
                       <td className="py-2.5 px-2 text-center font-mono text-zinc-400">
                         <span className={row.margin >= 0 ? "text-emerald-400" : "text-rose-400"}>
-                          {row.margin.toFixed(2)}%
+                          {row.revenue > 0 ? `${row.margin.toFixed(2)}%` : "0,00%"}
                         </span>
                       </td>
 
-                      {/* ROI */}
-                      <td className="py-2.5 px-2 text-center font-mono text-zinc-400">
-                        {row.roi.toFixed(2)}
+                      {/* ROI (Padrão UTMFY: Multiplicador Decimal Faturamento Líquido / Gasto ex: 2,48) */}
+                      <td className="py-2.5 px-2 text-center font-mono font-bold text-zinc-300">
+                        <span className={row.roi >= 1 ? "text-emerald-400/90" : row.roi > 0 ? "text-amber-400" : "text-zinc-500"}>
+                          {row.spend > 0 ? row.roi.toFixed(2) : "N/A"}
+                        </span>
                       </td>
 
                       {/* IC (InitiateCheckout) */}
@@ -2226,7 +2293,7 @@ export function UtmifyCampaignManager({
 
                       {/* CPI (Custo por IC) */}
                       <td className="py-2.5 px-2 text-right pr-4 font-mono text-zinc-400">
-                        {row.ic > 0 ? fmtBrl(row.cpi) : "N/A"}
+                        {row.ic > 0 ? formatCurrency(row.cpi, "BRL") : "N/A"}
                       </td>
                     </tr>
                   );
@@ -2309,19 +2376,21 @@ export function UtmifyCampaignManager({
                 )}
 
                 <td className="py-3 px-2 text-center text-white">{totals.sales}</td>
-                <td className="py-3 px-2 text-right text-zinc-300">{fmtBrl(totals.cpa)}</td>
-                <td className="py-3 px-2 text-right text-white">{fmtBrl(totals.spend)}</td>
-                <td className="py-3 px-2 text-right text-purple-400">{fmtBrl(totals.revenue)}</td>
+                <td className="py-3 px-2 text-right text-zinc-300">{formatCurrency(totals.cpa, "BRL")}</td>
+                <td className="py-3 px-2 text-right text-white">{formatCurrency(totals.spend, "BRL")}</td>
+                <td className="py-3 px-2 text-right text-purple-400">{formatCurrency(totals.revenue, "BRL")}</td>
                 <td className="py-3 px-2 text-right font-black">
                   <span className={totals.profit >= 0 ? "text-emerald-400" : "text-rose-400"}>
-                    {totals.profit >= 0 ? `+${fmtBrl(totals.profit)}` : fmtBrl(totals.profit)}
+                    {totals.profit >= 0 ? `+${formatCurrency(totals.profit, "BRL")}` : formatCurrency(totals.profit, "BRL")}
                   </span>
                 </td>
-                <td className="py-3 px-2 text-center text-blue-400">{totals.roas.toFixed(2)}</td>
-                <td className="py-3 px-2 text-center">{totals.margin.toFixed(2)}%</td>
-                <td className="py-3 px-2 text-center">{totals.roi.toFixed(2)}</td>
+                <td className="py-3 px-2 text-center text-blue-400">{totals.spend > 0 ? totals.roas.toFixed(2) : "N/A"}</td>
+                <td className="py-3 px-2 text-center">{totals.revenue > 0 ? `${totals.margin.toFixed(2)}%` : "0,00%"}</td>
+                <td className="py-3 px-2 text-center text-zinc-300 font-bold">
+                  {totals.spend > 0 ? totals.roi.toFixed(2) : "N/A"}
+                </td>
                 <td className="py-3 px-2 text-center text-amber-400">{totals.ic}</td>
-                <td className="py-3 px-2 text-right pr-4 text-zinc-300">{fmtBrl(totals.cpi)}</td>
+                <td className="py-3 px-2 text-right pr-4 text-zinc-300">{formatCurrency(totals.cpi, "BRL")}</td>
               </tr>
             </tfoot>
           </table>

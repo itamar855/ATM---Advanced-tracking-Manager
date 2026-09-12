@@ -28,6 +28,7 @@ function CampaignsContent() {
   const [adsets, setAdsets] = useState<AdsetItem[]>([]);
   const [ads, setAds] = useState<AdItem[]>([]);
   const [untrackedSalesCount, setUntrackedSalesCount] = useState(0);
+  const [usdBrlRate, setUsdBrlRate] = useState<number>(5.40);
   const [apiError, setApiError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
 
@@ -103,6 +104,9 @@ function CampaignsContent() {
         }
 
         setUntrackedSalesCount(untracked);
+        if (data.usdBrlRate) {
+          setUsdBrlRate(data.usdBrlRate);
+        }
         setLastUpdatedAt(new Date());
 
         if (data.warning || data.notice) {
@@ -275,6 +279,7 @@ function CampaignsContent() {
         adsets={adsets}
         ads={ads}
         untrackedSalesCount={untrackedSalesCount}
+        usdBrlRate={usdBrlRate}
         datePreset={datePreset}
         setDatePreset={setDatePreset}
         onRefresh={async (selectedCampId, selectedAsId) => {
