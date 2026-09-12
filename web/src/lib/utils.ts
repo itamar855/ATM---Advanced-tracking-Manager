@@ -6,14 +6,39 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * Format a number as currency (BRL by default)
+ * Formata um valor numérico na moeda especificada (USD, BRL, GBP, EUR, etc.)
+ *
+ * Exemplos:
+ * - USD: US$ 10.95
+ * - BRL: R$ 10,95
+ * - GBP: £10.95
+ * - EUR: €10,95
  */
-export function formatCurrency(value: number, currency = "BRL"): string {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-  }).format(value);
+export function formatCurrency(value?: number | null, currency = "BRL"): string {
+  const n = typeof value === "number" && !isNaN(value) ? value : 0;
+  const curr = String(currency || "BRL").toUpperCase().trim();
+
+  switch (curr) {
+    case "USD":
+      return `US$ ${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    case "BRL":
+      return `R$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    case "GBP":
+      return `£${n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    case "EUR":
+      return `€${n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    default:
+      try {
+        return new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency: curr,
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }).format(n);
+      } catch {
+        return `${curr} ${n.toFixed(2)}`;
+      }
+  }
 }
 
 /**

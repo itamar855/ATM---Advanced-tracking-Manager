@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import {
   Folder,
   Layers,
@@ -73,6 +73,7 @@ export interface CampaignItem {
   name: string;
   account_id: string;
   account_name: string;
+  currency?: string;
   status: "active" | "paused";
   effective_status?: string;
   budget: number;
@@ -100,6 +101,7 @@ export interface AdsetItem {
   campaign_name: string;
   account_id: string;
   account_name: string;
+  currency?: string;
   status: "active" | "paused";
   budget: number;
   budget_type: string;
@@ -127,6 +129,7 @@ export interface AdItem {
   campaign_name: string;
   account_id: string;
   account_name: string;
+  currency?: string;
   status: "active" | "paused";
   budget: number;
   budget_type: string;
@@ -982,16 +985,33 @@ export function UtmifyCampaignManager({
     return { count, cycle, historicSpent, spend, revenue, profit, roas, sales, cpa, ic, cpi, margin, roi };
   }, [filteredData]);
 
-  // ── Helpers de Formatação ────────────────────────────────────────────────
-
-  const fmtBrl = (val?: number) => {
-    const n = typeof val === "number" && !isNaN(val) ? val : 0;
-    return `R$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
+  // ── Contexto de Moeda Dinâmica ──────────────────────────────────────────
 
   const selectedAccountObj = accounts.find((a) => (selectedAccountIds.length > 0 ? selectedAccountIds.includes(a.id) : a.id === selectedAccountId));
   const selectedCampaignObj = campaigns.find((c) => (selectedCampaignIds.length > 0 ? selectedCampaignIds.includes(c.id) : c.id === selectedCampaignId));
   const selectedAdsetObj = adsets.find((as) => (selectedAdsetIds.length > 0 ? selectedAdsetIds.includes(as.id) : as.id === selectedAdsetId));
+
+  // Moeda ativa contextual da conta selecionada ou do primeiro item
+  const activeCurrency =
+    selectedAccountObj?.currency ||
+    (filteredData.length > 0 && (filteredData[0] as any)?.currency) ||
+    "BRL";
+
+  const getCurrencySymbol = (currency?: string) => {
+    const c = String(currency || activeCurrency || "BRL").toUpperCase();
+    switch (c) {
+      case "USD": return "US$";
+      case "GBP": return "£";
+      case "EUR": return "€";
+      default: return "R$";
+    }
+  };
+
+  // ── Helpers de Formatação Universal ──────────────────────────────────────
+
+  const fmtBrl = (val?: number | null, itemCurrency?: string) => {
+    return formatCurrency(val, itemCurrency || activeCurrency);
+  };
 
   return (
     <div className="space-y-4 text-zinc-200 fade-in select-none">
@@ -1671,7 +1691,7 @@ export function UtmifyCampaignManager({
                           }}
                           className="font-mono text-zinc-300 font-bold hover:text-blue-400 flex items-center gap-1 text-[11px] cursor-pointer"
                         >
-                          <span>{row.budget ? fmtBrl(row.budget) : "N/D"}</span>
+                          <span>{row.budget ? fmtBrl(row.budget, (row as any).currency) : "N/D"}</span>
                           <Edit2 size={10} className="text-zinc-500" />
                         </button>
                       )}
@@ -2036,7 +2056,7 @@ export function UtmifyCampaignManager({
                                 </span>
 
                                 <span className="font-bold text-white text-xs">
-                                  {row.budget > 0 ? fmtBrl(row.budget) : (activeTab === "campaigns" && !row.is_cbo ? "Sob CJs" : "N/A")}
+                                  {row.budget > 0 ? fmtBrl(row.budget, (row as any).currency) : (activeTab === "campaigns" && !row.is_cbo ? "Sob CJs" : "N/A")}
                                 </span>
 
                                 {/* Botão de Edição de Orçamento para CBO */}
@@ -2084,40 +2104,51 @@ export function UtmifyCampaignManager({
                           {/* Última Atualização */}
                           <td className="py-2.5 px-2 text-center min-w-[130px]">
                             {(row as any).budget_history ? (
-                              <div
-                                className="inline-flex flex-col items-center justify-center text-center cursor-help group/hist"
-                                title={`Alterado em: ${new Date((row as any).budget_history.updated_at).toLocaleString("pt-BR")}\nResponsável: ${(row as any).budget_history.user_email || "ATM (Usuário)"}\nOrçamento: R$ ${(row as any).budget_history.previous_budget !== null ? (row as any).budget_history.previous_budget.toFixed(2) : "N/A"} ➔ R$ ${(row as any).budget_history.new_budget?.toFixed(2)}\n${(row as any).budget_history.sales !== null ? `Métricas no momento da alteração:\n• ROAS: ${Number((row as any).budget_history.roas || 0).toFixed(2)}x\n• Vendas: ${(row as any).budget_history.sales}\n• CPA: ${fmtBrl((row as any).budget_history.cpa || 0)}\n• Faturamento: ${fmtBrl((row as any).budget_history.revenue || 0)}\n• Lucro Líquido: ${fmtBrl((row as any).budget_history.profit || 0)}` : "Métricas detalhadas não disponíveis no snapshot"}`}
-                              >
-                                {/* Data / Hora */}
-                                <span className="text-[10px] text-zinc-400 font-mono leading-tight">
-                                  {new Date((row as any).budget_history.updated_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}{" "}
-                                  {new Date((row as any).budget_history.updated_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                                </span>
+                              (() => {
+                                const rowCurr = (row as any).currency || activeCurrency;
+                                const currSymbol = getCurrencySymbol(rowCurr);
+                                const formatBadgeVal = (v: number) => {
+                                  const space = currSymbol === "US$" || currSymbol === "R$" ? " " : "";
+                                  return `${currSymbol}${space}${Math.round(v)}`;
+                                };
 
-                                {/* Orçamento: R$ X → R$ Y */}
-                                <div className="flex items-center gap-1 font-mono text-[10.5px] font-bold mt-0.5">
-                                  <span className="text-zinc-400">
-                                    {(row as any).budget_history.previous_budget !== null ? `R$${Math.round((row as any).budget_history.previous_budget)}` : "—"}
-                                  </span>
-                                  <span className={Number((row as any).budget_history.new_budget) >= Number((row as any).budget_history.previous_budget) ? "text-emerald-400" : "text-amber-400"}>
-                                    →
-                                  </span>
-                                  <span className={Number((row as any).budget_history.new_budget) >= Number((row as any).budget_history.previous_budget) ? "text-emerald-400 font-black" : "text-amber-400 font-black"}>
-                                    R${Math.round((row as any).budget_history.new_budget)}
-                                  </span>
-                                </div>
+                                return (
+                                  <div
+                                    className="inline-flex flex-col items-center justify-center text-center cursor-help group/hist"
+                                    title={`Alterado em: ${new Date((row as any).budget_history.updated_at).toLocaleString("pt-BR")}\nResponsável: ${(row as any).budget_history.user_email || "ATM (Usuário)"}\nOrçamento: ${(row as any).budget_history.previous_budget !== null ? fmtBrl((row as any).budget_history.previous_budget, rowCurr) : "N/A"} ➔ ${fmtBrl((row as any).budget_history.new_budget, rowCurr)}\n${(row as any).budget_history.sales !== null ? `Métricas no momento da alteração:\n• ROAS: ${Number((row as any).budget_history.roas || 0).toFixed(2)}x\n• Vendas: ${(row as any).budget_history.sales}\n• CPA: ${fmtBrl((row as any).budget_history.cpa || 0, rowCurr)}\n• Faturamento: ${fmtBrl((row as any).budget_history.revenue || 0, rowCurr)}\n• Lucro Líquido: ${fmtBrl((row as any).budget_history.profit || 0, rowCurr)}` : "Métricas detalhadas não disponíveis no snapshot"}`}
+                                  >
+                                    {/* Data / Hora */}
+                                    <span className="text-[10px] text-zinc-400 font-mono leading-tight">
+                                      {new Date((row as any).budget_history.updated_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}{" "}
+                                      {new Date((row as any).budget_history.updated_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                                    </span>
 
-                                {/* Performance: ROAS, Vendas, CPA */}
-                                {(row as any).budget_history.sales !== null ? (
-                                  <span className="text-[9.5px] font-mono text-zinc-400 mt-0.5">
-                                    <strong className="text-blue-400">{Number((row as any).budget_history.roas || 0).toFixed(1)}x</strong> • {(row as any).budget_history.sales}v • {fmtBrl((row as any).budget_history.cpa || 0)}
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] font-mono text-zinc-500 mt-0.5">
-                                    {(row as any).budget_history.source}
-                                  </span>
-                                )}
-                              </div>
+                                    {/* Orçamento: Moeda X → Moeda Y */}
+                                    <div className="flex items-center gap-1 font-mono text-[10.5px] font-bold mt-0.5">
+                                      <span className="text-zinc-400">
+                                        {(row as any).budget_history.previous_budget !== null ? formatBadgeVal((row as any).budget_history.previous_budget) : "—"}
+                                      </span>
+                                      <span className={Number((row as any).budget_history.new_budget) >= Number((row as any).budget_history.previous_budget) ? "text-emerald-400" : "text-amber-400"}>
+                                        →
+                                      </span>
+                                      <span className={Number((row as any).budget_history.new_budget) >= Number((row as any).budget_history.previous_budget) ? "text-emerald-400 font-black" : "text-amber-400 font-black"}>
+                                        {formatBadgeVal((row as any).budget_history.new_budget)}
+                                      </span>
+                                    </div>
+
+                                    {/* Performance: ROAS, Vendas, CPA */}
+                                    {(row as any).budget_history.sales !== null ? (
+                                      <span className="text-[9.5px] font-mono text-zinc-400 mt-0.5">
+                                        <strong className="text-blue-400">{Number((row as any).budget_history.roas || 0).toFixed(1)}x</strong> • {(row as any).budget_history.sales}v • {fmtBrl((row as any).budget_history.cpa || 0, rowCurr)}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-mono text-zinc-500 mt-0.5">
+                                        {(row as any).budget_history.source}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()
                             ) : (
                               <span className="text-zinc-400 font-mono text-[10px] block" title="Data reportada pela Meta Ads">
                                 {row.last_update}
@@ -2272,7 +2303,7 @@ export function UtmifyCampaignManager({
 
                 {activeTab !== "accounts" && (
                   <>
-                    <td className="py-3 px-2 text-right text-zinc-300">R$ 0,00</td>
+                    <td className="py-3 px-2 text-right text-zinc-300">{fmtBrl(0)}</td>
                     <td className="py-3 px-2 text-center">N/A</td>
                   </>
                 )}
@@ -2357,14 +2388,14 @@ export function UtmifyCampaignManager({
                         Novo Orçamento Diário (Opcional)
                       </label>
                       <div className="relative">
-                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm font-bold">R$</div>
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm font-bold">{getCurrencySymbol(activeCurrency)}</div>
                         <input
                           type="number"
                           step="0.01"
                           placeholder="Manter original"
                           value={duplicateNewBudget}
                           onChange={(e) => setDuplicateNewBudget(e.target.value)}
-                          className="w-full bg-[#121622] border border-zinc-800 rounded-lg pl-9 pr-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                          className="w-full bg-[#121622] border border-zinc-800 rounded-lg pl-12 pr-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
                         />
                       </div>
                       <p className="text-[10px] text-zinc-500 mt-1">Deixe em branco para manter o orçamento original.</p>
@@ -2794,14 +2825,14 @@ export function UtmifyCampaignManager({
                   Novo Orçamento Diário
                 </label>
                 <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm font-bold">R$</div>
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm font-bold">{getCurrencySymbol(activeCurrency)}</div>
                   <input
                     type="number"
                     step="0.01"
                     placeholder="Ex: 50.00"
                     value={bulkBudgetValue}
                     onChange={(e) => setBulkBudgetValue(e.target.value)}
-                    className="w-full bg-[#121622] border border-zinc-800 rounded-lg pl-9 pr-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                    className="w-full bg-[#121622] border border-zinc-800 rounded-lg pl-12 pr-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
                   />
                 </div>
               </div>

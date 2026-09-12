@@ -144,17 +144,13 @@ export async function POST(request: NextRequest) {
                 ? Number(info.lifetime_budget) / 100
                 : null;
               if (rawB !== null) {
-                previousBudget = curr === "USD" ? rawB * usdBrlRate : rawB;
+                previousBudget = rawB;
               }
             }
           } catch {}
         }
       }
 
-      // Se a conta for USD e o usuário digitou em BRL, converte para USD
-      if (curr === "USD") {
-        budgetAmount = budgetAmount / usdBrlRate;
-      }
       const budgetCents = Math.round(budgetAmount * 100);
 
       if (isNaN(budgetCents) || budgetCents <= 0) {
@@ -179,11 +175,7 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
         }
-        let val = rawNewBudget;
-        if (curr === "USD") {
-          val = val / usdBrlRate;
-        }
-        targetBudget = Math.round(val * 100);
+        targetBudget = Math.round(rawNewBudget * 100);
       }
 
       // Se for nível campanha, utiliza o motor de duplicação hierárquica (FULL_CLONE ou SIMPLE)

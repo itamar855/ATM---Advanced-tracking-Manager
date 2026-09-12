@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     } else if (action === "update_budget") {
       // Orçamento diário ou vitalício
       url = `https://graph.facebook.com/${apiVersion}/${targetId}`;
-      bodyPayload = { daily_budget: Math.round(Number(value) * 100) }; // Em centavos de BRL
+      bodyPayload = { daily_budget: Math.round(Number(value) * 100) }; // Em centavos da moeda da conta
     } else if (action === "delete") {
       url = `https://graph.facebook.com/${apiVersion}/${targetId}`;
       const deleteResponse = await fetch(`${url}?access_token=${decryptedToken}`, {

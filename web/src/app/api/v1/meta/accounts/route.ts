@@ -178,7 +178,38 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    // 8. Recupera seleção de contas e BMs salvas no banco
+    // 8. Recupera seleção de contas e BMs salvas no banco e enriquece metadados de moeda
+    const currentMetaMap = currentIntegration?.config?.ad_accounts_metadata || {};
+    let hasMetadataUpdates = false;
+    const enrichedMetadata = { ...currentMetaMap };
+
+    allAccounts.forEach((acc) => {
+      const cleanId = normalizeAdAccountId(acc.id);
+      if (!enrichedMetadata[cleanId] || !enrichedMetadata[cleanId].currency) {
+        enrichedMetadata[cleanId] = {
+          ...(enrichedMetadata[cleanId] || {}),
+          id: cleanId,
+          name: acc.name,
+          currency: acc.currency || "BRL",
+          timezone_name: acc.timezone_name || "America/Sao_Paulo",
+        };
+        hasMetadataUpdates = true;
+      }
+    });
+
+    if (hasMetadataUpdates && currentIntegration?.id) {
+      supabase
+        .from("integrations")
+        .update({
+          config: {
+            ...(currentIntegration.config || {}),
+            ad_accounts_metadata: enrichedMetadata,
+          },
+        })
+        .eq("id", currentIntegration.id)
+        .then(() => {});
+    }
+
     const savedSelected = currentIntegration?.config?.ad_account_ids;
     const selectedAccountIds: string[] = Array.isArray(savedSelected) ? savedSelected : [];
 

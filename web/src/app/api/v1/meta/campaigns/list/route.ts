@@ -221,6 +221,40 @@ export async function GET(request: NextRequest) {
       }
     };
 
+    const resolveAccountCurrency = async (
+      cleanAccId: string,
+      searchParamCurrency?: string | null
+    ): Promise<string> => {
+      if (searchParamCurrency && searchParamCurrency !== "BRL") {
+        return searchParamCurrency.toUpperCase();
+      }
+
+      const metaCurrency = cleanAccId
+        ? integration?.config?.ad_accounts_metadata?.[cleanAccId]?.currency
+        : null;
+      if (metaCurrency) {
+        return String(metaCurrency).toUpperCase();
+      }
+
+      if (cleanAccId && token) {
+        try {
+          const res = await fetchWithResilience(
+            `https://graph.facebook.com/v23.0/${cleanAccId}?fields=currency&access_token=${token}`,
+            `acc_curr_${cleanAccId}`,
+            4000
+          );
+          if (res && res.ok) {
+            const json = await res.json();
+            if (json?.currency) {
+              return String(json.currency).toUpperCase();
+            }
+          }
+        } catch {}
+      }
+
+      return searchParamCurrency ? searchParamCurrency.toUpperCase() : "BRL";
+    };
+
     const fetchMetaPaged = async (
       initialUrl: string,
       label: string,
@@ -616,7 +650,8 @@ export async function GET(request: NextRequest) {
         }
       });
 
-      const currency = "BRL";
+      const accCurrency = await resolveAccountCurrency(cleanAccId, searchParams.get("currency"));
+      const currency = accCurrency;
       const campName = campMeta?.name || requestedCampaignId;
 
       const allAdsets = rawAdsets.map((as: any) => {
@@ -636,7 +671,7 @@ export async function GET(request: NextRequest) {
 
         const asIsCBO = !as.daily_budget && !as.lifetime_budget;
         const asRawBudget = as.daily_budget ? Number(as.daily_budget) / 100 : Number(as.lifetime_budget || 0) / 100;
-        const asConvertedBudget = convertToBrl(asRawBudget, currency, usdBrlRate);
+        const asBudget = asRawBudget;
         const asIsActive =
           as.effective_status === "ACTIVE" || (as.effective_status === undefined && as.status === "ACTIVE");
 
@@ -654,9 +689,10 @@ export async function GET(request: NextRequest) {
           campaign_name: campName,
           account_id: cleanAccId,
           account_name: `Conta ${cleanAccId.replace("act_", "")}`,
+          currency: accCurrency,
           status: asIsActive ? "active" : "paused",
           effective_status: as.effective_status || as.status,
-          budget: asConvertedBudget,
+          budget: asBudget,
           budget_type: asIsCBO ? "CBO" : as.daily_budget ? "Diário" : "Vitalício",
           is_cbo: asIsCBO,
           spend: asSpend,
@@ -876,7 +912,8 @@ export async function GET(request: NextRequest) {
         }
       });
 
-      const currency = "BRL";
+      const accCurrency = await resolveAccountCurrency(cleanAccId, searchParams.get("currency"));
+      const currency = accCurrency;
       const adsetName = adsetMeta?.name || requestedAdsetId;
       const campaignId = adsetMeta?.campaign_id || "";
 
@@ -912,6 +949,7 @@ export async function GET(request: NextRequest) {
           campaign_name: `Campanha ${campaignId}`,
           account_id: cleanAccId,
           account_name: `Conta ${cleanAccId.replace("act_", "")}`,
+          currency: accCurrency,
           status: adIsActive ? "active" : "paused",
           effective_status: ad.effective_status || ad.status,
           budget: 0,
@@ -1413,7 +1451,7 @@ export async function GET(request: NextRequest) {
             : Number(camp.lifetime_budget || 0) / 100
           : 0;
 
-        const convertedBudget = convertToBrl(rawBudget, currency, usdBrlRate);
+        const campBudget = rawBudget;
         const isActive =
           camp.effective_status === "ACTIVE" || (camp.effective_status === undefined && camp.status === "ACTIVE");
 
@@ -1424,9 +1462,10 @@ export async function GET(request: NextRequest) {
           name: camp.name,
           account_id: accId,
           account_name: accName,
+          currency: currency,
           status: isActive ? "active" : "paused",
           effective_status: camp.effective_status || camp.status,
-          budget: convertedBudget,
+          budget: campBudget,
           budget_type: isCBO ? (camp.daily_budget ? "CBO" : "CBO (Vitalício)") : "ABO",
           is_cbo: isCBO,
           adset_count: 0,

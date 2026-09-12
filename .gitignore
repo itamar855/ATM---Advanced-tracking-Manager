@@ -30,4 +30,6 @@ document_extracted.txt
 .env*
 scratch/
 scripts/
+.temp/
+supabase/.temp/
 
