@@ -259,27 +259,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. Determina intervalo UTC harmonizado para consulta de pedidos/vendas no Supabase
-    const relevantRanges = accountRanges.filter((ar) =>
-      selectedAccountId === "all" ? ar.isActive : ar.id === formattedSelectedAccId
-    );
-
-    let queryStartUtc: string;
-    let queryEndUtc: string;
-
-    if (relevantRanges.length > 0) {
-      queryStartUtc = relevantRanges.reduce(
-        (min, r) => (r.range.startUtc < min ? r.range.startUtc : min),
-        relevantRanges[0].range.startUtc
-      );
-      queryEndUtc = relevantRanges.reduce(
-        (max, r) => (r.range.endUtc > max ? r.range.endUtc : max),
-        relevantRanges[0].range.endUtc
-      );
-    } else {
-      queryStartUtc = fallbackRange.startUtc;
-      queryEndUtc = fallbackRange.endUtc;
-    }
+    // 4. Determina intervalo UTC harmonizado no fuso do Brasil (America/Sao_Paulo) para consulta de pedidos/vendas no Supabase (Alinhamento UTMFY)
+    const brlRange = resolveAccountDateRange(datePreset, "America/Sao_Paulo");
+    const queryStartUtc = brlRange.startUtc;
+    const queryEndUtc = brlRange.endUtc;
 
     // effectiveStartDate = MAX(platformConnectedAt, queryStartUtc)
     let effectiveStartDate = queryStartUtc;

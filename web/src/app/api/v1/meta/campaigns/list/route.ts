@@ -1213,23 +1213,10 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    let queryStartUtc: string;
-    let queryEndUtc: string;
-
-    if (accountsMeta.length > 0) {
-      queryStartUtc = accountsMeta.reduce(
-        (min, a) => (a.dateRange.startUtc < min ? a.dateRange.startUtc : min),
-        accountsMeta[0].dateRange.startUtc
-      );
-      queryEndUtc = accountsMeta.reduce(
-        (max, a) => (a.dateRange.endUtc > max ? a.dateRange.endUtc : max),
-        accountsMeta[0].dateRange.endUtc
-      );
-    } else {
-      const fallbackRange = resolveAccountDateRange(datePreset, "America/Sao_Paulo");
-      queryStartUtc = fallbackRange.startUtc;
-      queryEndUtc = fallbackRange.endUtc;
-    }
+    // Determina intervalo UTC no fuso do Brasil (America/Sao_Paulo) para eventos no Supabase (Alinhamento UTMFY)
+    const brlRange = resolveAccountDateRange(datePreset, "America/Sao_Paulo");
+    const queryStartUtc = brlRange.startUtc;
+    const queryEndUtc = brlRange.endUtc;
 
     const accountRawResults: Array<{
       accId: string;

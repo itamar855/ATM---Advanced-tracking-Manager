@@ -48,6 +48,8 @@ CREATE INDEX IF NOT EXISTS idx_meta_duplication_source_action
 ALTER TABLE public.meta_duplication_logs ENABLE ROW LEVEL SECURITY;
 
 -- Política de permissão total para o service role
+DROP POLICY IF EXISTS service_role_all_meta_duplication_logs ON public.meta_duplication_logs;
+
 CREATE POLICY service_role_all_meta_duplication_logs
     ON public.meta_duplication_logs
     FOR ALL

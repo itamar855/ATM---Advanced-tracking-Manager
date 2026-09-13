@@ -37,6 +37,8 @@ CREATE INDEX IF NOT EXISTS idx_campaign_status_history_event_type
 ALTER TABLE public.campaign_status_history ENABLE ROW LEVEL SECURITY;
 
 -- Política permissiva total para service role
+DROP POLICY IF EXISTS service_role_all_campaign_status_history ON public.campaign_status_history;
+
 CREATE POLICY service_role_all_campaign_status_history
     ON public.campaign_status_history
     FOR ALL
