@@ -42,95 +42,101 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
-      {/* Background effects */}
-      <div className="absolute top-1/3 right-1/4 w-[500px] h-[500px] bg-[var(--color-brand-400)]/5 blur-[150px] rounded-full pointer-events-none" />
-      <div className="absolute bottom-1/3 left-1/4 w-[400px] h-[400px] bg-[var(--color-accent-400)]/5 blur-[120px] rounded-full pointer-events-none" />
+    <div className="min-h-screen bg-[#0a0a0b] flex items-center justify-center px-6 py-12 relative overflow-hidden">
+      {/* Background glows */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-[#2997ff]/[0.05] blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-[300px] h-[300px] bg-[#30d158]/[0.03] blur-[100px] rounded-full pointer-events-none" />
 
-      <div className="w-full max-w-md relative">
+      <div className="w-full max-w-[380px] relative">
         {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2.5 mb-6">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--color-brand-400)] to-[var(--color-accent-400)] flex items-center justify-center shadow-lg">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#2997ff] to-[#0071e3] flex items-center justify-center shadow-[0_8px_24px_rgba(41,151,255,0.25)]">
               <Zap size={20} className="text-white" />
             </div>
-            <span className="text-xl font-bold text-gradient">ATM</span>
           </Link>
-          <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">
+          <h1 className="text-[22px] font-bold text-white tracking-tight mb-1.5">
             Crie sua conta
           </h1>
-          <p className="text-sm text-[var(--color-text-muted)] mt-1">
+          <p className="text-[13.5px] text-white/40">
             Comece a rastrear suas conversões em minutos
           </p>
         </div>
 
         {/* Register Form */}
-        <form onSubmit={handleSubmit} className="glass-card p-6 space-y-5">
-          <div>
-            <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-              Nome
+        <form
+          onSubmit={handleSubmit}
+          className="bg-[#18181a] border border-white/[0.07] rounded-3xl p-6 space-y-4 shadow-[0_24px_64px_rgba(0,0,0,0.5)]"
+        >
+          {/* Nome */}
+          <div className="space-y-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-widest text-white/30">
+              Nome Completo
             </label>
             <div className="relative">
               <User
-                size={16}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
+                size={14}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/20"
               />
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Seu nome"
-                className="input pl-10"
+                className="w-full pl-10 pr-4 py-2.5 bg-white/[0.04] border border-white/[0.07] rounded-xl text-[13.5px] text-white/80 placeholder:text-white/20 focus:outline-none focus:border-[#2997ff]/40 focus:bg-white/[0.06] transition-all"
                 required
               />
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
+          {/* Email */}
+          <div className="space-y-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-widest text-white/30">
               E-mail
             </label>
             <div className="relative">
               <Mail
-                size={16}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
+                size={14}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/20"
               />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="seu@email.com"
-                className="input pl-10"
+                className="w-full pl-10 pr-4 py-2.5 bg-white/[0.04] border border-white/[0.07] rounded-xl text-[13.5px] text-white/80 placeholder:text-white/20 focus:outline-none focus:border-[#2997ff]/40 focus:bg-white/[0.06] transition-all"
                 required
               />
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
+          {/* Senha */}
+          <div className="space-y-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-widest text-white/30">
               Senha
             </label>
             <div className="relative">
               <Lock
-                size={16}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
+                size={14}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/20"
               />
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Mínimo 8 caracteres"
-                className="input pl-10"
+                className="w-full pl-10 pr-4 py-2.5 bg-white/[0.04] border border-white/[0.07] rounded-xl text-[13.5px] text-white/80 placeholder:text-white/20 focus:outline-none focus:border-[#2997ff]/40 focus:bg-white/[0.06] transition-all"
                 minLength={8}
                 required
               />
             </div>
           </div>
 
+          {/* Submit */}
           <button
             type="submit"
             disabled={loading}
-            className="btn-primary w-full py-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#2997ff] hover:brightness-110 active:scale-[0.98] text-white text-[14px] font-semibold rounded-xl transition-all shadow-[0_4px_16px_rgba(41,151,255,0.25)] disabled:opacity-50 disabled:cursor-not-allowed mt-2"
           >
             {loading ? (
               <span className="inline-flex items-center gap-2">
@@ -140,14 +146,14 @@ export default function RegisterPage() {
             ) : (
               <>
                 Criar Conta
-                <ArrowRight size={16} />
+                <ArrowRight size={15} />
               </>
             )}
           </button>
         </form>
 
         {/* Benefits */}
-        <div className="mt-6 space-y-2">
+        <div className="mt-6 space-y-2 px-2">
           {[
             "Tracking server-side CAPI validado",
             "Dashboard de lucro por campanha",
@@ -156,11 +162,11 @@ export default function RegisterPage() {
           ].map((benefit) => (
             <div
               key={benefit}
-              className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]"
+              className="flex items-center gap-2 text-[12px] text-white/40"
             >
               <CheckCircle2
                 size={14}
-                className="text-[var(--color-success-400)] shrink-0"
+                className="text-[#30d158] shrink-0"
               />
               {benefit}
             </div>
@@ -168,11 +174,11 @@ export default function RegisterPage() {
         </div>
 
         {/* Login link */}
-        <p className="text-center text-sm text-[var(--color-text-muted)] mt-6">
+        <p className="text-center text-[13px] text-white/30 mt-6">
           Já tem conta?{" "}
           <Link
             href="/login"
-            className="text-[var(--color-brand-300)] hover:text-[var(--color-brand-200)] font-medium transition-colors"
+            className="text-[#2997ff] hover:text-[#52a8ff] font-semibold transition-colors"
           >
             Fazer login
           </Link>

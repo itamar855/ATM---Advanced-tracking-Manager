@@ -4,21 +4,10 @@ import { useState, useEffect } from "react";
 import { useStore } from "@/contexts/StoreContext";
 import {
   DollarSign,
-  TrendingUp,
-  TrendingDown,
-  Percent,
-  CreditCard,
   RotateCw,
   Info,
-  ChevronDown,
-  Layers,
-  Sparkles,
-  Eye,
-  CheckCircle2,
   X,
-  AlertCircle,
-  HelpCircle,
-  ShoppingBag
+  ShoppingBag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -56,12 +45,62 @@ interface TrafficSource {
   percent: number;
 }
 
+/* ── Metric Card Component ───────────────────────────────── */
+function MetricCard({
+  label,
+  value,
+  sub,
+  color,
+  tooltip,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  color?: "green" | "red" | "blue" | "default";
+  tooltip?: string;
+}) {
+  const valueColor = {
+    green:   "text-[#30d158]",
+    red:     "text-[#ff453a]",
+    blue:    "text-[#2997ff]",
+    default: "text-white",
+  }[color ?? "default"];
+
+  return (
+    <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-4 flex flex-col gap-3 hover:border-white/[0.1] hover:bg-[#1c1c1e] transition-all group relative overflow-hidden">
+      {/* Subtle top shimmer on hover */}
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.08] to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+      <div className="flex items-center justify-between">
+        <span className="text-[11.5px] font-medium text-white/40">{label}</span>
+        {tooltip && (
+          <div className="group/tip relative">
+            <Info size={11} className="text-white/20 hover:text-white/50 cursor-pointer transition-colors" />
+            <div className="absolute right-0 top-5 z-30 hidden group-hover/tip:block bg-[#1c1c1e] border border-white/[0.1] text-[10.5px] text-white/60 p-2.5 rounded-xl shadow-2xl w-56 leading-relaxed">
+              {tooltip}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <span className={cn("text-[22px] font-bold font-mono tracking-tight leading-none", valueColor)}>
+          {value}
+        </span>
+        {sub && (
+          <span className="text-[10.5px] text-white/25 leading-none">{sub}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Main Page ─────────────────────────────────────────────── */
 export default function DashboardResumoPage() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [datePreset, setDatePreset] = useState("today");
   const [selectedAccountId, setSelectedAccountId] = useState("all");
-  const [trafficSourceFilter, setTrafficSourceFilter] = useState("all");
   const [showBanner, setShowBanner] = useState(true);
   const { activeStore } = useStore();
 
@@ -123,7 +162,7 @@ export default function DashboardResumoPage() {
         }
       }
     } catch (e) {
-      console.error("[Dashboard Resumo] Erro:", e);
+      console.error("[Dashboard] Erro:", e);
     } finally {
       if (!silent) setLoading(false);
       setIsRefreshing(false);
@@ -134,92 +173,73 @@ export default function DashboardResumoPage() {
     loadData(false);
   }, [datePreset, selectedAccountId, activeStore]);
 
-  // Polling em tempo real otimizado (45s) com proteção contra abas em segundo plano
   useEffect(() => {
     const interval = setInterval(() => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-        return; // Não sobrecarrega a rede quando o usuário estiver em outra aba
-      }
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       loadData(true);
     }, 45000);
     return () => clearInterval(interval);
   }, [datePreset, selectedAccountId, activeStore]);
 
-  const fmt = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmt = (v: number) =>
+    `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const gross = metrics.gross_revenue || metrics.net_revenue + metrics.taxes;
 
   return (
-    <div className="max-w-[1400px] mx-auto pb-16 space-y-4 fade-in select-none text-zinc-100">
-      {/* ── 1. Top Header (Estilo UTMify PRO) ──────────────────────────────── */}
+    <div className="max-w-[1400px] mx-auto pb-20 space-y-5 fade-in select-none">
+
+      {/* ── 1. Page Header ────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3 pt-1">
-        <div className="flex items-center gap-3">
-          <h1 className="text-base font-bold text-white flex items-center gap-2">
-            Dashboard - Oferta BR - Gaiolas 🚀
-            <Eye size={14} className="text-zinc-500 cursor-pointer hover:text-white" />
+        <div>
+          <h1 className="text-[15px] font-semibold text-white/90 tracking-tight">
+            Resumo do Dashboard
           </h1>
+          <p className="text-[11.5px] text-white/30 mt-0.5">
+            {activeStore?.name || "Selecione uma loja"}
+          </p>
         </div>
 
-        <div className="flex items-center gap-4 text-xs font-semibold">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#161B26] border border-zinc-800 text-zinc-300">
-            <span>🇧🇷</span>
-            <span>PT-BR</span>
-          </div>
-          <div className="flex items-center gap-2 text-zinc-400">
-            <span className="text-amber-400">🏆 Prêmios</span>
-            <span className="text-white font-bold">R$ 58.6K / R$ 1M</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-300">Itamar Almeida</span>
-            <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-bold text-white">
-              IA
-            </div>
-          </div>
-        </div>
+        <button
+          onClick={() => loadData(true, true)}
+          disabled={isRefreshing}
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#2997ff] hover:brightness-110 text-white font-semibold text-[12px] shadow-[0_4px_16px_rgba(41,151,255,0.25)] transition-all active:scale-95 disabled:opacity-50"
+        >
+          <RotateCw size={12} className={isRefreshing ? "animate-spin" : ""} />
+          <span>Atualizar</span>
+        </button>
       </div>
 
-      {/* ── 2. Banner de Avisos (Estilo UTMify) ─────────────────────────────── */}
+      {/* ── 2. Alert banner ───────────────────────────────────── */}
       {showBanner && (
-        <div className="bg-gradient-to-r from-amber-950/40 via-amber-900/20 to-amber-950/40 border border-amber-500/30 rounded-xl p-3 flex items-center justify-between text-xs text-amber-200 shadow-md">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-amber-400">Grupo de avisos ATM:</span>
-            <span>Fique por dentro de todas as atualizações e métricas em tempo real.</span>
-            <a href="#" className="font-bold underline text-amber-300 hover:text-white ml-1">
+        <div className="bg-[#ff9f0a]/[0.07] border border-[#ff9f0a]/20 rounded-2xl px-4 py-3 flex items-center justify-between text-[12px]">
+          <div className="flex items-center gap-2.5 text-[#ff9f0a]/90">
+            <span className="font-semibold">Grupo de avisos ATM:</span>
+            <span className="text-white/40">
+              Fique por dentro das atualizações e métricas em tempo real.
+            </span>
+            <a href="#" className="font-semibold underline text-[#ff9f0a] hover:text-white transition-colors">
               Entrar agora
             </a>
           </div>
-          <button onClick={() => setShowBanner(false)} className="text-amber-400 hover:text-white">
-            <X size={14} />
+          <button onClick={() => setShowBanner(false)} className="text-white/25 hover:text-white/60 transition-colors ml-3">
+            <X size={13} />
           </button>
         </div>
       )}
 
-      {/* ── 3. Toolbar de Filtros do Resumo ─────────────────────────────────── */}
-      <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 space-y-3 shadow-xl">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-bold text-white">Resumo</span>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-zinc-400">Atualizado agora mesmo</span>
-            <button
-              onClick={() => loadData(true, true)}
-              disabled={isRefreshing}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-[0_0_15px_rgba(37,99,235,0.4)] transition-all active:scale-95 disabled:opacity-50"
-            >
-              <RotateCw size={13} className={isRefreshing ? "animate-spin" : ""} />
-              <span>Atualizar</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Grid de 5 Filtros */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-2 text-xs">
+      {/* ── 3. Filters ────────────────────────────────────────── */}
+      <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-4">
+        <div className="flex flex-wrap gap-3">
           {/* Período */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1">
-              Período de Visualização <Info size={11} className="text-zinc-600" />
+          <div className="flex flex-col gap-1 min-w-[140px]">
+            <label className="text-[10px] font-semibold uppercase tracking-widest text-white/25">
+              Período
             </label>
             <select
               value={datePreset}
               onChange={(e) => setDatePreset(e.target.value)}
-              className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+              className="bg-white/[0.04] border border-white/[0.07] rounded-xl px-3 py-2 text-[12.5px] text-white/70 focus:outline-none focus:border-[#2997ff]/40 transition-colors"
             >
               <option value="today">Hoje</option>
               <option value="yesterday">Ontem</option>
@@ -231,344 +251,140 @@ export default function DashboardResumoPage() {
           </div>
 
           {/* Conta de Anúncio */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-zinc-400">Conta de Anúncio</label>
+          <div className="flex flex-col gap-1 min-w-[160px]">
+            <label className="text-[10px] font-semibold uppercase tracking-widest text-white/25">
+              Conta de Anúncio
+            </label>
             <select
               value={selectedAccountId}
               onChange={(e) => setSelectedAccountId(e.target.value)}
-              className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+              className="bg-white/[0.04] border border-white/[0.07] rounded-xl px-3 py-2 text-[12.5px] text-white/70 focus:outline-none focus:border-[#2997ff]/40 transition-colors"
             >
               <option value="all">Qualquer</option>
               {availableAccounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.name}
-                </option>
+                <option key={acc.id} value={acc.id}>{acc.name}</option>
               ))}
-            </select>
-          </div>
-
-          {/* Fonte de Tráfego */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-zinc-400">Fonte de Tráfego</label>
-            <select
-              value={trafficSourceFilter}
-              onChange={(e) => setTrafficSourceFilter(e.target.value)}
-              className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="all">Qualquer</option>
-              <option value="meta">MetaAds</option>
-              <option value="google">Google Ads</option>
-              <option value="direct">Direto / Orgânico</option>
-            </select>
-          </div>
-
-          {/* Plataforma */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-zinc-400">Plataforma</label>
-            <select className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
-              <option value="all">Qualquer</option>
-              <option value="shopify">Shopify</option>
-              <option value="vega">Vega Checkout</option>
-            </select>
-          </div>
-
-          {/* Produto */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-zinc-400">Produto</label>
-            <select className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
-              <option value="all">Qualquer</option>
             </select>
           </div>
         </div>
       </div>
 
-      {/* ── 4. Grid de Métricas Principais (Layout 4x3 Idêntico ao UTMify) ──── */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        {/* Linha 1 */}
-        {/* Card 1: Valor Vendido Pago */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg relative overflow-hidden group">
-          <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span className="font-semibold text-zinc-200">Valor Vendido Pago</span>
-            <div className="group/tip relative">
-              <Info size={13} className="text-zinc-500 hover:text-zinc-300 cursor-pointer" />
-              <div className="absolute left-0 sm:right-0 sm:left-auto top-5 z-30 hidden group-hover/tip:block bg-zinc-900 border border-zinc-700 text-[11px] text-zinc-300 p-2.5 rounded-lg shadow-xl w-60">
-                Faturamento bruto recebido em pedidos aprovados (PIX, Cartão e Boleto pagos).
-              </div>
-            </div>
-          </div>
-          <div className="mt-3">
-            <span className="text-2xl font-black text-white font-mono tracking-tight">
-              {fmt(metrics.gross_revenue || (metrics.net_revenue + metrics.taxes))}
-            </span>
-            <span className="text-[11px] text-zinc-400 block mt-1">
-              Líquido pós-taxas: <strong className="text-zinc-200">{fmt(metrics.net_revenue)}</strong>
-            </span>
-          </div>
-        </div>
+      {/* ── 4. Primary Metrics (top row) ──────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <MetricCard
+          label="Valor Vendido Pago"
+          value={fmt(gross)}
+          sub={`Líquido: ${fmt(metrics.net_revenue)}`}
+          tooltip="Faturamento bruto em pedidos aprovados (PIX, Cartão e Boleto pagos)."
+        />
+        <MetricCard
+          label="Gastos com Anúncios"
+          value={fmt(metrics.ad_spend)}
+          sub={`USD 1 = R$ ${usdBrlRate.toFixed(4)}`}
+        />
+        <MetricCard
+          label="ROAS"
+          value={metrics.roas.toFixed(2)}
+          color="green"
+        />
+        <MetricCard
+          label="Lucro Líquido"
+          value={metrics.profit >= 0 ? `+${fmt(metrics.profit)}` : fmt(metrics.profit)}
+          sub={`Margem: ${metrics.margin.toFixed(1)}% · ROI: ${metrics.roi.toFixed(2)}x`}
+          color={metrics.profit >= 0 ? "green" : "red"}
+          tooltip={`Vendido (${fmt(gross)}) − Ads (${fmt(metrics.ad_spend)}) − Taxas (${fmt(metrics.taxes)}) = ${fmt(metrics.profit)}`}
+        />
+      </div>
 
-        {/* Card 2: Gastos com anúncios */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg relative overflow-hidden group">
-          <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span>Gastos com anúncios</span>
-            <Info size={13} className="text-zinc-600 group-hover:text-zinc-400" />
-          </div>
-          <div className="mt-3">
-            <span className="text-2xl font-black text-white font-mono tracking-tight">
-              {fmt(metrics.ad_spend)}
-            </span>
-            <span className="text-[9px] text-zinc-500 block mt-0.5">
-              Câmbio: USD 1 = R$ {usdBrlRate.toFixed(4)}
-            </span>
-          </div>
-        </div>
+      {/* ── 5. Secondary Metrics ──────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <MetricCard label="Margem" value={`${metrics.margin.toFixed(1)}%`} color="green" />
+        <MetricCard label="Taxas Gateway" value={fmt(metrics.taxes)} tooltip="Taxas configuradas para sua loja (6,99% + R$ 1,99 no PIX)." />
+        <MetricCard label="Vendas Pendentes" value={fmt(metrics.pending_sales_value)} />
+        <MetricCard label="ROI" value={metrics.roi.toFixed(2)} color="green" />
+      </div>
 
-        {/* Card 3: ROAS */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg relative overflow-hidden group">
-          <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span className="text-emerald-400 font-bold">ROAS</span>
-            <Info size={13} className="text-zinc-600" />
-          </div>
-          <div className="mt-3">
-            <span className="text-2xl font-black text-emerald-400 font-mono">
-              {metrics.roas.toFixed(2)}
-            </span>
-          </div>
-        </div>
+      {/* ── 6. Bottom row ─────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <MetricCard label="CPA" value={fmt(metrics.cpa)} />
+        <MetricCard label="ARPU" value={fmt(metrics.arpu)} />
+        <MetricCard label="Reembolso" value={`${metrics.refund_rate.toFixed(1)}%`} />
+        <MetricCard label="Chargeback" value={`${metrics.chargeback_rate.toFixed(1)}%`} />
+        <MetricCard label="Taxa de Aprovação (Cartão)" value={`${metrics.approval_rate.toFixed(1)}%`} color="blue" />
+      </div>
 
-        {/* Card 4: Lucro Líquido */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg relative overflow-hidden group">
-          <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span className={metrics.profit >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
-              Lucro Líquido
-            </span>
-            <div className="group/tip relative">
-              <Info size={13} className="text-zinc-500 hover:text-zinc-300 cursor-pointer" />
-              <div className="absolute right-0 top-5 z-30 hidden group-hover/tip:block bg-zinc-900 border border-zinc-700 text-[11px] text-zinc-300 p-2.5 rounded-lg shadow-xl w-64 leading-relaxed">
-                <span className="font-bold text-white block mb-1">Cálculo de Lucro Real:</span>
-                Vendido Pago ({fmt(metrics.gross_revenue || (metrics.net_revenue + metrics.taxes))}) <br />
-                − Gastos Ads ({fmt(metrics.ad_spend)}) <br />
-                − Taxas Gateway ({fmt(metrics.taxes)}) <br />
-                = <strong className={metrics.profit >= 0 ? "text-emerald-400" : "text-rose-400"}>{fmt(metrics.profit)}</strong>
-              </div>
-            </div>
-          </div>
-          <div className="mt-3">
-            <span className={cn("text-2xl font-black font-mono tracking-tight", metrics.profit >= 0 ? "text-emerald-400" : "text-rose-400")}>
-              {metrics.profit >= 0 ? `+${fmt(metrics.profit)}` : fmt(metrics.profit)}
-            </span>
-            <span className="text-[10px] text-zinc-500 block mt-1">
-              Margem: {metrics.margin.toFixed(1)}% | ROI: {metrics.roi.toFixed(2)}x
-            </span>
-          </div>
-        </div>
-
-        {/* Linha 2 */}
-        {/* Card 5: Vendas por Pagamento (Gráfico Donut) */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg row-span-2">
-          <div className="flex items-center justify-between text-zinc-400 text-xs mb-2">
-            <span className="font-bold text-white">Vendas por Pagamento</span>
-            <Info size={13} className="text-zinc-600" />
+      {/* ── 7. Payments + Traffic ─────────────────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Vendas por Pagamento */}
+        <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-5">
+            <span className="text-[13px] font-semibold text-white/80">Vendas por Pagamento</span>
+            <ShoppingBag size={14} className="text-white/20" />
           </div>
 
-          {/* Donut Chart SVG */}
-          <div className="relative flex items-center justify-center my-auto py-2">
-            <svg viewBox="0 0 36 36" className="w-36 h-36 transform -rotate-90">
-              {/* Círculo de fundo */}
-              <circle cx="18" cy="18" r="15.91549430918954" fill="transparent" stroke="#1E2330" strokeWidth="4" />
-              {/* Fatia Pix (Azul Escuro #0284C7) */}
+          {/* Donut */}
+          <div className="relative flex items-center justify-center mb-5">
+            <svg viewBox="0 0 36 36" className="w-32 h-32 -rotate-90">
+              <circle cx="18" cy="18" r="15.9" fill="transparent" stroke="rgba(255,255,255,0.05)" strokeWidth="3.5" />
               <circle
-                cx="18"
-                cy="18"
-                r="15.91549430918954"
-                fill="transparent"
-                stroke="#0284C7"
-                strokeWidth="4"
+                cx="18" cy="18" r="15.9" fill="transparent"
+                stroke="#2997ff" strokeWidth="3.5"
                 strokeDasharray={`${paymentMethods.pix.percent} ${100 - paymentMethods.pix.percent}`}
-                strokeDashoffset="0"
+                strokeDashoffset="0" strokeLinecap="round"
               />
-              {/* Fatia Cartão (Azul Claro #38BDF8) */}
               <circle
-                cx="18"
-                cy="18"
-                r="15.91549430918954"
-                fill="transparent"
-                stroke="#38BDF8"
-                strokeWidth="4"
+                cx="18" cy="18" r="15.9" fill="transparent"
+                stroke="#30d158" strokeWidth="3.5"
                 strokeDasharray={`${paymentMethods.card.percent} ${100 - paymentMethods.card.percent}`}
-                strokeDashoffset={`-${paymentMethods.pix.percent}`}
+                strokeDashoffset={`-${paymentMethods.pix.percent}`} strokeLinecap="round"
               />
             </svg>
-
-            {/* Texto central */}
             <div className="absolute flex flex-col items-center justify-center text-center">
-              <span className="text-[11px] text-zinc-400 font-semibold">Total</span>
-              <span className="text-2xl font-black text-white font-mono">{paymentMethods.total}</span>
+              <span className="text-[10px] text-white/25 font-medium">Total</span>
+              <span className="text-2xl font-bold text-white font-mono">{paymentMethods.total}</span>
             </div>
           </div>
 
-          {/* Legenda */}
-          <div className="flex items-center justify-center gap-4 text-[11px] pt-2 border-t border-zinc-800/60 font-semibold">
-            <span className="flex items-center gap-1.5 text-zinc-300">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#0284C7]"></span>
+          <div className="flex items-center justify-center gap-5 text-[11px] pt-4 border-t border-white/[0.05]">
+            <span className="flex items-center gap-1.5 text-white/50">
+              <span className="w-2 h-2 rounded-full bg-[#2997ff]" />
               Pix ({paymentMethods.pix.percent}%)
             </span>
-            <span className="flex items-center gap-1.5 text-zinc-300">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]"></span>
+            <span className="flex items-center gap-1.5 text-white/50">
+              <span className="w-2 h-2 rounded-full bg-[#30d158]" />
               Cartão ({paymentMethods.card.percent}%)
             </span>
-            <span className="flex items-center gap-1.5 text-zinc-300">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+            <span className="flex items-center gap-1.5 text-white/50">
+              <span className="w-2 h-2 rounded-full bg-[#ff9f0a]" />
               Boleto
             </span>
           </div>
         </div>
 
-        {/* Card 6: Vendas Pendentes */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
-          <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span>Vendas Pendentes</span>
-            <Info size={13} className="text-zinc-600" />
+        {/* Vendas por Fonte */}
+        <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-5">
+            <span className="text-[13px] font-semibold text-white/80">Vendas por Fonte</span>
+            <Info size={14} className="text-white/20" />
           </div>
-          <div className="mt-2">
-            <span className="text-xl font-bold text-white font-mono">
-              {fmt(metrics.pending_sales_value)}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 7: Margem */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
-          <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span className="text-emerald-400 font-bold">Margem</span>
-            <Info size={13} className="text-zinc-600" />
-          </div>
-          <div className="mt-2">
-            <span className="text-xl font-bold text-emerald-400 font-mono">
-              {metrics.margin.toFixed(1)}%
-            </span>
-          </div>
-        </div>
-
-        {/* Card 8: Taxas */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
-          <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span>Taxas Gateway</span>
-            <div className="group/tip relative">
-              <Info size={13} className="text-zinc-500 hover:text-zinc-300 cursor-pointer" />
-              <div className="absolute right-0 top-5 z-30 hidden group-hover/tip:block bg-zinc-900 border border-zinc-700 text-[11px] text-zinc-300 p-2.5 rounded-lg shadow-xl w-56 leading-normal">
-                Taxas configuradas para sua loja (6,99% + R$ 1,99 no PIX).
-              </div>
-            </div>
-          </div>
-          <div className="mt-2">
-            <span className="text-xl font-bold text-white font-mono">
-              {fmt(metrics.taxes)}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 9: Vendas por Fonte (Deslize a tela) */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
-          <div className="flex items-center justify-between text-zinc-400 text-xs mb-1">
-            <span className="font-bold text-white">Vendas por Fonte</span>
-            <Info size={13} className="text-zinc-600" />
-          </div>
-          <div className="space-y-2 text-xs">
+          <div className="space-y-4">
             {trafficSources.map((src) => (
-              <div key={src.name} className="flex items-center justify-between">
-                <span className="font-semibold text-zinc-300">{src.name}</span>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-white font-bold">{src.count}</span>
-                  <div className="w-12 bg-zinc-800 rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-blue-500 h-full rounded-full" style={{ width: `${src.percent}%` }} />
+              <div key={src.name}>
+                <div className="flex items-center justify-between text-[12px] mb-1.5">
+                  <span className="font-medium text-white/60">{src.name}</span>
+                  <div className="flex items-center gap-2.5">
+                    <span className="font-mono font-bold text-white/80">{src.count}</span>
+                    <span className="text-white/25 text-[10.5px] w-9 text-right">{src.percent}%</span>
                   </div>
-                  <span className="font-mono text-[10px] text-zinc-400 w-10 text-right">{src.percent}%</span>
+                </div>
+                <div className="h-1 bg-white/[0.05] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-[#2997ff] to-[#0071e3] rounded-full transition-all duration-700"
+                    style={{ width: `${src.percent}%` }}
+                  />
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-
-        {/* Card 10: ROI */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
-          <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span className="text-emerald-400 font-bold">ROI</span>
-            <Info size={13} className="text-zinc-600" />
-          </div>
-          <div className="mt-2">
-            <span className="text-xl font-bold text-emerald-400 font-mono">
-              {metrics.roi.toFixed(2)}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 11: CPA */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
-          <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span>CPA</span>
-            <Info size={13} className="text-zinc-600" />
-          </div>
-          <div className="mt-2">
-            <span className="text-xl font-bold text-white font-mono">
-              {fmt(metrics.cpa)}
-            </span>
-          </div>
-        </div>
-
-        {/* Linha 4 */}
-        {/* Card 12: Reembolso */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
-          <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span>Reembolso</span>
-            <Info size={13} className="text-zinc-600" />
-          </div>
-          <div className="mt-2">
-            <span className="text-xl font-bold text-white font-mono">
-              {metrics.refund_rate.toFixed(1)}%
-            </span>
-          </div>
-        </div>
-
-        {/* Card 13: ARPU (Ticket Médio) */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
-          <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span>ARPU</span>
-            <Info size={13} className="text-zinc-600" />
-          </div>
-          <div className="mt-2">
-            <span className="text-xl font-bold text-white font-mono">
-              {fmt(metrics.arpu)}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 14: Chargeback */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
-          <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span>Chargeback</span>
-            <Info size={13} className="text-zinc-600" />
-          </div>
-          <div className="mt-2">
-            <span className="text-xl font-bold text-white font-mono">
-              {metrics.chargeback_rate.toFixed(1)}%
-            </span>
-          </div>
-        </div>
-
-        {/* Card 15: Taxa de Aprovação */}
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between shadow-lg">
-          <div className="flex items-center justify-between text-zinc-400 text-xs">
-            <span>Taxa de Aprovação</span>
-            <Info size={13} className="text-zinc-600" />
-          </div>
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-xs text-zinc-400">Cartão</span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-bold text-blue-400 font-mono">
-                {metrics.approval_rate.toFixed(1)}%
-              </span>
-              <div className="w-3.5 h-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin"></div>
-            </div>
           </div>
         </div>
       </div>

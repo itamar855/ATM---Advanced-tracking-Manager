@@ -356,45 +356,45 @@ export default function NotificationSettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
+    <div className="space-y-6 max-w-5xl mx-auto pb-12 fade-in select-none">
       {/* Cabeçalho */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800/80 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.06] pb-5">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
-              <Bell size={20} />
+            <div className="w-10 h-10 rounded-2xl bg-[#2997ff]/10 border border-[#2997ff]/20 flex items-center justify-center text-[#2997ff]">
+              <Bell size={19} />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white flex items-center gap-2">
+              <h1 className="text-xl font-bold text-white flex items-center gap-2 tracking-tight">
                 Notificações Push
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-mono">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/20 font-mono">
                   iOS 16.4+ & Android
                 </span>
               </h1>
-              <p className="text-xs text-zinc-400">
+              <p className="text-[13px] text-white/40 mt-0.5">
                 Receba alertas em tempo real no seu iPhone com som de venda e personalize todos os textos.
               </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={handleSendTest}
             disabled={testing || connectedDevicesCount === 0}
-            className="btn-secondary py-2 px-3 text-xs gap-1.5 cursor-pointer disabled:opacity-50"
+            className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-white/90 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.98]"
             title="Dispara um push de teste imediato para o seu iPhone"
           >
-            <Send size={14} className={testing ? "animate-spin" : "text-amber-400"} />
+            <Send size={13} className={testing ? "animate-spin text-[#2997ff]" : "text-[#ffd60a]"} />
             <span>{testing ? "Disparando..." : "Testar no iPhone"}</span>
           </button>
 
           <button
             onClick={handleSaveConfig}
             disabled={saving}
-            className="btn-primary py-2 px-4 text-xs gap-1.5 cursor-pointer bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20"
+            className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-[#2997ff] hover:brightness-110 active:scale-[0.98] text-white shadow-[0_4px_14px_rgba(41,151,255,0.25)] transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
-            <Save size={14} />
+            <Save size={13} />
             <span>{saving ? "Salvando..." : "Salvar Alterações"}</span>
           </button>
         </div>
@@ -403,45 +403,45 @@ export default function NotificationSettingsPage() {
       {/* Feedback Toast */}
       {feedbackMsg && (
         <div
-          className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs font-medium animate-in fade-in slide-in-from-top-2 ${
+          className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs font-medium animate-in fade-in slide-in-from-top-2 ${
             feedbackMsg.type === "success"
-              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-              : "bg-red-500/10 border-red-500/30 text-red-300"
+              ? "bg-[#30d158]/10 border-[#30d158]/25 text-[#30d158]"
+              : "bg-[#ff453a]/10 border-[#ff453a]/25 text-[#ff453a]"
           }`}
         >
           <div className="flex items-center gap-2">
             {feedbackMsg.type === "success" ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
             <span>{feedbackMsg.text}</span>
           </div>
-          <button onClick={() => setFeedbackMsg(null)} className="text-zinc-400 hover:text-white">✕</button>
+          <button onClick={() => setFeedbackMsg(null)} className="text-white/40 hover:text-white">✕</button>
         </div>
       )}
 
       {/* CARD 1: Status de Conexão do Aparelho (iPhone / Android / PC) */}
-      <div className="bg-[#11141E] border border-zinc-800/80 rounded-2xl p-5 shadow-xl">
+      <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.3)]">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
-              <Smartphone size={20} />
+            <div className="w-10 h-10 rounded-2xl bg-[#2997ff]/10 border border-[#2997ff]/20 flex items-center justify-center text-[#2997ff] shrink-0">
+              <Smartphone size={19} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-white">Status deste Dispositivo</h3>
+                <h3 className="text-sm font-semibold text-white/90">Status deste Dispositivo</h3>
                 {isSubscribedOnThisDevice ? (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/20 font-semibold flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#30d158] animate-pulse"></span>
                     Conectado para Notificações
                   </span>
                 ) : (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700 font-medium">
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-white/[0.06] text-white/40 border border-white/[0.08] font-semibold">
                     Não conectado neste aparelho
                   </span>
                 )}
               </div>
-              <p className="text-xs text-zinc-400 mt-1">
+              <p className="text-[12.5px] text-white/40 mt-1">
                 {isSubscribedOnThisDevice
                   ? `Seu aparelho está autorizado. Você tem ${connectedDevicesCount} dispositivo(s) cadastrado(s) para receber notificações desta loja.`
-                  : "Clique abaixo para autorizar este iPhone ou computador a apitar vendas em segundo plano."}
+                  : "Clique ao lado para autorizar este iPhone ou computador a apitar vendas em segundo plano."}
               </p>
             </div>
           </div>
@@ -451,19 +451,19 @@ export default function NotificationSettingsPage() {
               <button
                 onClick={handleSendTest}
                 disabled={testing}
-                className="btn-secondary py-2 px-3 text-xs gap-1.5 cursor-pointer"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-white/90 transition-all flex items-center gap-1.5 cursor-pointer active:scale-[0.98]"
               >
-                <Sparkles size={14} className="text-amber-400" />
+                <Sparkles size={13} className="text-[#ffd60a]" />
                 <span>Ouvir Som de Teste</span>
               </button>
             ) : (
               <button
                 onClick={handleSubscribeDevice}
                 disabled={subscribing}
-                className="btn-primary py-2.5 px-4 text-xs gap-2 cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold shadow-lg shadow-blue-500/20"
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#2997ff] hover:brightness-110 active:scale-[0.98] text-white shadow-[0_4px_16px_rgba(41,151,255,0.25)] transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                <Bell size={15} />
-                <span>{subscribing ? "Autorizando..." : "🔔 Ativar Notificações no iPhone"}</span>
+                <Bell size={14} />
+                <span>{subscribing ? "Autorizando..." : "Ativar Notificações no iPhone"}</span>
               </button>
             )}
           </div>
@@ -471,35 +471,35 @@ export default function NotificationSettingsPage() {
       </div>
 
       {/* CARD 2: Gatilhos de Notificação (Quais eventos avisar) */}
-      <div className="bg-[#11141E] border border-zinc-800/80 rounded-2xl p-5 shadow-xl space-y-4">
-        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+      <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.3)] space-y-4">
+        <h3 className="text-sm font-semibold text-white/90 flex items-center gap-2">
           <span>Gatilhos de Eventos</span>
-          <span className="text-xs font-normal text-zinc-400">(Escolha quando seu iPhone deve apitar)</span>
+          <span className="text-xs font-normal text-white/35">(Escolha quando seu iPhone deve apitar)</span>
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {/* Venda Aprovada */}
           <div
             onClick={() => setConfig((p) => ({ ...p, notify_approved: !p.notify_approved }))}
-            className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+            className={`p-4 rounded-2xl border cursor-pointer transition-all ${
               config.notify_approved
-                ? "bg-emerald-500/10 border-emerald-500/40 text-white"
-                : "bg-zinc-900/50 border-zinc-800 text-zinc-400 opacity-60"
+                ? "bg-[#30d158]/10 border-[#30d158]/30 text-white"
+                : "bg-white/[0.02] border-white/[0.05] text-white/40 opacity-60"
             }`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <CheckCircle2 size={16} className={config.notify_approved ? "text-emerald-400" : "text-zinc-500"} />
-                <span className="text-xs font-bold">Vendas Aprovadas</span>
+                <CheckCircle2 size={16} className={config.notify_approved ? "text-[#30d158]" : "text-white/30"} />
+                <span className="text-xs font-semibold">Vendas Aprovadas</span>
               </div>
               <input
                 type="checkbox"
                 checked={config.notify_approved}
                 onChange={() => {}}
-                className="rounded accent-emerald-500 cursor-pointer"
+                className="rounded accent-[#30d158] cursor-pointer"
               />
             </div>
-            <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed">
+            <p className="text-[11.5px] text-white/40 mt-2 leading-relaxed">
               PIX pago, cartão aprovado e boletos compensados.
             </p>
           </div>
@@ -507,25 +507,25 @@ export default function NotificationSettingsPage() {
           {/* Pedido Pendente */}
           <div
             onClick={() => setConfig((p) => ({ ...p, notify_pending: !p.notify_pending }))}
-            className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+            className={`p-4 rounded-2xl border cursor-pointer transition-all ${
               config.notify_pending
-                ? "bg-amber-500/10 border-amber-500/40 text-white"
-                : "bg-zinc-900/50 border-zinc-800 text-zinc-400 opacity-60"
+                ? "bg-[#ffd60a]/10 border-[#ffd60a]/30 text-white"
+                : "bg-white/[0.02] border-white/[0.05] text-white/40 opacity-60"
             }`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Clock size={16} className={config.notify_pending ? "text-amber-400" : "text-zinc-500"} />
-                <span className="text-xs font-bold">Pedidos Pendentes</span>
+                <Clock size={16} className={config.notify_pending ? "text-[#ffd60a]" : "text-white/30"} />
+                <span className="text-xs font-semibold">Pedidos Pendentes</span>
               </div>
               <input
                 type="checkbox"
                 checked={config.notify_pending}
                 onChange={() => {}}
-                className="rounded accent-amber-500 cursor-pointer"
+                className="rounded accent-[#ffd60a] cursor-pointer"
               />
             </div>
-            <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed">
+            <p className="text-[11.5px] text-white/40 mt-2 leading-relaxed">
               PIX gerado aguardando cópia e boletos impressos.
             </p>
           </div>
@@ -533,25 +533,25 @@ export default function NotificationSettingsPage() {
           {/* Checkout Abandonado */}
           <div
             onClick={() => setConfig((p) => ({ ...p, notify_abandoned: !p.notify_abandoned }))}
-            className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+            className={`p-4 rounded-2xl border cursor-pointer transition-all ${
               config.notify_abandoned
-                ? "bg-purple-500/10 border-purple-500/40 text-white"
-                : "bg-zinc-900/50 border-zinc-800 text-zinc-400 opacity-60"
+                ? "bg-[#bf5af2]/10 border-[#bf5af2]/30 text-white"
+                : "bg-white/[0.02] border-white/[0.05] text-white/40 opacity-60"
             }`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <ShoppingCart size={16} className={config.notify_abandoned ? "text-purple-400" : "text-zinc-500"} />
-                <span className="text-xs font-bold">Checkout / Lead</span>
+                <ShoppingCart size={16} className={config.notify_abandoned ? "text-[#bf5af2]" : "text-white/30"} />
+                <span className="text-xs font-semibold">Checkout / Lead</span>
               </div>
               <input
                 type="checkbox"
                 checked={config.notify_abandoned}
                 onChange={() => {}}
-                className="rounded accent-purple-500 cursor-pointer"
+                className="rounded accent-[#bf5af2] cursor-pointer"
               />
             </div>
-            <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed">
+            <p className="text-[11.5px] text-white/40 mt-2 leading-relaxed">
               Cliente que iniciou o checkout mas não finalizou a compra.
             </p>
           </div>
@@ -561,35 +561,35 @@ export default function NotificationSettingsPage() {
       {/* CARD 3: Personalizador de Templates + Mockup do iPhone */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Editor de Mensagem (7 colunas) */}
-        <div className="lg:col-span-7 bg-[#11141E] border border-zinc-800/80 rounded-2xl p-5 shadow-xl space-y-4">
-          <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Sparkles size={16} className="text-blue-400" />
+        <div className="lg:col-span-7 bg-[#18181a] border border-white/[0.06] rounded-2xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.3)] space-y-4">
+          <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+            <h3 className="text-sm font-semibold text-white/90 flex items-center gap-2">
+              <Sparkles size={16} className="text-[#2997ff]" />
               <span>Personalizar Textos</span>
             </h3>
 
             {/* Abas dos tipos de evento */}
-            <div className="flex items-center gap-1 bg-[#141824] p-1 rounded-lg border border-zinc-800">
+            <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-xl border border-white/[0.06]">
               <button
                 onClick={() => setActiveTab("approved")}
-                className={`text-[11px] px-2.5 py-1 rounded font-medium transition-all ${
-                  activeTab === "approved" ? "bg-blue-600 text-white shadow" : "text-zinc-400 hover:text-white"
+                className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                  activeTab === "approved" ? "bg-[#2997ff] text-white shadow-sm" : "text-white/40 hover:text-white"
                 }`}
               >
-                Venda Aprovada
+                Aprovada
               </button>
               <button
                 onClick={() => setActiveTab("pending")}
-                className={`text-[11px] px-2.5 py-1 rounded font-medium transition-all ${
-                  activeTab === "pending" ? "bg-blue-600 text-white shadow" : "text-zinc-400 hover:text-white"
+                className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                  activeTab === "pending" ? "bg-[#2997ff] text-white shadow-sm" : "text-white/40 hover:text-white"
                 }`}
               >
                 Pendente
               </button>
               <button
                 onClick={() => setActiveTab("abandoned")}
-                className={`text-[11px] px-2.5 py-1 rounded font-medium transition-all ${
-                  activeTab === "abandoned" ? "bg-blue-600 text-white shadow" : "text-zinc-400 hover:text-white"
+                className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                  activeTab === "abandoned" ? "bg-[#2997ff] text-white shadow-sm" : "text-white/40 hover:text-white"
                 }`}
               >
                 Abandono
@@ -599,7 +599,7 @@ export default function NotificationSettingsPage() {
 
           {/* Campo Título */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-zinc-300">Título da Notificação</label>
+            <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider">Título da Notificação</label>
             <input
               ref={titleInputRef}
               type="text"
@@ -611,14 +611,14 @@ export default function NotificationSettingsPage() {
                   [titleKeyForTab(activeTab)]: e.target.value,
                 }))
               }
-              className="input text-xs w-full font-mono bg-[#141824] border-zinc-800"
+              className="w-full px-3.5 py-2 rounded-xl bg-white/[0.04] border border-white/[0.07] text-xs font-mono text-white/90 focus:outline-none focus:border-[#2997ff]/40"
               placeholder="Ex: 💰 Venda Aprovada! ({loja})"
             />
           </div>
 
           {/* Campo Corpo / Mensagem */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-zinc-300">Corpo da Notificação</label>
+            <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider">Corpo da Notificação</label>
             <textarea
               ref={bodyInputRef}
               rows={3}
@@ -630,19 +630,19 @@ export default function NotificationSettingsPage() {
                   [bodyKeyForTab(activeTab)]: e.target.value,
                 }))
               }
-              className="input text-xs w-full font-mono bg-[#141824] border-zinc-800 resize-none"
+              className="w-full px-3.5 py-2 rounded-xl bg-white/[0.04] border border-white/[0.07] text-xs font-mono text-white/90 focus:outline-none focus:border-[#2997ff]/40 resize-none"
               placeholder="Ex: {cliente_nome} comprou {valor} via {metodo_pagamento}"
             />
           </div>
 
           {/* Variáveis Dinâmicas Disponíveis (Clique para inserir) */}
-          <div className="space-y-2 pt-1 border-t border-zinc-800/80">
+          <div className="space-y-2 pt-1 border-t border-white/[0.06]">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
-                Clique na variável para inserir no texto:
+              <span className="text-[10.5px] font-semibold text-white/40 uppercase tracking-wider">
+                Clique para inserir:
               </span>
-              <span className="text-[10px] text-zinc-500">
-                Campo selecionado: <strong className="text-blue-400">{lastFocusedField === "title" ? "Título" : "Mensagem"}</strong>
+              <span className="text-[10px] text-white/40">
+                Campo: <strong className="text-[#2997ff]">{lastFocusedField === "title" ? "Título" : "Mensagem"}</strong>
               </span>
             </div>
 
@@ -652,11 +652,11 @@ export default function NotificationSettingsPage() {
                   key={t.tag}
                   type="button"
                   onClick={() => insertTag(t.tag)}
-                  className="text-[11px] px-2.5 py-1 rounded-lg bg-[#181D2D] hover:bg-blue-600/30 border border-zinc-700/60 hover:border-blue-500/50 text-blue-300 font-mono transition-all flex items-center gap-1 cursor-pointer"
+                  className="text-[11px] px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-[#2997ff]/20 border border-white/[0.06] hover:border-[#2997ff]/40 text-[#2997ff] font-mono transition-all flex items-center gap-1 cursor-pointer"
                   title={t.desc}
                 >
                   <span>{t.tag}</span>
-                  <span className="text-[9px] text-zinc-500 hidden sm:inline">({t.label})</span>
+                  <span className="text-[9px] text-white/30 hidden sm:inline">({t.label})</span>
                 </button>
               ))}
             </div>
@@ -664,63 +664,63 @@ export default function NotificationSettingsPage() {
         </div>
 
         {/* Mockup do iPhone: Prévia ao Vivo da Notificação (5 colunas) */}
-        <div className="lg:col-span-5 bg-[#11141E] border border-zinc-800/80 rounded-2xl p-5 shadow-xl flex flex-col items-center justify-center">
-          <span className="text-xs font-bold text-zinc-400 mb-3 uppercase tracking-wider flex items-center gap-1.5">
-            <Smartphone size={14} className="text-blue-400" />
+        <div className="lg:col-span-5 bg-[#18181a] border border-white/[0.06] rounded-2xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.3)] flex flex-col items-center justify-center">
+          <span className="text-xs font-semibold text-white/40 mb-4 uppercase tracking-wider flex items-center gap-1.5">
+            <Smartphone size={13} className="text-[#2997ff]" />
             Prévia na Tela do seu iPhone
           </span>
 
           {/* Carcaça simulada do iPhone */}
-          <div className="w-[280px] bg-gradient-to-b from-zinc-900 to-black rounded-[36px] p-3 border-4 border-zinc-700/60 shadow-2xl relative">
-            {/* Ilha Dinâmica / Dynamic Island */}
-            <div className="w-20 h-4 bg-black rounded-full mx-auto mb-4 border border-zinc-800/80 flex items-center justify-center">
+          <div className="w-[280px] bg-gradient-to-b from-zinc-950 to-black rounded-[40px] p-3.5 border-4 border-white/[0.12] shadow-2xl relative">
+            {/* Ilha Dinâmica */}
+            <div className="w-20 h-4 bg-black rounded-full mx-auto mb-4 border border-white/[0.06] flex items-center justify-center">
               <div className="w-2 h-2 rounded-full bg-zinc-900 ml-auto mr-1.5"></div>
             </div>
 
             {/* Hora da tela bloqueada */}
-            <div className="text-center text-zinc-300 font-light text-2xl tracking-tight mb-4">
+            <div className="text-center text-white/90 font-light text-2xl tracking-tight mb-4 font-sans">
               12:38
             </div>
 
-            {/* Banner da Notificação iOS estilo Glassmorphism */}
-            <div className="bg-zinc-800/85 backdrop-blur-xl border border-zinc-700/50 rounded-2xl p-3 shadow-2xl space-y-1.5 animate-in fade-in zoom-in-95">
+            {/* Banner da Notificação iOS estilo Frosted Glass */}
+            <div className="bg-[#242426]/90 backdrop-blur-2xl border border-white/[0.12] rounded-2xl p-3.5 shadow-2xl space-y-1.5 animate-in fade-in zoom-in-95">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <div className="w-4 h-4 rounded bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-[8px] font-bold">
+                  <div className="w-4 h-4 rounded-md bg-[#2997ff] flex items-center justify-center text-white text-[8px] font-bold">
                     ⚡
                   </div>
-                  <span className="text-[10px] font-bold text-zinc-200 uppercase tracking-tight">ATM PRO</span>
+                  <span className="text-[10px] font-semibold text-white/70 uppercase tracking-tight">ATM PRO</span>
                 </div>
-                <span className="text-[9px] text-zinc-400">Agora</span>
+                <span className="text-[9px] text-white/40">Agora</span>
               </div>
 
-              <div className="text-xs font-bold text-white tracking-tight leading-snug">
+              <div className="text-xs font-semibold text-white tracking-tight leading-snug">
                 {simulatedTitle}
               </div>
 
-              <div className="text-[11px] text-zinc-300 leading-tight">
+              <div className="text-[11px] text-white/70 leading-tight">
                 {simulatedBody}
               </div>
             </div>
 
             <div className="h-12 flex items-center justify-center">
-              <div className="w-24 h-1 bg-zinc-600 rounded-full"></div>
+              <div className="w-24 h-1 bg-white/20 rounded-full"></div>
             </div>
           </div>
         </div>
       </div>
 
       {/* CARD 4: Seletor de Sons, Upload Customizado & Feedback */}
-      <div className="bg-[#11141E] border border-zinc-800/80 rounded-2xl p-5 shadow-xl space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-800 pb-3 gap-2">
+      <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.3)] space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/[0.06] pb-3 gap-2">
           <div>
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Volume2 size={18} className="text-amber-400" />
+            <h3 className="text-sm font-semibold text-white/90 flex items-center gap-2">
+              <Volume2 size={16} className="text-[#ffd60a]" />
               <span>Som da Notificação de Venda</span>
             </h3>
-            <p className="text-xs text-zinc-400 mt-0.5">Escolha um dos sons premium ou faça upload do seu próprio áudio</p>
+            <p className="text-xs text-white/40 mt-0.5">Escolha um dos sons premium ou faça upload do seu próprio áudio</p>
           </div>
-          <span className="text-xs text-zinc-500">Toque em "Ouvir" para testar no seu aparelho</span>
+          <span className="text-xs text-white/30">Toque em "Ouvir" para testar no seu aparelho</span>
         </div>
 
         {/* Grade de Opções de Som */}
@@ -742,19 +742,19 @@ export default function NotificationSettingsPage() {
                 setConfig((p) => ({ ...p, sound: s.id as any }));
                 playNotificationSound(s.id, config.custom_sound_url);
               }}
-              className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
+              className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between ${
                 config.sound === s.id
-                  ? "bg-amber-500/15 border-amber-500/50 text-white shadow-lg shadow-amber-500/10"
-                  : "bg-zinc-900/40 border-zinc-800 text-zinc-300 hover:border-zinc-700"
+                  ? "bg-[#2997ff]/15 border-[#2997ff]/40 text-white shadow-lg shadow-[#2997ff]/10"
+                  : "bg-white/[0.02] border-white/[0.05] text-white/70 hover:border-white/[0.12]"
               }`}
             >
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xl">{s.icon}</span>
-                  {config.sound === s.id && <Check size={16} className="text-amber-400" />}
+                  {config.sound === s.id && <Check size={16} className="text-[#2997ff]" />}
                 </div>
-                <div className="text-xs font-bold truncate">{s.label}</div>
-                <div className="text-[10px] text-zinc-400 mt-1 leading-tight">{s.desc}</div>
+                <div className="text-xs font-semibold truncate">{s.label}</div>
+                <div className="text-[10px] text-white/40 mt-1 leading-tight">{s.desc}</div>
               </div>
 
               <div className="mt-3 flex items-center gap-1.5">
@@ -769,7 +769,7 @@ export default function NotificationSettingsPage() {
                         playNotificationSound(s.id, config.custom_sound_url);
                       }
                     }}
-                    className="flex-1 py-1.5 px-2 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-[10px] text-zinc-300 flex items-center justify-center gap-1 transition-colors"
+                    className="flex-1 py-1.5 px-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-[10px] text-white/80 flex items-center justify-center gap-1 transition-colors"
                   >
                     <Play size={10} />
                     <span>{s.id === "custom" && !config.custom_sound_url ? "Carregar" : "Ouvir"}</span>
@@ -783,7 +783,7 @@ export default function NotificationSettingsPage() {
                       e.stopPropagation();
                       fileInputRef.current?.click();
                     }}
-                    className="p-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
+                    className="p-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-white/40 hover:text-white transition-colors"
                   >
                     <Upload size={12} />
                   </button>
@@ -794,19 +794,19 @@ export default function NotificationSettingsPage() {
         </div>
 
         {/* Área de Upload de Som Customizado */}
-        <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-[#ffd60a]/10 border border-[#ffd60a]/20 flex items-center justify-center text-[#ffd60a] shrink-0">
               <Music size={18} />
             </div>
             <div>
-              <div className="text-xs font-bold text-white flex items-center gap-2">
+              <div className="text-xs font-semibold text-white/90 flex items-center gap-2">
                 <span>Upload de Som Personalizado</span>
                 {config.custom_sound_url && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono">Ativo</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#30d158]/20 text-[#30d158] font-mono">Ativo</span>
                 )}
               </div>
-              <p className="text-[11px] text-zinc-400 mt-0.5">
+              <p className="text-[11px] text-white/40 mt-0.5">
                 {config.custom_sound_url
                   ? `Arquivo ativo: ${config.custom_sound_name || "som-personalizado.mp3"}`
                   : "Envie qualquer arquivo de áudio (.mp3, .wav, .m4a) de até 2MB para tocar nas suas vendas"}
@@ -826,11 +826,11 @@ export default function NotificationSettingsPage() {
 
             <label
               htmlFor="custom-audio-upload"
-              className={`btn-secondary py-2 px-3.5 text-xs gap-1.5 flex-1 sm:flex-none justify-center cursor-pointer select-none transition-all ${
-                uploadingSound ? "opacity-50 pointer-events-none" : "hover:bg-zinc-800"
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-white/90 flex items-center gap-1.5 flex-1 sm:flex-none justify-center cursor-pointer select-none transition-all ${
+                uploadingSound ? "opacity-50 pointer-events-none" : ""
               }`}
             >
-              <Upload size={14} className="text-amber-400" />
+              <Upload size={13} className="text-[#ffd60a]" />
               <span>{uploadingSound ? "Carregando..." : config.custom_sound_url ? "Trocar Arquivo (.MP3)" : "Selecionar Meu Áudio (.MP3)"}</span>
             </label>
 
@@ -839,7 +839,7 @@ export default function NotificationSettingsPage() {
                 <button
                   type="button"
                   onClick={() => playNotificationSound("custom", config.custom_sound_url)}
-                  className="btn-primary py-2 px-3 text-xs gap-1.5 flex-1 sm:flex-none justify-center"
+                  className="px-3 py-2 rounded-xl text-xs font-semibold bg-[#2997ff] hover:brightness-110 text-white flex items-center gap-1.5 flex-1 sm:flex-none justify-center"
                 >
                   <Play size={12} />
                   <span>Ouvir</span>
@@ -855,99 +855,99 @@ export default function NotificationSettingsPage() {
                       custom_sound_name: null as any,
                     }));
                   }}
-                  className="p-2 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  className="p-2 rounded-xl text-white/40 hover:text-[#ff453a] hover:bg-[#ff453a]/10 transition-colors"
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={13} />
                 </button>
               </>
             )}
           </div>
         </div>
 
-        {/* Lembrete Apple iPhone: Chave de Silêncio e Modo Foco */}
-        <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400 shrink-0 mt-0.5">
+        {/* Dica Apple iPhone */}
+        <div className="p-3.5 rounded-2xl bg-[#2997ff]/10 border border-[#2997ff]/20 flex items-start gap-3">
+          <div className="p-2 rounded-xl bg-[#2997ff]/15 text-[#2997ff] shrink-0 mt-0.5">
             <Smartphone size={16} />
           </div>
           <div className="space-y-1">
-            <div className="text-xs font-bold text-blue-200 flex items-center gap-1.5">
+            <div className="text-xs font-semibold text-[#2997ff] flex items-center gap-1.5">
               <span>🍎 Dica para Usuários de iPhone (iOS):</span>
             </div>
-            <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Para que o som toque com o celular bloqueado no bolso, certifique-se de que a <strong className="text-zinc-200">chave física lateral do iPhone (modo silencioso)</strong> não esteja com a tarjinha laranja aparente e que o modo <strong className="text-zinc-200">Foco / Não Perturbe</strong> esteja desativado.
+            <p className="text-[11.5px] text-white/50 leading-relaxed">
+              Para que o som toque com o celular bloqueado no bolso, certifique-se de que a <strong className="text-white/80">chave física lateral do iPhone (modo silencioso)</strong> não esteja com a tarjinha laranja aparente e que o modo <strong className="text-white/80">Foco / Não Perturbe</strong> esteja desativado.
             </p>
           </div>
         </div>
       </div>
 
       {/* CARD 5: Filtros Avançados & Modo Não Perturbe */}
-      <div className="bg-[#11141E] border border-zinc-800/80 rounded-2xl p-5 shadow-xl space-y-4">
-        <h3 className="text-sm font-bold text-white flex items-center gap-2">
-          <Moon size={16} className="text-indigo-400" />
+      <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.3)] space-y-4">
+        <h3 className="text-sm font-semibold text-white/90 flex items-center gap-2">
+          <Moon size={16} className="text-[#bf5af2]" />
           <span>Filtros & Horários de Silêncio</span>
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           {/* Valor mínimo */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-              <DollarSign size={14} className="text-emerald-400" />
+            <label className="text-xs font-semibold text-white/80 flex items-center gap-1.5">
+              <DollarSign size={14} className="text-[#30d158]" />
               <span>Notificar apenas vendas acima de:</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-xs font-mono">R$</span>
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30 text-xs font-mono">R$</span>
               <input
                 type="number"
                 min="0"
                 step="10"
                 value={config.min_value}
                 onChange={(e) => setConfig((p) => ({ ...p, min_value: Number(e.target.value) || 0 }))}
-                className="input pl-9 text-xs w-full font-mono bg-[#141824] border-zinc-800"
+                className="w-full pl-9 pr-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.07] text-xs font-mono text-white/90 focus:outline-none focus:border-[#2997ff]/40"
                 placeholder="0 = Notificar todas as vendas"
               />
             </div>
-            <span className="text-[10px] text-zinc-500">Deixe R$ 0 para receber alertas de todos os valores.</span>
+            <span className="text-[10px] text-white/30">Deixe R$ 0 para receber alertas de todos os valores.</span>
           </div>
 
           {/* Modo Não Perturbe */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-                <Moon size={14} className="text-indigo-400" />
+              <label className="text-xs font-semibold text-white/80 flex items-center gap-1.5">
+                <Moon size={14} className="text-[#bf5af2]" />
                 <span>Modo Silencioso Noturno</span>
               </label>
               <input
                 type="checkbox"
                 checked={config.quiet_hours_enabled}
                 onChange={(e) => setConfig((p) => ({ ...p, quiet_hours_enabled: e.target.checked }))}
-                className="rounded accent-indigo-500 cursor-pointer"
+                className="rounded accent-[#bf5af2] cursor-pointer"
               />
             </div>
 
             {config.quiet_hours_enabled && (
               <div className="flex items-center gap-2 pt-1 animate-in fade-in">
                 <div className="flex-1">
-                  <span className="text-[10px] text-zinc-400 block mb-1">Início:</span>
+                  <span className="text-[10px] text-white/40 block mb-1">Início:</span>
                   <input
                     type="time"
                     value={config.quiet_hours_start}
                     onChange={(e) => setConfig((p) => ({ ...p, quiet_hours_start: e.target.value }))}
-                    className="input text-xs w-full font-mono bg-[#141824] border-zinc-800 py-1"
+                    className="w-full px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.07] text-xs font-mono text-white/90 focus:outline-none focus:border-[#2997ff]/40"
                   />
                 </div>
-                <span className="text-zinc-600 text-xs pt-4">até</span>
+                <span className="text-white/30 text-xs pt-4">até</span>
                 <div className="flex-1">
-                  <span className="text-[10px] text-zinc-400 block mb-1">Fim:</span>
+                  <span className="text-[10px] text-white/40 block mb-1">Fim:</span>
                   <input
                     type="time"
                     value={config.quiet_hours_end}
                     onChange={(e) => setConfig((p) => ({ ...p, quiet_hours_end: e.target.value }))}
-                    className="input text-xs w-full font-mono bg-[#141824] border-zinc-800 py-1"
+                    className="w-full px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.07] text-xs font-mono text-white/90 focus:outline-none focus:border-[#2997ff]/40"
                   />
                 </div>
               </div>
             )}
-            <span className="text-[10px] text-zinc-500 block">
+            <span className="text-[10px] text-white/30 block">
               Silencia as notificações durante a madrugada (Horário de Brasília).
             </span>
           </div>
@@ -955,13 +955,13 @@ export default function NotificationSettingsPage() {
       </div>
 
       {/* Barra Inferior com Botão de Salvar */}
-      <div className="flex items-center justify-end gap-3 pt-4 border-t border-zinc-800/80">
+      <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/[0.06]">
         <button
           onClick={handleSaveConfig}
           disabled={saving}
-          className="btn-primary py-2.5 px-6 text-xs gap-2 cursor-pointer bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-lg shadow-blue-500/20"
+          className="px-6 py-2.5 rounded-xl text-xs font-semibold bg-[#2997ff] hover:brightness-110 active:scale-[0.98] text-white shadow-[0_4px_16px_rgba(41,151,255,0.25)] transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
         >
-          <Save size={15} />
+          <Save size={14} />
           <span>{saving ? "Salvando Alterações..." : "Salvar Configurações de Notificação"}</span>
         </button>
       </div>

@@ -31,13 +31,13 @@ export function AttributionInsights({
     icon: any;
   }> = [];
 
-  // Insight 1: Receita Forense Recuperada pelo ATM
+  // Insight 1: Receita Recuperada pelo Rastreamento ATM
   if (recoveredRevenue > 0 && totalRevenue > 0) {
     const recPercent = Math.round((recoveredRevenue / totalRevenue) * 100);
     insights.push({
       id: "recovered_share",
-      title: "Resgate Forense de Vendas",
-      description: `O ATM recuperou ${fmt(recoveredRevenue)} (${recPercent}% do faturamento) que estaria órfão ou marcado como tráfego direto devido a perdas de cookies ou bloqueios do iOS.`,
+      title: "Vendas resgatadas pelo rastreamento",
+      description: `A ATM identificou ${fmt(recoveredRevenue)} (${recPercent}% do faturamento) que seriam perdidos devido a bloqueios de navegadores ou perda de cookies.`,
       type: "positive",
       icon: Sparkles,
     });
@@ -48,8 +48,8 @@ export function AttributionInsights({
     const assistedPercent = Math.round((assistedConversions / totalOrders) * 100);
     insights.push({
       id: "multi_touch_ratio",
-      title: "Jornadas Complexas de Compra",
-      description: `${assistedPercent}% dos pedidos auditados (${assistedConversions} compras) envolveram múltiplos anúncios antes do fechamento. Modelos como First Click e U-Shaped revelam onde essas vendas realmente começaram.`,
+      title: "Jornadas com múltiplos anúncios",
+      description: `${assistedPercent}% das vendas (${assistedConversions} compras) passaram por mais de um anúncio antes do cliente fechar o pedido.`,
       type: "neutral",
       icon: GitFork,
     });
@@ -63,8 +63,8 @@ export function AttributionInsights({
   if (topAssistingCampaign) {
     insights.push({
       id: "top_assisting",
-      title: `Campanha Assistente: ${topAssistingCampaign.campaignName}`,
-      description: `Esta campanha participou como ponto de contato intermediário em ${topAssistingCampaign.assistedCount} vendas. No modelo Last Click tradicional, esse papel mediador fica completamente oculto.`,
+      title: `Anúncios de apoio: ${topAssistingCampaign.campaignName}`,
+      description: `Esta campanha ajudou em ${topAssistingCampaign.assistedCount} vendas no meio da jornada. Ela prepara o cliente para comprar mais tarde.`,
       type: "neutral",
       icon: TrendingUp,
     });
@@ -77,8 +77,8 @@ export function AttributionInsights({
     if (topPercent >= 60) {
       insights.push({
         id: "concentration_alert",
-        title: "Alta Dependência de Canal",
-        description: `A campanha líder "${campaigns[0].campaignName}" concentra ${topPercent}% de toda a receita no modelo ${modelLabel}. Considere diversificar criativos de topo de funil para mitigar risco.`,
+        title: "Concentração em uma única campanha",
+        description: `A campanha "${campaigns[0].campaignName}" gera ${topPercent}% do seu faturamento no modelo ${modelLabel}. Considere testar novos criativos para distribuir o risco.`,
         type: "warning",
         icon: AlertCircle,
       });
@@ -93,7 +93,7 @@ export function AttributionInsights({
     <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 space-y-3 shadow-lg">
       <div className="flex items-center gap-2 text-xs font-bold text-white">
         <Lightbulb size={14} className="text-amber-400" />
-        <span>Inteligência Forense & Insights do Ledger</span>
+        <span>Insights de Vendas e Oportunidades</span>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -134,3 +134,4 @@ export function AttributionInsights({
     </div>
   );
 }
+

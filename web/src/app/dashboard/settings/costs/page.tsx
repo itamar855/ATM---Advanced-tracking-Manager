@@ -321,7 +321,7 @@ export default function CostsPage() {
   if (loading) {
     return (
       <div className="flex h-[70vh] items-center justify-center">
-        <Loader2 size={36} className="animate-spin text-blue-500" />
+        <Loader2 size={36} className="animate-spin text-[#2997ff]" />
       </div>
     );
   }
@@ -330,45 +330,45 @@ export default function CostsPage() {
   const dutiesList = taxesAndDuties.filter((t) => t.type === "duty");
 
   return (
-    <div className="space-y-8 fade-in max-w-5xl mx-auto pb-16">
+    <div className="space-y-6 fade-in max-w-5xl mx-auto pb-16 select-none">
       {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-bold text-zinc-100 tracking-tight flex items-center gap-2.5">
-          <Shield className="text-blue-500" size={24} />
+        <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2.5">
+          <Shield className="text-[#2997ff]" size={22} />
           Custos, Impostos e Taxas
         </h1>
-        <p className="text-sm text-zinc-400 mt-1">
-          Configure suas alíquotas de imposto, taxas reais do gateway e custo de mercadorias (COGS) para conciliação automática com a Dashboard e Campanhas.
+        <p className="text-[13px] text-white/40 mt-1">
+          Configure suas alíquotas de imposto, taxas reais do gateway e custo de mercadorias (COGS) para conciliação automática com o Dashboard e Campanhas.
         </p>
       </div>
 
       {/* Grid: Impostos e Taxas */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {/* ── CARD 1: IMPOSTOS OPERACIONAIS ── */}
-        <div className="p-6 rounded-2xl bg-[#0f172a]/70 border border-zinc-800 flex flex-col justify-between shadow-lg">
+        <div className="p-6 rounded-2xl bg-[#18181a] border border-white/[0.06] flex flex-col justify-between shadow-[0_8px_24px_rgba(0,0,0,0.3)]">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-zinc-200 flex items-center gap-2">
-                <Shield className="text-blue-400" size={18} />
+              <h3 className="text-sm font-semibold text-white/90 flex items-center gap-2">
+                <Shield className="text-[#2997ff]" size={16} />
                 Impostos Operacionais
               </h3>
               <button
                 onClick={() => handleOpenTaxModal("tax")}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition shadow-sm"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#2997ff] hover:brightness-110 active:scale-[0.98] text-white text-xs font-semibold transition shadow-[0_4px_14px_rgba(41,151,255,0.25)]"
               >
-                <Plus size={14} /> Adicionar Imposto
+                <Plus size={13} /> Adicionar Imposto
               </button>
             </div>
-            <p className="text-xs text-zinc-400">
+            <p className="text-[12px] text-white/40">
               Configure alíquotas cobradas sobre o faturamento (ex: Simples Nacional 6%).
             </p>
 
-            <div className="space-y-2.5 pt-2">
+            <div className="space-y-2.5 pt-1">
               {taxesList.length === 0 ? (
-                <div className="p-6 rounded-xl border border-dashed border-zinc-800 bg-zinc-950/40 text-center">
-                  <Shield size={24} className="mx-auto text-zinc-600 mb-2" />
-                  <p className="text-xs font-semibold text-zinc-400">Nenhum imposto cadastrado</p>
-                  <p className="text-[11px] text-zinc-500 mt-0.5">
+                <div className="p-6 rounded-xl border border-dashed border-white/[0.08] bg-white/[0.02] text-center">
+                  <Shield size={22} className="mx-auto text-white/20 mb-2" />
+                  <p className="text-xs font-semibold text-white/60">Nenhum imposto cadastrado</p>
+                  <p className="text-[11px] text-white/30 mt-0.5">
                     Clique em &quot;Adicionar Imposto&quot; para cadastrar a alíquota da sua empresa.
                   </p>
                 </div>
@@ -376,22 +376,22 @@ export default function CostsPage() {
                 taxesList.map((item, idx) => (
                   <div
                     key={item.id || idx}
-                    className="flex items-center justify-between p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 text-xs hover:border-zinc-700 transition"
+                    className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.05] text-xs hover:border-white/[0.1] transition"
                   >
                     <div>
-                      <p className="font-bold text-zinc-200">{item.name}</p>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">
+                      <p className="font-semibold text-white/90">{item.name}</p>
+                      <p className="text-[10px] text-white/40 mt-0.5">
                         Regra: {item.calculation_rule === "revenue_value" ? "Valor de Faturamento" : "Valor de Comissão"}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="font-mono font-bold text-blue-400 text-sm">{item.value}%</span>
+                      <span className="font-mono font-bold text-[#2997ff] text-sm">{item.value}%</span>
                       <button
                         onClick={() => handleDeleteTax(item.id, idx)}
-                        className="text-zinc-500 hover:text-red-400 p-1 rounded transition"
+                        className="text-white/30 hover:text-[#ff453a] p-1 rounded transition"
                         title="Remover imposto"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </div>
@@ -402,30 +402,30 @@ export default function CostsPage() {
         </div>
 
         {/* ── CARD 2: TAXAS ADICIONAIS DE GATEWAY ── */}
-        <div className="p-6 rounded-2xl bg-[#0f172a]/70 border border-zinc-800 flex flex-col justify-between shadow-lg">
+        <div className="p-6 rounded-2xl bg-[#18181a] border border-white/[0.06] flex flex-col justify-between shadow-[0_8px_24px_rgba(0,0,0,0.3)]">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-zinc-200 flex items-center gap-2">
-                <DollarSign className="text-emerald-400" size={18} />
+              <h3 className="text-sm font-semibold text-white/90 flex items-center gap-2">
+                <DollarSign className="text-[#30d158]" size={16} />
                 Taxas de Gateway
               </h3>
               <button
                 onClick={() => handleOpenTaxModal("duty")}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-sm"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#30d158]/15 hover:bg-[#30d158]/25 text-[#30d158] border border-[#30d158]/25 text-xs font-semibold transition active:scale-[0.98]"
               >
-                <Plus size={14} /> Adicionar Taxa
+                <Plus size={13} /> Adicionar Taxa
               </button>
             </div>
-            <p className="text-xs text-zinc-400">
+            <p className="text-[12px] text-white/40">
               Cadastre as taxas reais do seu gateway por forma de pagamento (Pix, Cartão, etc.).
             </p>
 
-            <div className="space-y-2.5 pt-2">
+            <div className="space-y-2.5 pt-1">
               {dutiesList.length === 0 ? (
-                <div className="p-6 rounded-xl border border-dashed border-zinc-800 bg-zinc-950/40 text-center">
-                  <DollarSign size={24} className="mx-auto text-zinc-600 mb-2" />
-                  <p className="text-xs font-semibold text-zinc-400">Nenhuma taxa de gateway cadastrada</p>
-                  <p className="text-[11px] text-zinc-500 mt-0.5">
+                <div className="p-6 rounded-xl border border-dashed border-white/[0.08] bg-white/[0.02] text-center">
+                  <DollarSign size={22} className="mx-auto text-white/20 mb-2" />
+                  <p className="text-xs font-semibold text-white/60">Nenhuma taxa de gateway cadastrada</p>
+                  <p className="text-[11px] text-white/30 mt-0.5">
                     Clique em &quot;Adicionar Taxa&quot; para definir as taxas cobradas pelo seu checkout.
                   </p>
                 </div>
@@ -433,27 +433,27 @@ export default function CostsPage() {
                 dutiesList.map((item, idx) => (
                   <div
                     key={item.id || idx}
-                    className="flex items-center justify-between p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 text-xs hover:border-zinc-700 transition"
+                    className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.05] text-xs hover:border-white/[0.1] transition"
                   >
                     <div>
-                      <p className="font-bold text-zinc-200">{item.name}</p>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">
+                      <p className="font-semibold text-white/90">{item.name}</p>
+                      <p className="text-[10px] text-white/40 mt-0.5">
                         Forma de Pagamento:{" "}
-                        <span className="text-zinc-300 uppercase font-semibold">
+                        <span className="text-white/70 uppercase font-semibold">
                           {item.payment_method === "all" ? "Todas" : item.payment_method}
                         </span>
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="font-mono font-bold text-emerald-400 text-sm">
+                      <span className="font-mono font-bold text-[#30d158] text-sm">
                         {item.value_type === "percentage" ? `${item.value}%` : `R$ ${item.value}`}
                       </span>
                       <button
                         onClick={() => handleDeleteTax(item.id, idx)}
-                        className="text-zinc-500 hover:text-red-400 p-1 rounded transition"
+                        className="text-white/30 hover:text-[#ff453a] p-1 rounded transition"
                         title="Remover taxa"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </div>
@@ -465,14 +465,14 @@ export default function CostsPage() {
       </div>
 
       {/* ── CARD 3: PREÇO DE CUSTO POR PRODUTO (COGS) ── */}
-      <div className="p-6 rounded-2xl bg-[#0f172a]/70 border border-zinc-800 shadow-lg space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/80 pb-4">
+      <div className="p-6 rounded-2xl bg-[#18181a] border border-white/[0.06] shadow-[0_8px_24px_rgba(0,0,0,0.3)] space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.06] pb-4">
           <div>
-            <h3 className="text-base font-bold text-zinc-100 flex items-center gap-2">
-              <Package className="text-purple-400" size={20} />
+            <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
+              <Package className="text-[#bf5af2]" size={18} />
               Preço de Custo por Produto (COGS)
             </h3>
-            <p className="text-xs text-zinc-400 mt-0.5">
+            <p className="text-xs text-white/40 mt-0.5">
               Cadastre o custo unitário das suas mercadorias para apurar o lucro líquido real dos produtos vendidos.
             </p>
           </div>
@@ -481,42 +481,42 @@ export default function CostsPage() {
             <button
               onClick={handleImportFromOrders}
               disabled={importingProducts}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition border border-zinc-700"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-white/80 text-xs font-semibold transition border border-white/[0.08]"
               title="Varre os pedidos aprovados e importa os nomes dos produtos para preenchimento de custo"
             >
-              {importingProducts ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} className="text-yellow-400" />}
+              {importingProducts ? <Loader2 size={13} className="animate-spin text-[#2997ff]" /> : <Sparkles size={13} className="text-[#ffd60a]" />}
               Importar das Vendas
             </button>
             <button
               onClick={() => setShowProductModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition shadow-sm"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#2997ff] hover:brightness-110 active:scale-[0.98] text-white text-xs font-semibold transition shadow-[0_4px_14px_rgba(41,151,255,0.25)]"
             >
-              <Plus size={14} /> Adicionar Produto
+              <Plus size={13} /> Adicionar Produto
             </button>
           </div>
         </div>
 
         {/* Tabela de Produtos */}
         {products.length === 0 ? (
-          <div className="p-8 rounded-xl border border-dashed border-zinc-800 bg-zinc-950/40 text-center space-y-2">
-            <Package size={28} className="mx-auto text-zinc-600" />
-            <p className="text-sm font-semibold text-zinc-300">Nenhum produto cadastrado no COGS</p>
-            <p className="text-xs text-zinc-500 max-w-md mx-auto">
+          <div className="p-8 rounded-xl border border-dashed border-white/[0.08] bg-white/[0.02] text-center space-y-2">
+            <Package size={28} className="mx-auto text-white/20" />
+            <p className="text-sm font-semibold text-white/70">Nenhum produto cadastrado no COGS</p>
+            <p className="text-xs text-white/40 max-w-md mx-auto">
               Clique em <strong>&quot;Importar das Vendas&quot;</strong> para trazer os produtos das suas compras recentes ou clique em <strong>&quot;Adicionar Produto&quot;</strong> para cadastrar manualmente.
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-zinc-300">
+            <table className="w-full text-left text-xs text-white/80">
               <thead>
-                <tr className="border-b border-zinc-800 text-zinc-400 text-[11px] uppercase tracking-wider">
+                <tr className="border-b border-white/[0.05] text-white/35 text-[10.5px] uppercase tracking-wider">
                   <th className="py-3 px-3">Produto</th>
                   <th className="py-3 px-3">Variante</th>
                   <th className="py-3 px-3 text-right">Preço de Custo (R$)</th>
                   <th className="py-3 px-3 text-center w-28">Ação</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800/60">
+              <tbody className="divide-y divide-white/[0.04]">
                 {products.map((item, idx) => (
                   <ProductRow
                     key={item.id || idx}
@@ -535,75 +535,75 @@ export default function CostsPage() {
 
       {/* ── MODAL: ADICIONAR IMPOSTO OU TAXA ── */}
       {showTaxModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 fade-in">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4 fade-in">
           <form
             onSubmit={handleSaveTaxOrDuty}
-            className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 space-y-4 text-zinc-200"
+            className="w-full max-w-md bg-[#18181a] border border-white/[0.08] rounded-3xl shadow-[0_32px_80px_rgba(0,0,0,0.7)] p-6 space-y-4 text-white/90"
           >
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <h3 className="text-base font-bold text-zinc-100 flex items-center gap-2">
-                {modalType === "tax" ? <Shield className="text-blue-400" size={18} /> : <DollarSign className="text-emerald-400" size={18} />}
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                {modalType === "tax" ? <Shield className="text-[#2997ff]" size={16} /> : <DollarSign className="text-[#30d158]" size={16} />}
                 {modalType === "tax" ? "Cadastrar Imposto" : "Cadastrar Taxa de Gateway"}
               </h3>
               <button
                 type="button"
                 onClick={() => setShowTaxModal(false)}
-                className="text-zinc-500 hover:text-zinc-300 text-sm font-bold"
+                className="text-white/40 hover:text-white text-xs font-semibold px-2 py-1 rounded-lg"
               >
                 ✕
               </button>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-zinc-300 mb-1.5">Nome / Descrição</label>
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-wider">Nome / Descrição</label>
               <input
                 type="text"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
                 placeholder={modalType === "tax" ? "Ex: Simples Nacional" : "Ex: Taxa Gateway Pix"}
-                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-100 text-xs focus:border-blue-500 focus:outline-none"
+                className="w-full px-3.5 py-2 rounded-xl bg-white/[0.04] border border-white/[0.07] text-white/90 text-xs focus:border-[#2997ff]/40 focus:outline-none"
                 required
               />
             </div>
 
             {modalType === "tax" ? (
-              <div>
-                <label className="block text-xs font-semibold text-zinc-300 mb-1.5">Base de Cálculo</label>
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-wider">Base de Cálculo</label>
                 <select
                   value={formRule}
                   onChange={(e: any) => setFormRule(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-100 text-xs focus:border-blue-500 focus:outline-none"
+                  className="w-full px-3.5 py-2 rounded-xl bg-white/[0.04] border border-white/[0.07] text-white/90 text-xs focus:border-[#2997ff]/40 focus:outline-none cursor-pointer"
                 >
-                  <option value="revenue_value">Sobre o Faturamento Bruto (Padrão)</option>
-                  <option value="commission_value">Sobre o Valor de Comissão</option>
+                  <option value="revenue_value" className="bg-[#18181a]">Sobre o Faturamento Bruto (Padrão)</option>
+                  <option value="commission_value" className="bg-[#18181a]">Sobre o Valor de Comissão</option>
                 </select>
               </div>
             ) : (
               <>
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-300 mb-1.5">Forma de Pagamento</label>
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-wider">Forma de Pagamento</label>
                   <select
                     value={formMethod}
                     onChange={(e: any) => setFormMethod(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-100 text-xs focus:border-blue-500 focus:outline-none"
+                    className="w-full px-3.5 py-2 rounded-xl bg-white/[0.04] border border-white/[0.07] text-white/90 text-xs focus:border-[#2997ff]/40 focus:outline-none cursor-pointer"
                   >
-                    <option value="pix">Pix</option>
-                    <option value="credit_card">Cartão de Crédito</option>
-                    <option value="boleto">Boleto Bancário</option>
-                    <option value="all">Todas as Formas</option>
+                    <option value="pix" className="bg-[#18181a]">Pix</option>
+                    <option value="credit_card" className="bg-[#18181a]">Cartão de Crédito</option>
+                    <option value="boleto" className="bg-[#18181a]">Boleto Bancário</option>
+                    <option value="all" className="bg-[#18181a]">Todas as Formas</option>
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-300 mb-1.5">Tipo de Taxa</label>
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-wider">Tipo de Taxa</label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => setFormValType("percentage")}
-                      className={`py-2 text-xs font-bold rounded-lg border transition ${
+                      className={`py-2 text-xs font-semibold rounded-xl border transition ${
                         formValType === "percentage"
-                          ? "bg-emerald-600/20 border-emerald-500 text-emerald-300"
-                          : "bg-zinc-950 border-zinc-800 text-zinc-400"
+                          ? "bg-[#30d158]/15 border-[#30d158]/30 text-[#30d158]"
+                          : "bg-white/[0.04] border-white/[0.07] text-white/40"
                       }`}
                     >
                       Percentual (%)
@@ -611,10 +611,10 @@ export default function CostsPage() {
                     <button
                       type="button"
                       onClick={() => setFormValType("fixed")}
-                      className={`py-2 text-xs font-bold rounded-lg border transition ${
+                      className={`py-2 text-xs font-semibold rounded-xl border transition ${
                         formValType === "fixed"
-                          ? "bg-emerald-600/20 border-emerald-500 text-emerald-300"
-                          : "bg-zinc-950 border-zinc-800 text-zinc-400"
+                          ? "bg-[#30d158]/15 border-[#30d158]/30 text-[#30d158]"
+                          : "bg-white/[0.04] border-white/[0.07] text-white/40"
                       }`}
                     >
                       Valor Fixo (R$)
@@ -624,8 +624,8 @@ export default function CostsPage() {
               </>
             )}
 
-            <div>
-              <label className="block text-xs font-semibold text-zinc-300 mb-1.5">
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-wider">
                 Valor {formValType === "percentage" ? "(%)" : "(R$)"}
               </label>
               <input
@@ -635,22 +635,22 @@ export default function CostsPage() {
                 value={formValue}
                 onChange={(e) => setFormValue(e.target.value)}
                 placeholder={formValType === "percentage" ? "Ex: 6.00" : "Ex: 1.50"}
-                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-100 text-xs focus:border-blue-500 focus:outline-none font-mono"
+                className="w-full px-3.5 py-2 rounded-xl bg-white/[0.04] border border-white/[0.07] text-white/90 text-xs focus:border-[#2997ff]/40 focus:outline-none font-mono"
                 required
               />
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/[0.06]">
               <button
                 type="button"
                 onClick={() => setShowTaxModal(false)}
-                className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition"
+                className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-white/70 text-xs font-semibold transition"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition shadow-md"
+                className="px-4 py-2 rounded-xl bg-[#2997ff] hover:brightness-110 active:scale-[0.98] text-white text-xs font-semibold transition shadow-[0_4px_14px_rgba(41,151,255,0.25)]"
               >
                 Salvar Regra
               </button>
@@ -661,50 +661,50 @@ export default function CostsPage() {
 
       {/* ── MODAL: ADICIONAR PRODUTO COGS ── */}
       {showProductModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 fade-in">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4 fade-in">
           <form
             onSubmit={handleSaveNewProduct}
-            className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 space-y-4 text-zinc-200"
+            className="w-full max-w-md bg-[#18181a] border border-white/[0.08] rounded-3xl shadow-[0_32px_80px_rgba(0,0,0,0.7)] p-6 space-y-4 text-white/90"
           >
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <h3 className="text-base font-bold text-zinc-100 flex items-center gap-2">
-                <Package className="text-purple-400" size={18} />
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                <Package className="text-[#bf5af2]" size={16} />
                 Adicionar Produto ao COGS
               </h3>
               <button
                 type="button"
                 onClick={() => setShowProductModal(false)}
-                className="text-zinc-500 hover:text-zinc-300 text-sm font-bold"
+                className="text-white/40 hover:text-white text-xs font-semibold px-2 py-1 rounded-lg"
               >
                 ✕
               </button>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-zinc-300 mb-1.5">Nome do Produto</label>
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-wider">Nome do Produto</label>
               <input
                 type="text"
                 value={prodName}
                 onChange={(e) => setProdName(e.target.value)}
-                placeholder="Ex: Gaiola Criadeira Nº 5"
-                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-100 text-xs focus:border-purple-500 focus:outline-none"
+                placeholder="Ex: Produto Modelo X"
+                className="w-full px-3.5 py-2 rounded-xl bg-white/[0.04] border border-white/[0.07] text-white/90 text-xs focus:border-[#2997ff]/40 focus:outline-none"
                 required
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-zinc-300 mb-1.5">Variante (Opcional)</label>
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-wider">Variante (Opcional)</label>
               <input
                 type="text"
                 value={prodVariant}
                 onChange={(e) => setProdVariant(e.target.value)}
                 placeholder="Ex: Padrão, Grande, 110V..."
-                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-100 text-xs focus:border-purple-500 focus:outline-none"
+                className="w-full px-3.5 py-2 rounded-xl bg-white/[0.04] border border-white/[0.07] text-white/90 text-xs focus:border-[#2997ff]/40 focus:outline-none"
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-zinc-300 mb-1.5">Preço de Custo Unitário (R$)</label>
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-wider">Preço de Custo Unitário (R$)</label>
               <input
                 type="number"
                 step="0.01"
@@ -712,22 +712,22 @@ export default function CostsPage() {
                 value={prodCost}
                 onChange={(e) => setProdCost(e.target.value)}
                 placeholder="0.00"
-                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-100 text-xs focus:border-purple-500 focus:outline-none font-mono"
+                className="w-full px-3.5 py-2 rounded-xl bg-white/[0.04] border border-white/[0.07] text-white/90 text-xs focus:border-[#2997ff]/40 focus:outline-none font-mono"
                 required
               />
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/[0.06]">
               <button
                 type="button"
                 onClick={() => setShowProductModal(false)}
-                className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition"
+                className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-white/70 text-xs font-semibold transition"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition shadow-md"
+                className="px-4 py-2 rounded-xl bg-[#2997ff] hover:brightness-110 active:scale-[0.98] text-white text-xs font-semibold transition shadow-[0_4px_14px_rgba(41,151,255,0.25)]"
               >
                 Adicionar Produto
               </button>
@@ -756,19 +756,19 @@ function ProductRow({
   const [costInput, setCostInput] = useState<number | string>(item.cost_price || 0);
 
   return (
-    <tr className="hover:bg-zinc-800/30 transition group">
-      <td className="py-3 px-3 font-semibold text-zinc-200">{item.product_name}</td>
-      <td className="py-3 px-3 text-zinc-400">{item.variant_name || "Padrão"}</td>
+    <tr className="hover:bg-white/[0.02] transition group">
+      <td className="py-3 px-3 font-semibold text-white/90">{item.product_name}</td>
+      <td className="py-3 px-3 text-white/40">{item.variant_name || "Padrão"}</td>
       <td className="py-3 px-3 text-right">
         <div className="relative inline-flex items-center">
-          <span className="absolute left-2.5 text-xs text-zinc-500 font-mono">R$</span>
+          <span className="absolute left-2.5 text-xs text-white/30 font-mono">R$</span>
           <input
             type="number"
             step="0.01"
             min="0"
             value={costInput}
             onChange={(e) => setCostInput(e.target.value)}
-            className="w-28 pl-8 pr-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-right font-mono text-xs text-zinc-100 focus:border-purple-500 focus:outline-none transition"
+            className="w-28 pl-8 pr-2.5 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.07] text-right font-mono text-xs text-white/90 focus:border-[#2997ff]/40 focus:outline-none transition"
           />
         </div>
       </td>
@@ -776,10 +776,10 @@ function ProductRow({
         <div className="flex items-center justify-center gap-1.5">
           <button
             onClick={() => onSave(Number(costInput) || 0)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1 active:scale-[0.98] ${
               isSaved
-                ? "bg-emerald-600/20 text-emerald-400 border border-emerald-500/40"
-                : "bg-blue-600 hover:bg-blue-500 text-white"
+                ? "bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30"
+                : "bg-white/[0.08] hover:bg-white/[0.12] text-white/90 border border-white/[0.08]"
             }`}
           >
             {isSaved ? (
@@ -792,10 +792,10 @@ function ProductRow({
           </button>
           <button
             onClick={onDelete}
-            className="p-1.5 text-zinc-600 hover:text-red-400 rounded transition"
+            className="p-1.5 text-white/30 hover:text-[#ff453a] rounded-lg transition"
             title="Excluir produto"
           >
-            <Trash2 size={14} />
+            <Trash2 size={13} />
           </button>
         </div>
       </td>

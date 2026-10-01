@@ -163,36 +163,36 @@ export default function OrdersPage() {
   const totalRevenue = orders.reduce((acc, o) => acc + (Number(o.value) || 0), 0);
 
   return (
-    <div className="space-y-4 fade-in max-w-[1400px] mx-auto pb-16 pt-2 select-none text-zinc-200">
+    <div className="space-y-5 fade-in max-w-[1400px] mx-auto pb-16 pt-2 select-none">
       {/* ── 1. Top Header ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
             Pedidos Rastreados & Atribuição CAPI
           </h1>
-          <p className="text-xs text-zinc-400 mt-0.5">
+          <p className="text-[13px] text-white/40 mt-0.5">
             Histórico e atribuição em tempo real de vendas vinculadas à Meta Conversions API
           </p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold flex items-center gap-1.5">
-            <PackageCheck size={14} />
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="px-3 py-1.5 rounded-full bg-[#30d158]/10 border border-[#30d158]/20 text-[#30d158] text-[11px] font-semibold flex items-center gap-1.5">
+            <PackageCheck size={13} />
             <span>{orders.length} Pedido(s) Sincronizado(s)</span>
           </div>
 
           <button
             onClick={() => setSyncModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-[0_0_12px_rgba(16,185,129,0.3)] transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-white/90 font-semibold text-xs border border-white/[0.08] transition-all active:scale-[0.98]"
           >
             <RotateCw size={12} className={syncingZedy ? "animate-spin" : ""} />
-            <span>Sincronizar Pedidos Zedy</span>
+            <span>Sincronizar Pedidos</span>
           </button>
 
           <button
             onClick={() => loadOrders(true)}
             disabled={isRefreshing}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-[0_0_12px_rgba(37,99,235,0.4)] transition-all active:scale-95 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#2997ff] hover:brightness-110 text-white font-semibold text-xs transition-all shadow-[0_4px_14px_rgba(41,151,255,0.25)] active:scale-[0.98] disabled:opacity-50"
           >
             <RotateCw size={12} className={isRefreshing ? "animate-spin" : ""} />
             <span>Atualizar</span>
@@ -200,55 +200,47 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {/* ── Modal de Sincronização Zedy ── */}
+      {/* ── Modal de Sincronização ── */}
       {syncModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-          <div className="bg-[#11141E] border border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                ⚡ Sincronizar Pedidos
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
+          <div className="bg-[#18181a] border border-white/[0.08] rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-[0_32px_80px_rgba(0,0,0,0.7)]">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                <span>⚡</span> Sincronizar Pedidos
               </h3>
               <button
                 onClick={() => setSyncModalOpen(false)}
-                className="text-zinc-500 hover:text-white text-xs font-bold px-2 py-1 rounded"
+                className="text-white/40 hover:text-white text-xs font-semibold px-2 py-1 rounded-lg transition-colors"
               >
                 ✕
               </button>
             </div>
 
-            <p className="text-xs text-zinc-400 leading-relaxed">
+            <p className="text-[12.5px] text-white/50 leading-relaxed">
               Reconcilie os pedidos de hoje para alimentar as métricas do painel e atribuir o faturamento às campanhas <b>USD 1, USD 2, USD 3</b>.
             </p>
 
             {syncFeedback && (
-              <div className={cn("p-3 rounded-lg text-xs font-medium", syncFeedback.startsWith("✓") ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20")}>
+              <div className={cn("p-3 rounded-xl text-xs font-medium", syncFeedback.startsWith("✓") ? "bg-[#30d158]/10 text-[#30d158] border border-[#30d158]/20" : "bg-[#ff453a]/10 text-[#ff453a] border border-[#ff453a]/20")}>
                 {syncFeedback}
               </div>
             )}
 
-            {/* Opção 1: Sync Automático via Token */}
-            <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2 opacity-60 hidden">
-              <span className="text-xs font-semibold text-zinc-200 block">Opção 1: Sincronização Direta via API (Desativada)</span>
-              <p className="text-[11px] text-zinc-500">
-                A Zedy bloqueia conexões diretas por requerer autenticação de usuário (Clerk). Por favor, utilize a Opção 2 exportando os pedidos do seu painel.
-              </p>
-            </div>
-
-            {/* Opção 3 (Agora Opção 1 Principal): Sincronizar via Shopify */}
-            <div className="p-3.5 rounded-xl bg-blue-900/10 border border-blue-500/30 space-y-2">
+            {/* Opção 1 Principal: Sincronizar via Shopify */}
+            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-blue-400 block">Opção 1: Sincronização Automática (Shopify API)</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-bold">Recomendado</span>
+                <span className="text-xs font-semibold text-white/90 block">Opção 1: Sincronização Automática (Shopify API)</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#2997ff]/15 text-[#2997ff] font-semibold border border-[#2997ff]/20">Recomendado</span>
               </div>
-              <p className="text-[11px] text-zinc-500">
-                Como a Shopify é sua fonte da verdade, nós podemos buscar todos os pedidos pagos diretamente nela sem bloqueios!
-                <br/><b>Requisito:</b> O Token Admin (shpat_...) deve estar configurado na aba Integrações.
+              <p className="text-[11.5px] text-white/40 leading-relaxed">
+                Como a Shopify é sua fonte da verdade, podemos buscar todos os pedidos pagos diretamente nela sem bloqueios!
+                <br/><span className="text-white/30">Requisito: Token Admin (shpat_...) configurado na aba Integrações.</span>
               </p>
-              <div className="flex gap-2 mt-3">
+              <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => handleSyncShopify(false)}
                   disabled={syncingShopify}
-                  className="flex-1 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                  className="flex-1 py-2 px-3 rounded-xl bg-[#2997ff] hover:brightness-110 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
                 >
                   <RotateCw size={13} className={syncingShopify ? "animate-spin" : ""} />
                   <span>{syncingShopify ? "Buscando..." : "Sincronizar Pedidos Recentes"}</span>
@@ -261,7 +253,7 @@ export default function OrdersPage() {
                   }}
                   disabled={syncingShopify}
                   title="Apagar vendas de hoje e ressincronizar do zero"
-                  className="py-2 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 font-bold text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                  className="py-2 px-3 rounded-xl bg-[#ff453a]/10 hover:bg-[#ff453a]/20 text-[#ff453a] border border-[#ff453a]/20 font-semibold text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                 >
                   Resetar Hoje
                 </button>
@@ -269,21 +261,21 @@ export default function OrdersPage() {
             </div>
 
             {/* Opção 2: Colar JSON / Array de Pedidos */}
-            <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2">
-              <span className="text-xs font-semibold text-zinc-200 block">Opção 2: Importar JSON Exportado (Zedy)</span>
-              <p className="text-[11px] text-zinc-500">Exporte os pedidos recentes, cole o conteúdo JSON abaixo e clique em importar:</p>
+            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] space-y-2.5">
+              <span className="text-xs font-semibold text-white/90 block">Opção 2: Importar JSON Exportado (Zedy)</span>
+              <p className="text-[11.5px] text-white/40">Exporte os pedidos recentes, cole o conteúdo JSON abaixo e clique em importar:</p>
               <textarea
                 value={jsonInput}
                 onChange={(e) => setJsonInput(e.target.value)}
                 placeholder='[{"id":"Z-27SD508I3H2635860","totalPriceInCents":17288,"status":"paid", ...}]'
                 rows={3}
-                className="w-full bg-[#0A0D14] border border-zinc-800 rounded-lg p-2 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-blue-500"
+                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl p-2.5 text-[11px] font-mono text-white/80 placeholder:text-white/20 focus:outline-none focus:border-[#2997ff]/40"
               />
-              <div className="flex gap-2 mt-2">
+              <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => handleSyncZedy("json")}
                   disabled={syncingZedy || !jsonInput.trim()}
-                  className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-40"
+                  className="flex-1 py-2 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.12] text-white font-semibold text-xs flex items-center justify-center gap-2 border border-white/[0.08] transition-all disabled:opacity-40"
                 >
                   <PackageCheck size={13} />
                   <span>Importar Lote</span>
@@ -296,7 +288,7 @@ export default function OrdersPage() {
                   }}
                   disabled={syncingZedy || !jsonInput.trim()}
                   title="Apagar vendas de hoje e substituir por este JSON"
-                  className="py-2 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 font-bold text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-40"
+                  className="py-2 px-3 rounded-xl bg-[#ff453a]/10 hover:bg-[#ff453a]/20 text-[#ff453a] border border-[#ff453a]/20 font-semibold text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-40"
                 >
                   Resetar Hoje e Importar
                 </button>
@@ -307,51 +299,57 @@ export default function OrdersPage() {
       )}
 
       {/* ── 2. Cards de Resumo ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex items-center justify-between">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+        <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-5 flex items-center justify-between">
           <div>
-            <span className="text-xs text-zinc-400 block mb-1">Total de Pedidos Pagos</span>
-            <span className="text-2xl font-black text-white font-mono">{orders.length}</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-white/40 block mb-1.5">
+              Total de Pedidos Pagos
+            </span>
+            <span className="text-2xl font-bold text-white tracking-tight">{orders.length}</span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-            <ShoppingCart size={20} />
+          <div className="w-11 h-11 rounded-2xl bg-[#2997ff]/10 border border-[#2997ff]/20 flex items-center justify-center text-[#2997ff]">
+            <ShoppingCart size={19} />
           </div>
         </div>
 
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex items-center justify-between">
+        <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-5 flex items-center justify-between">
           <div>
-            <span className="text-xs text-zinc-400 block mb-1">Faturamento Rastreado</span>
-            <span className="text-2xl font-black text-purple-400 font-mono">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-white/40 block mb-1.5">
+              Faturamento Rastreado
+            </span>
+            <span className="text-2xl font-bold text-white tracking-tight">
               R$ {totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-            <DollarSign size={20} />
+          <div className="w-11 h-11 rounded-2xl bg-[#30d158]/10 border border-[#30d158]/20 flex items-center justify-center text-[#30d158]">
+            <DollarSign size={19} />
           </div>
         </div>
 
-        <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-4 flex items-center justify-between">
+        <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-5 flex items-center justify-between">
           <div>
-            <span className="text-xs text-zinc-400 block mb-1">Taxa de Atribuição CAPI</span>
-            <span className="text-2xl font-black text-emerald-400 font-mono">100%</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-white/40 block mb-1.5">
+              Taxa de Atribuição CAPI
+            </span>
+            <span className="text-2xl font-bold text-[#30d158] tracking-tight">100%</span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-            <ShieldCheck size={20} />
+          <div className="w-11 h-11 rounded-2xl bg-[#30d158]/10 border border-[#30d158]/20 flex items-center justify-center text-[#30d158]">
+            <ShieldCheck size={19} />
           </div>
         </div>
       </div>
 
       {/* ── 3. Barra de Busca e Filtros ────────────────────────────────────── */}
-      <div className="bg-[#11141E] border border-zinc-800/80 rounded-xl p-3 flex items-center justify-between flex-wrap gap-3">
+      <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-3 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-1 min-w-[240px]">
           <div className="relative w-full max-w-sm">
-            <Search size={14} className="absolute left-3 top-2.5 text-zinc-500" />
+            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" />
             <input
               type="text"
-              placeholder="Buscar por ID do pedido, cliente ou UTM..."
+              placeholder="Buscar por ID, cliente ou UTM..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-[#161B26] border border-zinc-700/60 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+              className="w-full bg-white/[0.04] border border-white/[0.07] rounded-xl pl-9 pr-3 py-2 text-xs text-white/90 placeholder:text-white/20 focus:outline-none focus:border-[#2997ff]/40 transition-colors"
             />
           </div>
         </div>
@@ -360,31 +358,31 @@ export default function OrdersPage() {
           <select
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
-            className="bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+            className="bg-white/[0.04] border border-white/[0.07] rounded-xl px-3 py-2 text-xs text-white/80 focus:outline-none focus:border-[#2997ff]/40 transition-colors cursor-pointer"
           >
-            <option value="today">Hoje</option>
-            <option value="yesterday">Ontem</option>
-            <option value="7d">Últimos 7 dias</option>
-            <option value="30d">Últimos 30 dias</option>
-            <option value="all">Todo o período</option>
+            <option value="today" className="bg-[#18181a]">Hoje</option>
+            <option value="yesterday" className="bg-[#18181a]">Ontem</option>
+            <option value="7d" className="bg-[#18181a]">Últimos 7 dias</option>
+            <option value="30d" className="bg-[#18181a]">Últimos 30 dias</option>
+            <option value="all" className="bg-[#18181a]">Todo o período</option>
           </select>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="bg-[#161B26] border border-zinc-700/60 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+            className="bg-white/[0.04] border border-white/[0.07] rounded-xl px-3 py-2 text-xs text-white/80 focus:outline-none focus:border-[#2997ff]/40 transition-colors cursor-pointer"
           >
-            <option value="all">Todos os Status</option>
-            <option value="pago">Pago</option>
-            <option value="processando">Processando</option>
+            <option value="all" className="bg-[#18181a]">Todos os Status</option>
+            <option value="pago" className="bg-[#18181a]">Pago</option>
+            <option value="processando" className="bg-[#18181a]">Processando</option>
           </select>
         </div>
       </div>
 
       {/* ── 4. Tabela de Pedidos ───────────────────────────────────────────── */}
-      <div className="bg-[#0F121A] border border-zinc-800/80 rounded-xl overflow-hidden shadow-2xl">
+      <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl overflow-hidden shadow-[0_16px_40px_rgba(0,0,0,0.3)]">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
-            <thead className="bg-[#141824] text-zinc-400 font-bold border-b border-zinc-800/80 uppercase text-[10px] tracking-wider">
+            <thead className="bg-white/[0.02] text-white/35 font-semibold border-b border-white/[0.05] uppercase text-[10px] tracking-wider">
               <tr>
                 <th className="py-3 px-4">ID PEDIDO</th>
                 <th className="py-3 px-3">CLIENTE</th>
@@ -395,42 +393,42 @@ export default function OrdersPage() {
                 <th className="py-3 px-4 text-right">DATA</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800/50">
+            <tbody className="divide-y divide-white/[0.04]">
               {filteredOrders.length > 0 ? (
                 filteredOrders.map((order) => (
-                  <tr key={order.id} className="hover:bg-[#151924] transition-colors">
-                    <td className="py-3 px-4 font-mono font-bold text-white text-[11px]">
+                  <tr key={order.id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3.5 px-4 font-mono font-medium text-white/90 text-[11.5px]">
                       {order.orderId}
                     </td>
-                    <td className="py-3 px-3">
+                    <td className="py-3.5 px-3">
                       <div className="flex flex-col">
-                        <span className="font-bold text-zinc-200">{order.customerName}</span>
-                        <span className="text-[10px] text-zinc-500 font-mono">{order.customerEmail}</span>
+                        <span className="font-semibold text-white/80">{order.customerName}</span>
+                        <span className="text-[10px] text-white/30 font-mono">{order.customerEmail}</span>
                       </div>
                     </td>
-                    <td className="py-3 px-2 text-center">
-                      <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">
+                    <td className="py-3.5 px-2 text-center">
+                      <span className="px-2 py-0.5 rounded-full text-[9.5px] font-semibold bg-[#30d158]/10 text-[#30d158] border border-[#30d158]/20 uppercase">
                         {order.status}
                       </span>
                     </td>
-                    <td className="py-3 px-3 text-right font-mono font-black text-emerald-400 text-sm">
+                    <td className="py-3.5 px-3 text-right font-semibold text-white/90 text-[13px]">
                       R$ {Number(order.value || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
-                    <td className="py-3 px-3 text-zinc-300 font-medium">
+                    <td className="py-3.5 px-3 text-white/60 font-medium">
                       <span className="flex items-center gap-1.5">
-                        <CreditCard size={12} className="text-zinc-500" />
+                        <CreditCard size={12} className="text-white/30" />
                         {order.paymentMethod}
                       </span>
                     </td>
-                    <td className="py-3 px-3">
+                    <td className="py-3.5 px-3">
                       <div className="flex flex-col">
-                        <span className="text-xs font-bold text-blue-400">{order.utmSource}</span>
-                        <span className="text-[10px] text-zinc-400 truncate max-w-[260px]" title={order.utmCampaign}>
+                        <span className="text-xs font-semibold text-[#2997ff]">{order.utmSource}</span>
+                        <span className="text-[10.5px] text-white/40 truncate max-w-[260px]" title={order.utmCampaign}>
                           {order.utmCampaign}
                         </span>
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-right text-zinc-400 font-mono text-[11px]">
+                    <td className="py-3.5 px-4 text-right text-white/40 font-mono text-[11px]">
                       {new Date(order.createdAt).toLocaleString("pt-BR", {
                         day: "2-digit",
                         month: "2-digit",
@@ -442,7 +440,7 @@ export default function OrdersPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-zinc-500">
+                  <td colSpan={7} className="py-12 text-center text-white/30">
                     Nenhum pedido encontrado.
                   </td>
                 </tr>

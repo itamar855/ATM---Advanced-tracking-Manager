@@ -48,37 +48,37 @@ export default function DiagnosticsPage() {
   const list = diagnostics.length > 0 ? diagnostics : getMockDiagnostics();
 
   return (
-    <div className="space-y-6 fade-in max-w-4xl mx-auto">
+    <div className="space-y-6 fade-in max-w-4xl mx-auto pb-12 select-none">
       <div>
-        <h1 className="text-2xl font-bold text-[var(--color-text-primary)] tracking-tight">
+        <h1 className="text-xl font-bold text-white tracking-tight">
           Alertas & Diagnósticos
         </h1>
-        <p className="text-sm text-[var(--color-text-muted)] mt-1">
+        <p className="text-[13px] text-white/40 mt-1">
           Monitoramento ativo do sinal de dados e detecção de duplicidades server-side
         </p>
       </div>
 
       {/* Seção de Recuperação de Conversões (Contingência) */}
-      <div className="glass-card p-5 border border-[var(--color-border-subtle)] space-y-4">
+      <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-6 space-y-4 shadow-[0_8px_24px_rgba(0,0,0,0.3)]">
         <div>
-          <h2 className="text-sm font-bold text-[var(--color-text-primary)] flex items-center gap-2">
-            <CheckCircle2 size={16} className="text-blue-400" />
+          <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+            <CheckCircle2 size={16} className="text-[#2997ff]" />
             Recuperação de Conversões (Contingência)
           </h2>
-          <p className="text-xs text-[var(--color-text-muted)] mt-1">
+          <p className="text-[12.5px] text-white/40 mt-1 leading-relaxed">
             Se a Meta perdeu eventos por conta de um pixel quebrado, você pode forçar o reenvio (somente eventos com menos de 7 dias serão deduplicados com segurança).
           </p>
         </div>
         
         <div className="flex flex-col gap-3">
           <div className="flex items-end gap-3 flex-wrap">
-            <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-zinc-400">Data Base do Resgate</label>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">Data Base do Resgate</label>
               <input 
                 type="date" 
                 id="recoveryDate"
                 defaultValue={new Date(Date.now() - 86400000).toISOString().split('T')[0]} 
-                className="bg-[var(--color-bg-surface)] border border-[var(--color-border-subtle)] rounded-lg px-3 py-1.5 text-xs text-white" 
+                className="bg-white/[0.04] border border-white/[0.07] rounded-xl px-3 py-2 text-xs text-white/90 focus:outline-none focus:border-[#2997ff]/40 transition-colors" 
                 disabled={isRecovering}
               />
             </div>
@@ -115,11 +115,11 @@ export default function DiagnosticsPage() {
                   setIsRecovering(false);
                 }
               }}
-              className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors mb-[1px] flex items-center gap-2"
+              className="px-4 py-2 rounded-xl bg-[#2997ff] hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold transition-all mb-[1px] flex items-center gap-2 shadow-[0_4px_14px_rgba(41,151,255,0.25)]"
             >
               {isRecovering ? (
                 <>
-                  <Loader2 size={12} className="animate-spin" />
+                  <Loader2 size={13} className="animate-spin" />
                   Buscando e Processando...
                 </>
               ) : (
@@ -129,49 +129,49 @@ export default function DiagnosticsPage() {
           </div>
           
           {recoveryMsg && (
-            <div className={`text-xs px-3 py-2 rounded border ${recoveryMsg.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+            <div className={`text-xs px-3.5 py-2.5 rounded-xl border ${recoveryMsg.type === 'success' ? 'bg-[#30d158]/10 border-[#30d158]/20 text-[#30d158]' : 'bg-[#ff453a]/10 border-[#ff453a]/20 text-[#ff453a]'}`}>
               {recoveryMsg.text}
             </div>
           )}
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3.5">
         {list.map((d) => (
           <div
             key={d.id}
-            className={`glass-card p-5 flex items-start gap-4 border-l-4 ${
+            className={`bg-[#18181a] border border-white/[0.06] rounded-2xl p-5 flex items-start gap-4 border-l-4 shadow-[0_8px_24px_rgba(0,0,0,0.3)] ${
               d.severity === "critical"
-                ? "border-l-[var(--color-danger-500)]"
+                ? "border-l-[#ff453a]"
                 : d.severity === "warning"
-                ? "border-l-[var(--color-warning-500)]"
-                : "border-l-[var(--color-brand-500)]"
+                ? "border-l-[#ffd60a]"
+                : "border-l-[#2997ff]"
             }`}
           >
             <div className="mt-0.5 shrink-0">
               {d.severity === "critical" ? (
-                <ShieldAlert size={20} className="text-[var(--color-danger-400)]" />
+                <ShieldAlert size={20} className="text-[#ff453a]" />
               ) : d.severity === "warning" ? (
-                <AlertTriangle size={20} className="text-[var(--color-warning-400)]" />
+                <AlertTriangle size={20} className="text-[#ffd60a]" />
               ) : (
-                <AlertCircle size={20} className="text-[var(--color-brand-300)]" />
+                <AlertCircle size={20} className="text-[#2997ff]" />
               )}
             </div>
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                <h4 className="text-sm font-semibold text-white/90">
                   {d.title}
                 </h4>
-                <span className="text-[10px] text-[var(--color-text-muted)]">
+                <span className="text-[11px] text-white/30">
                   {formatRelativeTime(d.created_at)}
                 </span>
               </div>
-              <p className="text-xs text-[var(--color-text-secondary)] mt-1 leading-relaxed">
+              <p className="text-[12.5px] text-white/50 mt-1 leading-relaxed">
                 {d.description}
               </p>
               {d.evidence && Object.keys(d.evidence).length > 0 && (
-                <pre className="mt-3 text-[10px] bg-[var(--color-bg-surface)] p-2.5 rounded border border-[var(--color-border-subtle)] text-[var(--color-text-muted)] overflow-x-auto">
+                <pre className="mt-3 text-[11px] bg-white/[0.03] p-3 rounded-xl border border-white/[0.06] text-white/60 overflow-x-auto font-mono">
                   {JSON.stringify(d.evidence, null, 2)}
                 </pre>
               )}

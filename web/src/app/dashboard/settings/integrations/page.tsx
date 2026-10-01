@@ -737,17 +737,17 @@ function IntegrationsContent() {
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6 animate-fade-in font-sans">
       {/* Top Banner de Status */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl bg-gradient-to-r from-blue-900/30 via-[#121622] to-emerald-950/20 border border-blue-500/20 shadow-xl backdrop-blur-xl">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl glass-card border border-white/[0.06] shadow-xl backdrop-blur-xl">
         <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+          <div className="w-10 h-10 rounded-xl bg-[#2997ff]/10 border border-[#2997ff]/20 flex items-center justify-center text-[#2997ff]">
             <Sparkles size={20} className="animate-pulse" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-white tracking-tight">Hub Central de Integrações</h2>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
+              <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-semibold border ${
                 (metaConnected && profiles.length > 0)
-                  ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                  ? "bg-[#30d158]/10 text-[#30d158] border-[#30d158]/20"
                   : "bg-amber-500/10 text-amber-400 border-amber-500/20"
               }`}>
                 {(metaConnected && profiles.length > 0) ? "CONFIGURAÇÃO COMPLETA" : "CONFIGURAÇÃO PENDENTE"}
@@ -761,16 +761,16 @@ function IntegrationsContent() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => handleCopy(installSnippet, "snippet")}
-            className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 transition-all flex items-center gap-2"
+            className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-white/[0.05] hover:bg-white/[0.1] text-zinc-200 border border-white/[0.08] transition-all flex items-center gap-2"
           >
-            {copiedSnippet ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+            {copiedSnippet ? <Check size={14} className="text-[#30d158]" /> : <Copy size={14} />}
             {copiedSnippet ? "Copiado!" : "Copiar Pixel Script"}
           </button>
         </div>
       </div>
 
-      {/* Navegação por Abas Estilo Apple / UTMify */}
-      <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-[#0E1118] border border-[#1E2330] overflow-x-auto shadow-inner">
+      {/* Navegação por Abas Estilo Apple */}
+      <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-[#18181a]/80 border border-white/[0.06] overflow-x-auto shadow-inner backdrop-blur-md">
         {[
           { key: "anuncios", label: "Campanhas", icon: Radio, count: (metaConnected && profiles.length > 0) ? "Ativo" : "Inativo" },
           { key: "webhooks", label: "Webhooks & Checkouts", icon: Plug, count: "2" },
@@ -787,8 +787,8 @@ function IntegrationsContent() {
               onClick={() => setActiveTab(tab.key as TabKey)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                 isActive
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30 scale-[1.02]"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-[#161B26]"
+                  ? "bg-[#2997ff] text-white shadow-md shadow-[#2997ff]/25 scale-[1.01]"
+                  : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               <Icon size={14} className={isActive ? "text-white" : "text-zinc-500"} />
@@ -796,7 +796,7 @@ function IntegrationsContent() {
               {tab.count && (
                 <span
                   className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                    isActive ? "bg-white/20 text-white" : "bg-zinc-800 text-zinc-400"
+                    isActive ? "bg-white/20 text-white" : "bg-white/[0.06] text-zinc-400"
                   }`}
                 >
                   {tab.count}
@@ -811,14 +811,14 @@ function IntegrationsContent() {
       {activeTab === "anuncios" && (
         <div className="space-y-4 animate-fade-in">
           {/* Card Principal: Campanhas (Meta Ads) */}
-          <div className="rounded-2xl border border-blue-500/30 bg-[#0F131D] shadow-2xl overflow-hidden transition-all">
+          <div className="rounded-3xl border border-white/[0.06] glass-card shadow-2xl overflow-hidden transition-all">
             {/* Header Accordion Meta */}
             <div
               onClick={() => setMetaExpanded(!metaExpanded)}
-              className="p-5 flex items-center justify-between cursor-pointer bg-gradient-to-r from-blue-950/30 via-transparent to-transparent hover:bg-blue-900/10 transition-colors"
+              className="p-5 flex items-center justify-between cursor-pointer bg-white/[0.02] hover:bg-white/[0.04] transition-colors"
             >
               <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-600/30">
+                <div className="w-10 h-10 rounded-xl bg-[#2997ff] flex items-center justify-center text-white shadow-md shadow-[#2997ff]/25">
                   <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
                     <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
                   </svg>
@@ -827,12 +827,12 @@ function IntegrationsContent() {
                   <div className="flex items-center gap-2">
                     <h3 className="text-base font-bold text-white tracking-tight">Campanhas (Meta Ads)</h3>
                     {metaConnected && profiles.length > 0 ? (
-                      <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span className="flex items-center gap-1.5 text-[10px] px-2.5 py-0.5 rounded-full bg-[#30d158]/10 text-[#30d158] font-semibold border border-[#30d158]/20">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#30d158] animate-pulse"></span>
                         Conectado
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 font-semibold border border-zinc-700">
+                      <span className="flex items-center gap-1.5 text-[10px] px-2.5 py-0.5 rounded-full bg-white/[0.06] text-zinc-400 font-semibold border border-white/[0.08]">
                         <span className="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
                         Não conectado
                       </span>
@@ -850,7 +850,7 @@ function IntegrationsContent() {
                     e.stopPropagation();
                     setMetaExpanded(!metaExpanded);
                   }}
-                  className="p-2 rounded-xl bg-zinc-800/50 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                  className="p-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-zinc-400 hover:text-white transition-colors"
                 >
                   {metaExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                 </button>
@@ -859,26 +859,26 @@ function IntegrationsContent() {
 
             {/* Conteúdo Expansível Meta */}
             {metaExpanded && (
-              <div className="p-6 border-t border-[#1E2330] space-y-6 bg-[#0B0E14]/60">
+              <div className="p-6 border-t border-white/[0.06] space-y-6 bg-transparent">
                 {/* 1. Gestor de Perfis */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
-                      <Layers size={14} className="text-blue-400" />
+                      <Layers size={14} className="text-[#2997ff]" />
                       Conecte seus perfis por aqui:
                     </label>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => handleRunDiagnosis()}
-                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#1A2133] hover:bg-[#222C44] text-blue-300 border border-blue-500/30 transition-all flex items-center gap-1.5"
+                        className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white/[0.05] hover:bg-white/[0.1] text-zinc-200 border border-white/[0.08] transition-all flex items-center gap-1.5"
                       >
-                        <FlaskConical size={14} className="text-blue-400" /> Diagnosticar Conexão
+                        <FlaskConical size={14} className="text-[#2997ff]" /> Diagnosticar Conexão
                       </button>
                       <button
                         type="button"
                         onClick={() => setIsAddProfileModalOpen(true)}
-                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/30 transition-all flex items-center gap-1.5"
+                        className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#2997ff] hover:bg-[#2997ff]/90 text-white shadow-md shadow-[#2997ff]/25 transition-all flex items-center gap-1.5"
                       >
                         <Plus size={14} /> Adicionar perfil
                       </button>
@@ -887,7 +887,7 @@ function IntegrationsContent() {
 
                   {/* Lista de Perfis Conectados */}
                   {profiles.length === 0 ? (
-                    <div className="p-4 rounded-xl bg-[#141824] border border-dashed border-zinc-800 text-center py-6">
+                    <div className="p-6 rounded-2xl bg-white/[0.02] border border-dashed border-white/[0.08] text-center py-6">
                       <Layers size={24} className="mx-auto text-zinc-600 mb-2" />
                       <p className="text-xs text-zinc-400 font-medium">Nenhum perfil conectado ainda.</p>
                       <p className="text-[11px] text-zinc-500 mt-0.5">Clique em "+ Adicionar perfil" para sincronizar suas contas de anúncio.</p>
@@ -897,10 +897,10 @@ function IntegrationsContent() {
                       {profiles.map((prof) => (
                         <div
                           key={prof.id}
-                          className="p-3 rounded-xl bg-[#141824] border border-zinc-800/80 flex items-center justify-between hover:border-zinc-700 transition-colors"
+                          className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between hover:border-white/[0.12] transition-colors"
                         >
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white text-xs">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#2997ff] to-indigo-600 flex items-center justify-center font-bold text-white text-xs">
                               {prof.name.slice(0, 2).toUpperCase()}
                             </div>
                             <div>
@@ -911,7 +911,7 @@ function IntegrationsContent() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/20">
+                            <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#30d158]/10 text-[#30d158] font-semibold border border-[#30d158]/20">
                               Ativo
                             </span>
                           </div>
@@ -925,12 +925,12 @@ function IntegrationsContent() {
                 <div className="space-y-3 pt-2">
                   <div
                     onClick={() => setAccountsExpanded(!accountsExpanded)}
-                    className="flex items-center justify-between cursor-pointer p-3 rounded-xl bg-[#141824] border border-zinc-800/80 hover:border-zinc-700 transition-colors"
+                    className="flex items-center justify-between cursor-pointer p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:border-white/[0.12] transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <Radio size={15} className="text-blue-400" />
+                      <Radio size={15} className="text-[#2997ff]" />
                       <span className="text-xs font-bold text-white">Business Managers & Contas de Anúncio (Meta)</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-mono">
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#2997ff]/10 text-[#2997ff] border border-[#2997ff]/20 font-mono">
                         {selectedBms.length} BM(s) ativas • {selectedAccounts.length} conta(s) selecionadas
                       </span>
                     </div>
@@ -943,7 +943,7 @@ function IntegrationsContent() {
                   {accountsExpanded && (
                     <div className="space-y-4 pl-1">
                       {profiles.length === 0 ? (
-                        <div className="p-4 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-500 text-center">
+                        <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/[0.06] text-xs text-zinc-500 text-center">
                           Conecte um perfil acima para visualizar e selecionar suas Business Managers e contas.
                         </div>
                       ) : (
@@ -959,11 +959,11 @@ function IntegrationsContent() {
                           });
 
                           return (
-                            <div key={prof.id} className="space-y-3 p-3.5 rounded-2xl bg-[#0B0E14] border border-zinc-800/80">
+                            <div key={prof.id} className="space-y-3 p-4 rounded-2xl bg-black/25 border border-white/[0.06]">
                               {/* Header do Perfil Conectado */}
                               <div className="flex items-center justify-between text-xs font-bold text-zinc-200 px-1">
                                 <div className="flex items-center gap-2">
-                                  <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-[10px] text-white font-bold">
+                                  <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-[#2997ff] to-indigo-600 flex items-center justify-center text-[10px] text-white font-bold">
                                     {prof.name.slice(0, 2).toUpperCase()}
                                   </div>
                                   <span>{prof.name}</span>
@@ -974,7 +974,7 @@ function IntegrationsContent() {
                               </div>
 
                               {/* Barra de Ferramentas / Busca & Controles Rápidos */}
-                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-[#141824] border border-zinc-800/80">
+                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
                                 <div className="relative flex-1">
                                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
                                   <input
@@ -982,21 +982,21 @@ function IntegrationsContent() {
                                     value={bmSearchTerm}
                                     onChange={(e) => setBmSearchTerm(e.target.value)}
                                     placeholder={`Filtrar entre ${bms.length} Business Managers por nome ou ID...`}
-                                    className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[#0E1118] border border-zinc-800 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-blue-500/50"
+                                    className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-black/30 border border-white/[0.08] text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-[#2997ff]"
                                   />
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   <button
                                     type="button"
                                     onClick={() => expandAllBms(bms)}
-                                    className="px-2.5 py-1 rounded-lg bg-[#181D2A] hover:bg-[#1E2435] text-[11px] font-semibold text-zinc-300 border border-zinc-700 transition-colors"
+                                    className="px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-[11px] font-semibold text-zinc-300 border border-white/[0.08] transition-colors"
                                   >
                                     Expandir Todas
                                   </button>
                                   <button
                                     type="button"
                                     onClick={collapseAllBms}
-                                    className="px-2.5 py-1 rounded-lg bg-[#181D2A] hover:bg-[#1E2435] text-[11px] font-semibold text-zinc-300 border border-zinc-700 transition-colors"
+                                    className="px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-[11px] font-semibold text-zinc-300 border border-white/[0.08] transition-colors"
                                   >
                                     Minimizar Todas
                                   </button>
@@ -1013,7 +1013,7 @@ function IntegrationsContent() {
                               {/* Lista de Business Managers (Minimizadas por padrão) */}
                               <div className="space-y-2 pt-1">
                                 {filteredBms.length === 0 ? (
-                                  <div className="p-4 rounded-xl bg-[#141824] border border-zinc-800 text-center text-xs text-zinc-500">
+                                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] text-center text-xs text-zinc-500">
                                     Nenhuma Business Manager encontrada para "{bmSearchTerm}".
                                   </div>
                                 ) : (
@@ -1026,16 +1026,16 @@ function IntegrationsContent() {
                                     return (
                                       <div
                                         key={bm.id}
-                                        className={`rounded-xl border transition-all ${
+                                        className={`rounded-2xl border transition-all ${
                                           isBmActive
-                                            ? "border-blue-500/40 bg-[#121622] shadow-sm shadow-blue-500/5"
-                                            : "border-zinc-800/80 bg-[#0E1118] hover:border-zinc-700"
+                                            ? "border-[#2997ff]/40 bg-[#2997ff]/5 shadow-sm shadow-[#2997ff]/5"
+                                            : "border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12]"
                                         }`}
                                       >
                                         {/* Cabeçalho da BM com Toggle e Informações */}
                                         <div
                                           onClick={() => toggleBmExpanded(bm.id)}
-                                          className="p-3 flex items-center justify-between cursor-pointer select-none"
+                                          className="p-3.5 flex items-center justify-between cursor-pointer select-none"
                                         >
                                           <div className="flex items-center gap-3 min-w-0">
                                             {/* Checkbox de Ativação da BM */}
@@ -1047,15 +1047,15 @@ function IntegrationsContent() {
                                               title={isBmActive ? "Desativar esta BM e desmarcar suas contas" : "Adicionar esta BM e suas contas à plataforma"}
                                               className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all cursor-pointer shrink-0 ${
                                                 isBmActive
-                                                  ? "bg-blue-600 border-blue-500 text-white shadow-sm shadow-blue-500/30"
-                                                  : "border-zinc-600 bg-zinc-800/60 hover:border-zinc-400"
+                                                  ? "bg-[#2997ff] border-[#2997ff] text-white shadow-sm shadow-[#2997ff]/30"
+                                                  : "border-zinc-600 bg-white/[0.05] hover:border-zinc-400"
                                               }`}
                                             >
                                               {isBmActive && <Check size={13} strokeWidth={3} />}
                                             </div>
 
                                             {/* Ícone da BM */}
-                                            <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
+                                            <div className="w-8 h-8 rounded-lg bg-[#2997ff]/10 border border-[#2997ff]/20 flex items-center justify-center text-[#2997ff] shrink-0">
                                               <Building2 size={16} />
                                             </div>
 
@@ -1064,23 +1064,23 @@ function IntegrationsContent() {
                                                 <span className={`text-xs font-bold truncate ${isBmActive ? "text-white" : "text-zinc-300"}`}>
                                                   {bm.name}
                                                 </span>
-                                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 font-mono">
+                                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-white/[0.06] text-zinc-400 font-mono">
                                                   ID: {bm.id}
                                                 </span>
                                                 {isBmActive ? (
-                                                  <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30 flex items-center gap-1">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                                  <span className="text-[10px] px-2 py-0.2 rounded-full bg-[#30d158]/10 text-[#30d158] font-bold border border-[#30d158]/20 flex items-center gap-1">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-[#30d158] animate-pulse"></span>
                                                     BM Adicionada
                                                   </span>
                                                 ) : (
-                                                  <span className="text-[10px] px-2 py-0.2 rounded-full bg-zinc-800/60 text-zinc-500 font-medium border border-zinc-700/50">
+                                                  <span className="text-[10px] px-2 py-0.2 rounded-full bg-white/[0.04] text-zinc-500 font-medium border border-white/[0.06]">
                                                     Não Adicionada
                                                   </span>
                                                 )}
                                               </div>
                                               <p className="text-[10px] text-zinc-400 mt-0.5">
                                                 {selectedInBm.length > 0 ? (
-                                                  <span className="text-blue-400 font-semibold">{selectedInBm.length} de {bm.accounts.length} contas ativas</span>
+                                                  <span className="text-[#2997ff] font-semibold">{selectedInBm.length} de {bm.accounts.length} contas ativas</span>
                                                 ) : (
                                                   <span>{bm.accounts.length} conta(s) disponível(is)</span>
                                                 )}
@@ -1103,7 +1103,7 @@ function IntegrationsContent() {
                                                     if (!selectedBms.includes(bm.id)) setSelectedBms((prev) => [...prev, bm.id]);
                                                   }
                                                 }}
-                                                className="text-[11px] px-2.5 py-1 rounded-lg bg-[#181D2A] hover:bg-[#1E2435] border border-zinc-700 text-zinc-300 font-semibold transition-colors"
+                                                className="text-[11px] px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 font-semibold transition-colors"
                                               >
                                                 {allBmAccountsSelected ? "Desmarcar Todas" : "Selecionar Todas"}
                                               </button>
@@ -1111,7 +1111,7 @@ function IntegrationsContent() {
 
                                             <button
                                               type="button"
-                                              className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg bg-zinc-800/60 hover:bg-zinc-800 text-zinc-300 font-medium transition-colors"
+                                              className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 font-medium transition-colors"
                                             >
                                               <span>{isBmExpanded ? "Recolher" : "Ver Contas"}</span>
                                               {isBmExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
@@ -1121,7 +1121,7 @@ function IntegrationsContent() {
 
                                         {/* Grid de Contas (Minimizado por padrão, renderiza apenas se expandido) */}
                                         {isBmExpanded && (
-                                          <div className="p-3 border-t border-zinc-800/80 bg-[#0B0E14]/80 space-y-2">
+                                          <div className="p-3 border-t border-white/[0.06] bg-black/20 space-y-2">
                                             {bm.accounts.length === 0 ? (
                                               <p className="text-xs text-zinc-500 italic py-2 text-center">Nenhuma conta de anúncio encontrada nesta Business Manager.</p>
                                             ) : (
@@ -1134,16 +1134,16 @@ function IntegrationsContent() {
                                                       onClick={() => toggleAccountSelection(acc.id, bm.id)}
                                                       className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
                                                         isSelected
-                                                          ? "bg-blue-600/15 border-blue-500/60 shadow-sm shadow-blue-500/10"
-                                                          : "bg-[#121622] border-zinc-800/80 opacity-60 hover:opacity-100 hover:border-zinc-700"
+                                                          ? "bg-[#2997ff]/15 border-[#2997ff]/40 shadow-sm shadow-[#2997ff]/10"
+                                                          : "bg-white/[0.02] border-white/[0.06] opacity-70 hover:opacity-100 hover:border-white/[0.12]"
                                                       }`}
                                                     >
                                                       <div className="flex items-center gap-2.5 min-w-0">
                                                         <div
                                                           className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all ${
                                                             isSelected
-                                                              ? "bg-blue-600 border-blue-500 text-white"
-                                                              : "border-zinc-600 bg-zinc-800/50"
+                                                              ? "bg-[#2997ff] border-[#2997ff] text-white"
+                                                              : "border-zinc-600 bg-white/[0.05]"
                                                           }`}
                                                         >
                                                           {isSelected && <Check size={11} strokeWidth={3} />}
@@ -1154,7 +1154,7 @@ function IntegrationsContent() {
                                                         </div>
                                                       </div>
                                                       <div className="text-right shrink-0 ml-2">
-                                                        <span className="text-xs font-bold text-emerald-400 font-mono">
+                                                        <span className="text-xs font-bold text-[#30d158] font-mono">
                                                           {acc.amountSpent > 0
                                                             ? `R$ ${acc.amountSpent.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
                                                             : "R$ 0,00"}
@@ -1181,10 +1181,10 @@ function IntegrationsContent() {
                 </div>
 
                 {/* Botão e Barra de Salvar Contas Selecionadas */}
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-zinc-800/80">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-white/[0.06]">
                   <div className="text-xs text-zinc-400">
                     {saveSuccessMsg ? (
-                      <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                      <span className="font-bold text-[#30d158] flex items-center gap-1.5">
                         <CheckCircle2 size={14} /> {saveSuccessMsg}
                       </span>
                     ) : (
@@ -1194,7 +1194,7 @@ function IntegrationsContent() {
                   <button
                     onClick={handleSaveMeta}
                     disabled={loading}
-                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-bold bg-[#2997ff] hover:bg-[#2997ff]/90 text-white shadow-lg shadow-[#2997ff]/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {loading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                     Salvar Configurações ({selectedAccounts.length} contas em {selectedBms.length} BMs)
@@ -1207,19 +1207,20 @@ function IntegrationsContent() {
       )}
 
       {/* ── ABA 2: WEBHOOKS & CHECKOUTS ─────────────────────────────────── */}
+      {/* ── ABA 2: WEBHOOKS & CHECKOUTS ─────────────────────────────────── */}
       {activeTab === "webhooks" && (
         <div className="space-y-4 animate-fade-in">
           {/* Zedy Gateway Card */}
-          <div className="rounded-2xl border border-emerald-500/30 bg-[#0F131D] shadow-2xl p-6 space-y-5">
+          <div className="rounded-3xl border border-white/[0.06] glass-card shadow-2xl p-6 space-y-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-black text-sm shadow-lg shadow-emerald-600/30">
+                <div className="w-10 h-10 rounded-xl bg-[#30d158] flex items-center justify-center text-black font-black text-sm shadow-md shadow-[#30d158]/20">
                   Z
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-bold text-white tracking-tight">Zedy Checkout</h3>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
+                    <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#30d158]/10 text-[#30d158] font-semibold border border-[#30d158]/20">
                       API Token Ativo
                     </span>
                   </div>
@@ -1238,11 +1239,11 @@ function IntegrationsContent() {
                     type="text"
                     readOnly
                     value={zedyWebhookUrl}
-                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono select-all focus:outline-none"
+                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-zinc-300 font-mono select-all focus:outline-none focus:border-[#30d158]"
                   />
                   <button
                     onClick={() => handleCopy(zedyWebhookUrl, "zedy")}
-                    className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                    className="px-4 py-2.5 rounded-xl bg-[#30d158] hover:bg-[#30d158]/90 text-black text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-md shadow-[#30d158]/20 cursor-pointer"
                   >
                     {copiedZedy ? <Check size={14} /> : <Copy size={14} />}
                     {copiedZedy ? "Copiado!" : "Copiar"}
@@ -1258,12 +1259,12 @@ function IntegrationsContent() {
                     value={zedyToken}
                     onChange={(e) => setZedyToken(e.target.value)}
                     placeholder="Cole seu Token da Zedy aqui"
-                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono focus:outline-none focus:border-emerald-500/50"
+                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-zinc-300 font-mono focus:outline-none focus:border-[#30d158]"
                   />
                   <button
                     onClick={handleSyncZedy}
                     disabled={syncingZedy}
-                    className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                    className="px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
                   >
                     {syncingZedy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                     Sincronizar Pedidos
@@ -1272,7 +1273,7 @@ function IntegrationsContent() {
                     onClick={handleResetAndSyncZedy}
                     disabled={syncingZedy}
                     title="Apaga os webhooks duplicados de hoje e ressincroniza"
-                    className="px-3 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 transition-all flex items-center gap-1.5 shrink-0"
+                    className="px-3 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -1280,7 +1281,7 @@ function IntegrationsContent() {
               </div>
 
               {saveSuccessMsg && (saveSuccessMsg.includes("Sincronização") || saveSuccessMsg.includes("Reset")) && (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2 text-emerald-400 text-xs font-bold">
+                <div className="p-3 rounded-2xl bg-[#30d158]/10 border border-[#30d158]/20 flex items-center gap-2 text-[#30d158] text-xs font-bold">
                   <CheckCircle2 size={16} />
                   {saveSuccessMsg}
                 </div>
@@ -1288,24 +1289,24 @@ function IntegrationsContent() {
             </div>
           </div>
 
-          {/* Shopify Official OAuth 2.0 Card (Experiência 1-Clique Ultra-Simples) */}
-          <div className="rounded-2xl border border-zinc-800/80 bg-[#0E1118] p-6 space-y-5">
+          {/* Shopify Official OAuth 2.0 Card */}
+          <div className="rounded-3xl border border-white/[0.06] glass-card shadow-2xl p-6 space-y-5">
             {/* Header */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3.5">
-                <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-lg transition-all ${shopifyConnected ? "bg-emerald-600 shadow-emerald-900/40" : "bg-zinc-800 shadow-black/40"}`}>
+                <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-lg transition-all ${shopifyConnected ? "bg-[#30d158] text-black shadow-md shadow-[#30d158]/20" : "bg-white/[0.06] border border-white/[0.08]"}`}>
                   <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M21.2 16.5c-1.3 4.1-5.1 5.4-8.8 5.4-3.6 0-7.3-1.4-8.7-5.4C3 14 3.7 9.8 4 8c.2-.9.8-1.5 1.7-1.7l5.9-1c.6-.1 1.2.2 1.5.8.4.8.4 1.7 0 2.5l-2.4 4c-.1.2-.2.5-.2.8.2.8 1.4 1.2 2.2 1.3 1.7.2 3.6.4 5.3.6 1.4.2 2.7 1.3 2.9 2.7.2 1.2.1 2.3-.3 3.5zm-5.7-12c-1.5 0-2.8 1.1-3.2 2.5l-1.3 4c-.1.3 0 .6.2.8l2.2 2c.6.6 1.6.6 2.3.1l2.4-2.1c.4-.3.6-.8.6-1.3l-.2-4c-.1-1.1-1.1-2-2.2-2h-.8zM8.8 5.5l5.2-.9c.7-.1 1.3.4 1.4 1.1l.2 3.8-2.1 1.8-1.5-3.3c-.6-1.3-1.8-2.2-3.2-2.5zm11.7 7.7l-3.3-.4c-1.7-.2-3.4-.4-5.1-.6-.5-.1-1-.2-1.3-.6l-2-1.8c-.3-.3-.4-.7-.3-1.1L9 6.2C8.7 4.9 9.6 3.7 11 3.5l5.9-1c1.5-.3 2.9.7 3.2 2.2l.6 6.8c0 .6-.2 1.1-.6 1.5z"/></svg>
                 </div>
                 <div>
                   <div className="flex items-center gap-2.5">
                     <h3 className="text-sm font-bold text-white">Shopify</h3>
                     {shopifyConnected ? (
-                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30 flex items-center gap-1.5 shadow-sm">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#30d158]/10 text-[#30d158] font-bold border border-[#30d158]/20 flex items-center gap-1.5 shadow-sm">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#30d158] animate-pulse" />
                         Loja Conectada e Ativa
                       </span>
                     ) : (
-                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/30">
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-semibold border border-amber-500/20">
                         Não Conectada
                       </span>
                     )}
@@ -1319,13 +1320,13 @@ function IntegrationsContent() {
               </div>
             </div>
 
-            {/* ESTADO 1: JÁ CONECTADO (Foco em Usabilidade & Simplicidade) */}
+            {/* ESTADO 1: JÁ CONECTADO */}
             {shopifyConnected ? (
               <div className="space-y-4">
-                <div className="p-4 rounded-xl bg-[#121622] border border-emerald-500/20 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-[#30d158]/30 flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div>
                     <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-semibold block">Loja Vinculada:</span>
-                    <span className="text-sm font-mono font-bold text-emerald-400">
+                    <span className="text-sm font-mono font-bold text-[#30d158]">
                       {shopifyShopDomain || "dckb5g-7d.myshopify.com"}
                     </span>
                   </div>
@@ -1336,7 +1337,7 @@ function IntegrationsContent() {
                       type="button"
                       onClick={() => handleSyncShopify(false)}
                       disabled={syncingShopify}
-                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/30 disabled:opacity-50 active:scale-95 cursor-pointer"
+                      className="px-4 py-2.5 rounded-xl bg-[#30d158] hover:bg-[#30d158]/90 text-black text-xs font-bold transition-all flex items-center gap-2 shadow-md shadow-[#30d158]/20 disabled:opacity-50 active:scale-95 cursor-pointer"
                     >
                       {syncingShopify ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
                       {syncingShopify ? "Sincronizando Pedidos..." : "Sincronizar Pedidos Reais"}
@@ -1348,12 +1349,12 @@ function IntegrationsContent() {
                       onClick={handleCopyShopifyOAuthLink}
                       disabled={generatingOAuthLink}
                       title="Copia o link oficial caso precise autorizar novamente em outro navegador"
-                      className="px-3.5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer"
+                      className="px-3.5 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 border border-white/[0.08] text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer"
                     >
                       {generatingOAuthLink ? (
                         <Loader2 size={14} className="animate-spin" />
                       ) : copiedShopifyAuthLink ? (
-                        <Check size={14} className="text-emerald-400" />
+                        <Check size={14} className="text-[#30d158]" />
                       ) : (
                         <Copy size={14} />
                       )}
@@ -1374,7 +1375,7 @@ function IntegrationsContent() {
                 </div>
               </div>
             ) : (
-              /* ESTADO 2: NÃO CONECTADO (Conexão 1-Clique Amigável) */
+              /* ESTADO 2: NÃO CONECTADO */
               <div className="space-y-4">
                 {/* Input Amigável de Domínio */}
                 <div className="max-w-xl">
@@ -1387,7 +1388,7 @@ function IntegrationsContent() {
                       value={shopifyShopDomain}
                       onChange={(e) => setShopifyShopDomain(e.target.value)}
                       placeholder="ex: minhaloja.myshopify.com ou apenas minhaloja"
-                      className="flex-1 px-4 py-2.5 rounded-xl bg-[#131722] border border-zinc-700 hover:border-zinc-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-xs text-white placeholder:text-zinc-500 font-mono transition-all"
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.15] focus:border-[#2997ff] focus:ring-1 focus:ring-[#2997ff] text-xs text-white placeholder:text-zinc-500 font-mono transition-all"
                     />
                   </div>
                   <p className="text-[11px] text-zinc-500 mt-1">
@@ -1401,7 +1402,7 @@ function IntegrationsContent() {
                   <button
                     type="button"
                     onClick={handleConnectShopifyOAuth}
-                    className="px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-blue-600/30 active:scale-95 cursor-pointer"
+                    className="px-5 py-3 rounded-xl bg-[#2997ff] hover:bg-[#2997ff]/90 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-md shadow-[#2997ff]/25 active:scale-95 cursor-pointer"
                   >
                     <ExternalLink size={15} />
                     ⚡ Conectar Loja Agora (1-Clique)
@@ -1413,12 +1414,12 @@ function IntegrationsContent() {
                     onClick={handleCopyShopifyOAuthLink}
                     disabled={generatingOAuthLink}
                     title="Copia o link para você colar no navegador onde sua loja Shopify já está aberta"
-                    className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/30 active:scale-95 cursor-pointer"
+                    className="px-5 py-3 rounded-xl bg-[#30d158] hover:bg-[#30d158]/90 text-black text-xs font-bold transition-all flex items-center gap-2 shadow-md shadow-[#30d158]/20 active:scale-95 cursor-pointer"
                   >
                     {generatingOAuthLink ? (
                       <Loader2 size={15} className="animate-spin" />
                     ) : copiedShopifyAuthLink ? (
-                      <Check size={15} className="text-white" />
+                      <Check size={15} className="text-black" />
                     ) : (
                       <Copy size={15} />
                     )}
@@ -1429,20 +1430,20 @@ function IntegrationsContent() {
                 </div>
 
                 {/* Mini Guia Visual de 3 Passos */}
-                <div className="p-3.5 rounded-xl bg-[#121622] border border-zinc-800/80 flex items-center justify-between text-xs text-zinc-400">
+                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between text-xs text-zinc-400">
                   <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 font-bold flex items-center justify-center text-[10px]">1</span>
+                    <span className="w-5 h-5 rounded-full bg-[#2997ff]/20 text-[#2997ff] font-bold flex items-center justify-center text-[10px]">1</span>
                     <span>Digite sua loja</span>
                   </div>
                   <span className="text-zinc-600">➔</span>
                   <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-[10px]">2</span>
+                    <span className="w-5 h-5 rounded-full bg-[#30d158]/20 text-[#30d158] font-bold flex items-center justify-center text-[10px]">2</span>
                     <span>Clique em Conectar ou Copie o Link</span>
                   </div>
                   <span className="text-zinc-600">➔</span>
                   <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-[10px]">3</span>
-                    <span className="text-emerald-400 font-semibold">Aprove na Shopify (Pronto!)</span>
+                    <span className="w-5 h-5 rounded-full bg-[#30d158]/20 text-[#30d158] font-bold flex items-center justify-center text-[10px]">3</span>
+                    <span className="text-[#30d158] font-semibold">Aprove na Shopify (Pronto!)</span>
                   </div>
                 </div>
               </div>
@@ -1450,24 +1451,24 @@ function IntegrationsContent() {
 
             {/* Aviso de feedback / Mensagem de sucesso */}
             {saveSuccessMsg && (saveSuccessMsg.includes("Shopify") || saveSuccessMsg.includes("pedidos") || saveSuccessMsg.includes("Link") || saveSuccessMsg.includes("desconectada")) && (
-              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2 text-emerald-400 text-xs font-bold">
+              <div className="p-3 rounded-2xl bg-[#30d158]/10 border border-[#30d158]/20 flex items-center gap-2 text-[#30d158] text-xs font-bold">
                 <CheckCircle2 size={16} />
                 {saveSuccessMsg}
               </div>
             )}
 
-            {/* Opções Avançadas Colapsadas (Para Desenvolvedores / Custom App) */}
-            <div className="pt-3 border-t border-zinc-800/60">
+            {/* Opções Avançadas Colapsadas */}
+            <div className="pt-3 border-t border-white/[0.06]">
               <button
                 type="button"
                 onClick={() => setShowAdvancedShopify(!showAdvancedShopify)}
-                className="text-xs text-zinc-500 hover:text-zinc-300 flex items-center gap-1.5 font-medium transition-colors cursor-pointer"
+                className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 font-medium transition-colors cursor-pointer"
               >
                 <span>⚙️ {showAdvancedShopify ? "Ocultar configurações avançadas de desenvolvedor" : "Configurações avançadas (Custom App / Chaves Próprias)"}</span>
               </button>
 
               {showAdvancedShopify && (
-                <div className="mt-3 p-4 rounded-xl bg-[#121622] border border-zinc-800 space-y-3">
+                <div className="mt-3 p-5 rounded-2xl bg-black/25 border border-white/[0.06] space-y-3">
                   <p className="text-xs text-zinc-400 leading-relaxed">
                     Por padrão, o ATM utiliza as credenciais seguras oficiais do App da plataforma. Se você criou seu próprio Custom App no Shopify Partners e deseja usar chaves customizadas, edite abaixo:
                   </p>
@@ -1481,7 +1482,7 @@ function IntegrationsContent() {
                         value={shopifyClientId}
                         onChange={(e) => setShopifyClientId(e.target.value)}
                         placeholder="58504954bae6d390c53081c82eaf76b1"
-                        className="w-full px-3 py-2 rounded-xl bg-[#0E1118] border border-zinc-700 text-xs text-zinc-200 font-mono focus:outline-none focus:border-blue-500"
+                        className="w-full px-3 py-2 rounded-xl bg-black/30 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:outline-none focus:border-[#2997ff]"
                       />
                     </div>
                     <div>
@@ -1493,12 +1494,12 @@ function IntegrationsContent() {
                         value={shopifyClientSecret}
                         onChange={(e) => setShopifyClientSecret(e.target.value)}
                         placeholder="shpss_..."
-                        className="w-full px-3 py-2 rounded-xl bg-[#0E1118] border border-zinc-700 text-xs text-zinc-200 font-mono focus:outline-none focus:border-blue-500"
+                        className="w-full px-3 py-2 rounded-xl bg-black/30 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:outline-none focus:border-[#2997ff]"
                       />
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-zinc-800/50">
+                  <div className="pt-2 border-t border-white/[0.06]">
                     <label className="block text-[11px] font-bold text-zinc-400 mb-1">
                       Ou Token Admin Manual (shpat_...)
                     </label>
@@ -1508,13 +1509,13 @@ function IntegrationsContent() {
                         value={shopifyToken}
                         onChange={(e) => setShopifyToken(e.target.value)}
                         placeholder="shpat_xxxxxxxxxxxxxxxxxxxxxxxx"
-                        className="flex-1 px-3 py-2 rounded-xl bg-[#0E1118] border border-zinc-700 text-xs text-zinc-200 font-mono focus:outline-none focus:border-blue-500"
+                        className="flex-1 px-3 py-2 rounded-xl bg-black/30 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:outline-none focus:border-[#2997ff]"
                       />
                       <button
                         type="button"
                         onClick={handleSaveShopifyToken}
                         disabled={syncingShopify || !shopifyToken.trim()}
-                        className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all disabled:opacity-50"
+                        className="px-4 py-2 rounded-xl bg-[#2997ff] hover:bg-[#2997ff]/90 text-white text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
                       >
                         Salvar Token
                       </button>
@@ -1524,10 +1525,12 @@ function IntegrationsContent() {
               )}
             </div>
           </div>
-          <div className="rounded-2xl border border-zinc-800/80 bg-[#0E1118] p-6 space-y-4">
+
+          {/* Vega Checkout Card */}
+          <div className="rounded-3xl border border-white/[0.06] glass-card shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-black text-sm">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md shadow-indigo-600/20">
                   V
                 </div>
                 <div>
@@ -1541,23 +1544,23 @@ function IntegrationsContent() {
                 type="text"
                 readOnly
                 value={vegaWebhookUrl}
-                className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono select-all"
+                className="flex-1 px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-zinc-300 font-mono select-all focus:outline-none"
               />
               <button
                 onClick={() => handleCopy(vegaWebhookUrl, "webhook")}
-                className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                className="px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-white text-xs font-bold border border-white/[0.08] transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
               >
-                {copiedWebhook ? <Check size={14} /> : <Copy size={14} />}
+                {copiedWebhook ? <Check size={14} className="text-[#30d158]" /> : <Copy size={14} />}
                 {copiedWebhook ? "Copiado!" : "Copiar URL"}
               </button>
             </div>
           </div>
 
-          {/* 5. Telegram Integration */}
-          <div className="bg-[#0B0E14] border border-zinc-800 rounded-2xl p-6">
-            <div className="flex items-start gap-4 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-blue-500 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
-                <AlertCircle size={20} className="text-white" />
+          {/* Telegram Integration */}
+          <div className="rounded-3xl border border-white/[0.06] glass-card shadow-2xl p-6 space-y-5">
+            <div className="flex items-start gap-4 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-[#2997ff]/15 border border-[#2997ff]/25 flex items-center justify-center shrink-0 text-[#2997ff]">
+                <AlertCircle size={20} />
               </div>
               <div className="flex-1">
                 <h3 className="text-sm font-bold text-white mb-1">Telegram (Notificações no Celular)</h3>
@@ -1574,7 +1577,7 @@ function IntegrationsContent() {
                     value={telegramBotToken}
                     onChange={(e) => setTelegramBotToken(e.target.value)}
                     placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-                    className="mt-2 w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono focus:outline-none focus:border-blue-500/50"
+                    className="mt-2 w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-zinc-300 font-mono focus:outline-none focus:border-[#2997ff]"
                   />
                 </div>
                 <div>
@@ -1585,12 +1588,12 @@ function IntegrationsContent() {
                       value={telegramChatId}
                       onChange={(e) => setTelegramChatId(e.target.value)}
                       placeholder="-1001234567890"
-                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono focus:outline-none focus:border-blue-500/50"
+                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-zinc-300 font-mono focus:outline-none focus:border-[#2997ff]"
                     />
                     <button
                       onClick={handleSaveTelegram}
                       disabled={savingTelegram || !telegramBotToken.trim() || !telegramChatId.trim()}
-                      className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                      className="px-4 py-2.5 rounded-xl bg-[#2997ff] hover:bg-[#2997ff]/90 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-md shadow-[#2997ff]/25 cursor-pointer"
                     >
                       {savingTelegram ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                       Salvar
@@ -1598,7 +1601,7 @@ function IntegrationsContent() {
                     <button
                       onClick={handleTestTelegram}
                       disabled={testingTelegram || !telegramBotToken.trim() || !telegramChatId.trim()}
-                      className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+                      className="px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] disabled:opacity-50 text-white text-xs font-bold border border-white/[0.08] transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
                     >
                       {testingTelegram ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
                       Testar
@@ -1616,7 +1619,7 @@ function IntegrationsContent() {
                       onChange={(e) => setTelegramNotifyApproved(e.target.checked)}
                       className="sr-only"
                     />
-                    <div className={`w-10 h-5.5 rounded-full transition-colors ${telegramNotifyApproved ? 'bg-blue-600' : 'bg-zinc-800 border border-zinc-700'}`}></div>
+                    <div className={`w-10 h-5.5 rounded-full transition-colors ${telegramNotifyApproved ? 'bg-[#30d158]' : 'bg-white/[0.08] border border-white/[0.1]'}`}></div>
                     <div className={`absolute left-1 top-1 w-3.5 h-3.5 bg-white rounded-full transition-transform ${telegramNotifyApproved ? 'translate-x-4.5' : 'translate-x-0'}`}></div>
                   </div>
                   <span className="text-xs text-zinc-300 font-semibold group-hover:text-white transition-colors">
@@ -1632,7 +1635,7 @@ function IntegrationsContent() {
                       onChange={(e) => setTelegramNotifyPending(e.target.checked)}
                       className="sr-only"
                     />
-                    <div className={`w-10 h-5.5 rounded-full transition-colors ${telegramNotifyPending ? 'bg-blue-600' : 'bg-zinc-800 border border-zinc-700'}`}></div>
+                    <div className={`w-10 h-5.5 rounded-full transition-colors ${telegramNotifyPending ? 'bg-[#2997ff]' : 'bg-white/[0.08] border border-white/[0.1]'}`}></div>
                     <div className={`absolute left-1 top-1 w-3.5 h-3.5 bg-white rounded-full transition-transform ${telegramNotifyPending ? 'translate-x-4.5' : 'translate-x-0'}`}></div>
                   </div>
                   <span className="text-xs text-zinc-300 font-semibold group-hover:text-white transition-colors">
@@ -1642,7 +1645,7 @@ function IntegrationsContent() {
               </div>
               
               {saveSuccessMsg && saveSuccessMsg.includes("Telegram") && (
-                <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center gap-2 text-blue-400 text-xs font-bold">
+                <div className="p-3 rounded-2xl bg-[#2997ff]/10 border border-[#2997ff]/20 flex items-center gap-2 text-[#2997ff] text-xs font-bold">
                   <Check size={14} />
                   {saveSuccessMsg}
                 </div>
@@ -1655,10 +1658,10 @@ function IntegrationsContent() {
       {/* ── ABA 2.8: TESTES CAPI ───────────────────────────────────────── */}
       {activeTab === "testes" && (
         <div className="animate-fade-in pt-4 space-y-6">
-          <div className="bg-[#0B0E14] border border-zinc-800 rounded-2xl p-6">
+          <div className="rounded-3xl border border-white/[0.06] glass-card shadow-2xl p-6">
             <div className="flex items-start gap-4 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center shrink-0 shadow-lg shadow-purple-600/20">
-                <FlaskConical size={20} className="text-white" />
+              <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center shrink-0 shadow-lg shadow-purple-500/10 text-purple-400">
+                <FlaskConical size={20} />
               </div>
               <div className="flex-1">
                 <h3 className="text-sm font-bold text-white mb-1">Central de Testes CAPI</h3>
@@ -1675,7 +1678,7 @@ function IntegrationsContent() {
                     value={testEventCode}
                     onChange={(e) => setTestEventCode(e.target.value.toUpperCase())}
                     placeholder="Ex: TEST12345"
-                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-zinc-300 font-mono focus:outline-none focus:border-blue-500/50"
+                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-zinc-300 font-mono focus:outline-none focus:border-purple-400"
                   />
                   <button
                     type="button"
@@ -1713,14 +1716,14 @@ function IntegrationsContent() {
                     }}
                     id="btn-test-purchase"
                     disabled={!testEventCode.trim() || !testEventCode.startsWith("TEST")}
-                    className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-lg shadow-purple-600/20"
+                    className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-md shadow-purple-600/25 cursor-pointer"
                   >
                     Disparar Teste: Purchase (Venda)
                   </button>
                 </div>
               </div>
               
-              <div className="p-4 rounded-xl bg-purple-500/10 border border-purple-500/20">
+              <div className="p-4 rounded-2xl bg-purple-500/5 border border-purple-500/20">
                 <h4 className="text-xs font-bold text-purple-400 flex items-center gap-2 mb-2">
                   <ShieldCheck size={14} />
                   Como validar seus eventos:
@@ -1745,14 +1748,55 @@ function IntegrationsContent() {
         </div>
       )}
 
+      {/* ── ABA 2.9: WHATSAPP ───────────────────────────────────────── */}
+      {activeTab === "whatsapp" && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="rounded-3xl border border-white/[0.06] glass-card shadow-2xl p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-[#30d158]/20 border border-[#30d158]/30 flex items-center justify-center text-[#30d158] shadow-md shadow-[#30d158]/10">
+                  <MessageSquare size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-white tracking-tight">WhatsApp Direct Notifications & Recovery</h3>
+                    <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#30d158]/10 text-[#30d158] font-semibold border border-[#30d158]/20">
+                      Disponível
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Notificações de vendas e recuperação de carrinhos e boletos via WhatsApp.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                As notificações instantâneas de pedidos no seu celular podem ser configuradas via <b>Telegram</b> (gratuito e instantâneo na aba de Webhooks) ou você pode automatizar fluxos de recuperação de abandono.
+              </p>
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("webhooks")}
+                  className="px-4 py-2.5 rounded-xl bg-[#2997ff] hover:bg-[#2997ff]/90 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-[#2997ff]/25 cursor-pointer"
+                >
+                  <Plug size={14} /> Configurar Alertas de Venda no Celular (Telegram)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── ABA 3: PIXEL & SCRIPT ───────────────────────────────────────── */}
       {activeTab === "pixel" && (
         <div className="space-y-6 animate-fade-in">
           {/* Card 1: Configurações do Pixel & CAPI */}
-          <div className="rounded-2xl border border-blue-500/30 bg-[#0F131D] shadow-2xl p-6 space-y-5">
+          <div className="rounded-3xl border border-white/[0.06] glass-card shadow-2xl p-6 space-y-5">
             <div>
               <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
-                <Code2 size={16} className="text-blue-400" />
+                <Code2 size={16} className="text-[#2997ff]" />
                 Configurações do Meta Pixel & Conversions API (CAPI)
               </h3>
               <p className="text-xs text-zinc-400 mt-0.5">
@@ -1763,7 +1807,7 @@ function IntegrationsContent() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-                  <Code2 size={14} className="text-blue-400" />
+                  <Code2 size={14} className="text-[#2997ff]" />
                   Pixel ID Meta (Dataset)
                 </label>
                 <input
@@ -1771,20 +1815,20 @@ function IntegrationsContent() {
                   value={pixelId}
                   onChange={(e) => setPixelId(e.target.value)}
                   placeholder="Ex: 1104875232197441"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-white font-mono focus:border-[#2997ff] focus:outline-none"
                 />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-zinc-300 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <ShieldCheck size={14} className="text-emerald-400" />
+                    <ShieldCheck size={14} className="text-[#30d158]" />
                     Token de Acesso (CAPI)
                   </span>
                   <button
                     type="button"
                     onClick={() => setShowToken(!showToken)}
-                    className="text-[10px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
+                    className="text-[10px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1 cursor-pointer"
                   >
                     {showToken ? <EyeOff size={12} /> : <Eye size={12} />}
                     {showToken ? "Ocultar" : "Exibir"}
@@ -1795,15 +1839,15 @@ function IntegrationsContent() {
                   value={accessToken}
                   onChange={(e) => setAccessToken(e.target.value)}
                   placeholder={hasSavedTokenInDb ? "•••••••••••••••••••••••••••••••••••• (Salvo no Banco)" : "Cole seu token EAAB..."}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-white font-mono focus:border-[#2997ff] focus:outline-none"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80">
+            <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
               <div className="text-xs">
                 {saveSuccessMsg && (
-                  <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                  <span className="font-bold text-[#30d158] flex items-center gap-1.5">
                     <CheckCircle2 size={14} /> {saveSuccessMsg}
                   </span>
                 )}
@@ -1811,7 +1855,7 @@ function IntegrationsContent() {
               <button
                 onClick={handleSavePixelCapi}
                 disabled={savingPixel}
-                className="px-6 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all flex items-center gap-2 disabled:opacity-50"
+                className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#2997ff] hover:bg-[#2997ff]/90 text-white shadow-md shadow-[#2997ff]/25 transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
               >
                 {savingPixel ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                 Salvar Configurações do Pixel CAPI
@@ -1820,24 +1864,24 @@ function IntegrationsContent() {
           </div>
 
           {/* Card 2: Script Universal */}
-          <div className="rounded-2xl border border-blue-500/30 bg-[#0F131D] shadow-2xl p-6 space-y-5">
+          <div className="rounded-3xl border border-white/[0.06] glass-card shadow-2xl p-6 space-y-5">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-white tracking-tight">Script Universal de Rastreamento ATM</h3>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Cole este código antes da tag <code className="text-blue-400">&lt;/head&gt;</code> no arquivo <code className="text-blue-400">theme.liquid</code> da sua Shopify.
+                  Cole este código antes da tag <code className="text-[#2997ff]">&lt;/head&gt;</code> no arquivo <code className="text-[#2997ff]">theme.liquid</code> da sua Shopify.
                 </p>
               </div>
               <button
                 onClick={() => handleCopy(installSnippet, "snippet")}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all flex items-center gap-1.5"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-[#2997ff] hover:bg-[#2997ff]/90 text-white transition-all flex items-center gap-1.5 shadow-md shadow-[#2997ff]/25 cursor-pointer"
               >
                 {copiedSnippet ? <Check size={14} /> : <Copy size={14} />}
                 {copiedSnippet ? "Copiado!" : "Copiar Script"}
               </button>
             </div>
 
-            <pre className="p-4 rounded-xl bg-[#080A0F] border border-zinc-800 text-zinc-300 font-mono text-[11px] overflow-x-auto leading-relaxed max-h-72 select-all">
+            <pre className="p-5 rounded-2xl bg-black/40 border border-white/[0.06] text-zinc-300 font-mono text-[11px] overflow-x-auto leading-relaxed max-h-72 select-all">
               {installSnippet}
             </pre>
           </div>
@@ -1846,12 +1890,12 @@ function IntegrationsContent() {
 
       {/* ── MODAL: ADICIONAR PERFIL META (OAuth / Token) ───────────────── */}
       {isAddProfileModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-[#0F131E] border border-blue-500/30 rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl space-y-6 text-white relative animate-scale-in">
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#18181a] border border-white/[0.08] rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl space-y-6 text-white relative animate-scale-in">
             {/* Header com Ícone e Fechar */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
+                <div className="w-10 h-10 rounded-2xl bg-[#2997ff] flex items-center justify-center shadow-md shadow-[#2997ff]/25">
                   <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
                     <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
                   </svg>
@@ -1864,19 +1908,19 @@ function IntegrationsContent() {
               <button
                 type="button"
                 onClick={() => setIsAddProfileModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
+                className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-zinc-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
             {/* Alternador de Modo: OAuth vs Token */}
-            <div className="grid grid-cols-2 gap-1.5 p-1.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs font-bold">
+            <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-white/[0.04] border border-white/[0.06] text-xs font-bold">
               <button
                 type="button"
                 onClick={() => setModalTab("oauth")}
-                className={`py-2 rounded-lg transition-all ${
-                  modalTab === "oauth" ? "bg-blue-600 text-white shadow-md" : "text-zinc-400 hover:text-zinc-200"
+                className={`py-2 rounded-xl transition-all ${
+                  modalTab === "oauth" ? "bg-[#2997ff] text-white shadow-md shadow-[#2997ff]/25" : "text-zinc-400 hover:text-zinc-200"
                 }`}
               >
                 Facebook Login (OAuth)
@@ -1884,8 +1928,8 @@ function IntegrationsContent() {
               <button
                 type="button"
                 onClick={() => setModalTab("token")}
-                className={`py-2 rounded-lg transition-all ${
-                  modalTab === "token" ? "bg-blue-600 text-white shadow-md" : "text-zinc-400 hover:text-zinc-200"
+                className={`py-2 rounded-xl transition-all ${
+                  modalTab === "token" ? "bg-[#2997ff] text-white shadow-md shadow-[#2997ff]/25" : "text-zinc-400 hover:text-zinc-200"
                 }`}
               >
                 Inserir Token Direto (BM)
@@ -1899,22 +1943,22 @@ function IntegrationsContent() {
                   Clique no botão abaixo para abrir a janela de autorização oficial da Meta. Você poderá escolher quais contas de anúncio deseja sincronizar com o ATM.
                 </p>
 
-                <div className="p-4 rounded-2xl bg-blue-950/20 border border-blue-500/20 text-left space-y-2">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-blue-300">
-                    <ShieldCheck size={16} className="text-emerald-400" />
+                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] text-left space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-[#2997ff]">
+                    <ShieldCheck size={16} className="text-[#30d158]" />
                     Permissões Seguras Solicitadas:
                   </div>
                   <ul className="text-[11px] text-zinc-400 space-y-1 list-disc list-inside">
-                    <li>Leitura de Campanhas e Gastos (<code className="text-blue-400">ads_read</code>)</li>
-                    <li>Gestão de Públicos e Otimização (<code className="text-blue-400">ads_management</code>)</li>
-                    <li>Acesso à Business Manager (<code className="text-blue-400">business_management</code>)</li>
+                    <li>Leitura de Campanhas e Gastos (<code className="text-[#2997ff]">ads_read</code>)</li>
+                    <li>Gestão de Públicos e Otimização (<code className="text-[#2997ff]">ads_management</code>)</li>
+                    <li>Acesso à Business Manager (<code className="text-[#2997ff]">business_management</code>)</li>
                   </ul>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleOpenMetaOAuth}
-                  className="w-full py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-xl shadow-blue-600/30 transition-all flex items-center justify-center gap-2"
+                  className="w-full py-3.5 rounded-2xl bg-[#2997ff] hover:bg-[#2997ff]/90 text-white text-xs font-bold shadow-md shadow-[#2997ff]/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <ExternalLink size={16} /> Abrir Janela do Facebook Login
                 </button>
@@ -1932,7 +1976,7 @@ function IntegrationsContent() {
                     value={newProfileName}
                     onChange={(e) => setNewProfileName(e.target.value)}
                     placeholder="Ex: Naome Tavares - Contingência 02"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white focus:border-blue-500 focus:outline-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-white focus:border-[#2997ff] focus:outline-none"
                   />
                 </div>
 
@@ -1944,12 +1988,12 @@ function IntegrationsContent() {
                     value={newProfileToken}
                     onChange={(e) => setNewProfileToken(e.target.value)}
                     placeholder="Cole seu token de longa duração gerado no Graph API Explorer ou BM..."
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#141824] border border-zinc-800 text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-white font-mono focus:border-[#2997ff] focus:outline-none"
                   />
                 </div>
 
                 {addProfileError && (
-                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-400 flex items-center gap-2">
+                  <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 flex items-center gap-2">
                     <AlertCircle size={14} className="shrink-0" />
                     <span>{addProfileError}</span>
                   </div>
@@ -1958,7 +2002,7 @@ function IntegrationsContent() {
                 <button
                   type="submit"
                   disabled={addingProfileLoading}
-                  className="w-full py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-xl shadow-blue-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="w-full py-3.5 rounded-2xl bg-[#2997ff] hover:bg-[#2997ff]/90 text-white text-xs font-bold shadow-md shadow-[#2997ff]/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   {addingProfileLoading ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
                   Testar e Conectar Perfil
@@ -1971,11 +2015,11 @@ function IntegrationsContent() {
 
       {/* Modal de Diagnóstico Meta em Tempo Real */}
       {isDiagnosisModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-          <div className="w-full max-w-2xl bg-[#0F131D] border border-blue-500/30 rounded-3xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-2xl bg-[#18181a] border border-white/[0.08] rounded-3xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                <div className="w-9 h-9 rounded-xl bg-[#2997ff]/10 border border-[#2997ff]/20 flex items-center justify-center text-[#2997ff]">
                   <FlaskConical size={18} />
                 </div>
                 <div>
@@ -1986,7 +2030,7 @@ function IntegrationsContent() {
               <button
                 type="button"
                 onClick={() => setIsDiagnosisModalOpen(false)}
-                className="text-zinc-500 hover:text-white text-xs px-2.5 py-1 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 transition-colors"
+                className="text-zinc-400 hover:text-white text-xs px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] transition-colors cursor-pointer"
               >
                 ✕
               </button>
@@ -1994,7 +2038,7 @@ function IntegrationsContent() {
 
             {runningDiagnosis ? (
               <div className="py-12 text-center space-y-3">
-                <Loader2 size={32} className="animate-spin text-blue-500 mx-auto" />
+                <Loader2 size={32} className="animate-spin text-[#2997ff] mx-auto" />
                 <p className="text-xs text-zinc-300 font-semibold">Consultando Meta Graph API v23.0...</p>
                 <p className="text-[11px] text-zinc-500">Testando /me, /me/permissions, /me/adaccounts e /me/businesses...</p>
               </div>
@@ -2002,25 +2046,25 @@ function IntegrationsContent() {
               <div className="space-y-4">
                 {/* Resumo do Status */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  <div className="p-3 rounded-xl bg-[#141824] border border-zinc-800">
+                  <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
                     <span className="text-[10px] text-zinc-400 font-semibold uppercase">Token Banco</span>
                     <p className="text-xs font-bold text-white mt-1">
                       {diagnosisData.database?.found_in_store ? "Loja Atual" : (diagnosisData.database?.found_in_fallback ? "Fallback Ativo" : "Não Encontrado")}
                     </p>
                   </div>
-                  <div className="p-3 rounded-xl bg-[#141824] border border-zinc-800">
+                  <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
                     <span className="text-[10px] text-zinc-400 font-semibold uppercase">Validade Meta</span>
-                    <p className={`text-xs font-bold mt-1 ${diagnosisData.diagnosis_summary?.token_valid ? "text-emerald-400" : "text-red-400"}`}>
+                    <p className={`text-xs font-bold mt-1 ${diagnosisData.diagnosis_summary?.token_valid ? "text-[#30d158]" : "text-red-400"}`}>
                       {diagnosisData.diagnosis_summary?.token_valid ? "Válido (Ativo)" : "Inválido / Expirado"}
                     </p>
                   </div>
-                  <div className="p-3 rounded-xl bg-[#141824] border border-zinc-800">
+                  <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
                     <span className="text-[10px] text-zinc-400 font-semibold uppercase">Contas Descobertas</span>
-                    <p className="text-xs font-bold text-blue-400 mt-1">
+                    <p className="text-xs font-bold text-[#2997ff] mt-1">
                       {diagnosisData.diagnosis_summary?.total_accounts_found || 0} conta(s)
                     </p>
                   </div>
-                  <div className="p-3 rounded-xl bg-[#141824] border border-zinc-800">
+                  <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
                     <span className="text-[10px] text-zinc-400 font-semibold uppercase">BMs Encontradas</span>
                     <p className="text-xs font-bold text-indigo-400 mt-1">
                       {diagnosisData.diagnosis_summary?.total_bms_found || 0} BM(s)
@@ -2030,9 +2074,9 @@ function IntegrationsContent() {
 
                 {/* Recomendações e Diagnóstico */}
                 {diagnosisData.diagnosis_summary?.recommendations?.length > 0 && (
-                  <div className="p-4 rounded-xl bg-blue-950/20 border border-blue-500/20 space-y-1.5">
-                    <span className="text-xs font-bold text-blue-300 flex items-center gap-1.5">
-                      <Sparkles size={14} className="text-blue-400" /> Diagnóstico do Sistema:
+                  <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-1.5">
+                    <span className="text-xs font-bold text-[#2997ff] flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-[#2997ff]" /> Diagnóstico do Sistema:
                     </span>
                     {diagnosisData.diagnosis_summary.recommendations.map((rec: string, i: number) => (
                       <p key={i} className="text-xs text-zinc-300 leading-relaxed">
@@ -2049,24 +2093,24 @@ function IntegrationsContent() {
                     <button
                       type="button"
                       onClick={() => handleCopy(JSON.stringify(diagnosisData, null, 2), "snippet")}
-                      className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 hover:text-white flex items-center gap-1"
+                      className="text-[10px] px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
                     >
                       <Copy size={11} /> Copiar JSON
                     </button>
                   </div>
-                  <pre className="p-3 rounded-xl bg-[#090C12] border border-zinc-800/80 text-[10px] text-zinc-300 font-mono overflow-x-auto max-h-60">
+                  <pre className="p-4 rounded-2xl bg-black/40 border border-white/[0.06] text-[10px] text-zinc-300 font-mono overflow-x-auto max-h-60">
                     {JSON.stringify(diagnosisData, null, 2)}
                   </pre>
                 </div>
               </div>
             ) : null}
 
-            <div className="flex items-center justify-between border-t border-zinc-800 pt-4">
+            <div className="flex items-center justify-between border-t border-white/[0.06] pt-4">
               <button
                 type="button"
                 onClick={() => handleRunDiagnosis()}
                 disabled={runningDiagnosis}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all flex items-center gap-2"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-[#2997ff] hover:bg-[#2997ff]/90 text-white transition-all flex items-center gap-2 shadow-md shadow-[#2997ff]/25 cursor-pointer"
               >
                 <RefreshCw size={13} className={runningDiagnosis ? "animate-spin" : ""} />
                 Testar Novamente
@@ -2074,7 +2118,7 @@ function IntegrationsContent() {
               <button
                 type="button"
                 onClick={() => setIsDiagnosisModalOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-white transition-all"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 border border-white/[0.08] transition-all cursor-pointer"
               >
                 Fechar
               </button>

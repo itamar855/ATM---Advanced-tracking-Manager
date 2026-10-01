@@ -96,44 +96,44 @@ export default function EventsPage() {
   if (loading) {
     return (
       <div className="flex h-[80vh] items-center justify-center">
-        <Loader2 size={36} className="animate-spin text-blue-500" />
+        <Loader2 size={36} className="animate-spin text-[#2997ff]" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-7xl mx-auto pb-12 font-sans">
+    <div className="space-y-6 fade-in max-w-7xl mx-auto pb-12 font-sans select-none">
       {/* ── Header ── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold text-white tracking-tight">
+            <h1 className="text-xl font-bold text-white tracking-tight">
               Event Explorer & Live Traffic
             </h1>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-semibold border border-blue-500/30 font-mono">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#2997ff]/15 text-[#2997ff] font-semibold border border-[#2997ff]/20 font-mono">
               META CAPI v23.0
             </span>
           </div>
-          <p className="text-xs text-zinc-400 mt-1">
+          <p className="text-[13px] text-white/40 mt-1">
             Rastreabilidade e monitoramento em tempo real de clientes e conversões despachadas para o ecossistema Meta
           </p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={handleFlushQueue}
             disabled={flushingQueue}
-            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#141824] hover:bg-[#1A2030] border border-zinc-800 text-zinc-300 transition-all flex items-center gap-2 disabled:opacity-50"
+            className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-white/90 transition-all flex items-center gap-2 disabled:opacity-50 active:scale-[0.98]"
             title="Reprocessar eventos pendentes ou falhos na fila de envio da Meta"
           >
-            <RefreshCw size={13} className={flushingQueue ? "animate-spin text-blue-400" : "text-zinc-400"} />
+            <RefreshCw size={12} className={flushingQueue ? "animate-spin text-[#2997ff]" : "text-white/40"} />
             <span>{flushingQueue ? "Processando Fila..." : "Reprocessar Fila"}</span>
           </button>
 
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#30d158]/10 border border-[#30d158]/20 text-[#30d158] text-[11px] font-semibold">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#30d158] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#30d158]"></span>
             </span>
             Live Stream Ativo (4s)
           </div>
@@ -141,79 +141,79 @@ export default function EventsPage() {
       </div>
 
       {queueMsg && (
-        <div className="p-3.5 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs flex items-center gap-2 animate-fade-in font-medium">
+        <div className="p-3.5 rounded-2xl bg-[#2997ff]/10 border border-[#2997ff]/20 text-[#2997ff] text-xs flex items-center gap-2 animate-fade-in font-medium">
           <Activity size={14} className="shrink-0" />
           <span>{queueMsg}</span>
         </div>
       )}
 
       {/* ── Live Stats Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="rounded-2xl border border-zinc-800/80 bg-[#0C0F17] p-5 shadow-xl flex items-center justify-between">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="rounded-2xl border border-white/[0.06] bg-[#18181a] p-5 shadow-[0_8px_24px_rgba(0,0,0,0.3)] flex items-center justify-between">
           <div className="space-y-1">
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">
+            <span className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
               Clientes Online Agora
             </span>
-            <span className="text-2xl font-black text-white tracking-tight font-mono">
+            <span className="text-2xl font-bold text-white tracking-tight">
               {liveStats.onlineNow}
             </span>
-            <span className="text-[11px] text-emerald-400 font-medium block">
+            <span className="text-[11px] text-[#30d158] font-medium block">
               ✓ Navegando na loja ao vivo
             </span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-            <Users size={22} />
+          <div className="w-11 h-11 rounded-2xl bg-[#30d158]/10 border border-[#30d158]/20 flex items-center justify-center text-[#30d158]">
+            <Users size={19} />
           </div>
         </div>
 
-        <div className="rounded-2xl border border-zinc-800/80 bg-[#0C0F17] p-5 shadow-xl flex items-center justify-between">
+        <div className="rounded-2xl border border-white/[0.06] bg-[#18181a] p-5 shadow-[0_8px_24px_rgba(0,0,0,0.3)] flex items-center justify-between">
           <div className="space-y-1">
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">
+            <span className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
               Clientes no Checkout
             </span>
-            <span className="text-2xl font-black text-white tracking-tight font-mono">
+            <span className="text-2xl font-bold text-white tracking-tight">
               {liveStats.inCartNow}
             </span>
-            <span className="text-[11px] text-blue-400 font-medium block">
+            <span className="text-[11px] text-[#2997ff] font-medium block">
               ✓ AddToCart / Checkout
             </span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-            <ShoppingCart size={22} />
+          <div className="w-11 h-11 rounded-2xl bg-[#2997ff]/10 border border-[#2997ff]/20 flex items-center justify-center text-[#2997ff]">
+            <ShoppingCart size={19} />
           </div>
         </div>
 
-        <div className="rounded-2xl border border-zinc-800/80 bg-[#0C0F17] p-5 shadow-xl flex items-center justify-between">
+        <div className="rounded-2xl border border-white/[0.06] bg-[#18181a] p-5 shadow-[0_8px_24px_rgba(0,0,0,0.3)] flex items-center justify-between">
           <div className="space-y-1">
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">
+            <span className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
               Saúde da Fila CAPI
             </span>
-            <span className="text-2xl font-black text-indigo-400 tracking-tight font-mono">
+            <span className="text-2xl font-bold text-white tracking-tight">
               {capiDeliveryRate}%
             </span>
-            <span className="text-[11px] text-indigo-300 font-medium block">
+            <span className="text-[11px] text-white/50 font-medium block">
               ✓ Entrega em tempo real
             </span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-            <Database size={22} />
+          <div className="w-11 h-11 rounded-2xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-white/70">
+            <Database size={19} />
           </div>
         </div>
 
-        <div className="rounded-2xl border border-zinc-800/80 bg-[#0C0F17] p-5 shadow-xl flex items-center justify-between">
+        <div className="rounded-2xl border border-white/[0.06] bg-[#18181a] p-5 shadow-[0_8px_24px_rgba(0,0,0,0.3)] flex items-center justify-between">
           <div className="space-y-1">
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">
+            <span className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block">
               Qualidade do Rastreamento
             </span>
-            <span className="text-2xl font-black text-purple-400 tracking-tight font-mono">
-              {emqScore} <span className="text-xs text-zinc-500 font-normal">/ 100</span>
+            <span className="text-2xl font-bold text-white tracking-tight">
+              {emqScore} <span className="text-xs text-white/30 font-normal">/ 100</span>
             </span>
-            <span className="text-[11px] text-purple-300 font-medium block">
+            <span className="text-[11px] text-[#30d158] font-medium block">
               ✓ 100% com SHA-256 + PII
             </span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-            <ShieldCheck size={22} />
+          <div className="w-11 h-11 rounded-2xl bg-[#30d158]/10 border border-[#30d158]/20 flex items-center justify-center text-[#30d158]">
+            <ShieldCheck size={19} />
           </div>
         </div>
       </div>

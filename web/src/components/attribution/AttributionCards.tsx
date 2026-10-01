@@ -12,6 +12,7 @@ interface AttributionCardsProps {
   realRoas: number | null;
   realCpa: number | null;
   modelLabel: string;
+  showTechnicalDetails?: boolean;
 }
 
 export function AttributionCards({
@@ -23,6 +24,7 @@ export function AttributionCards({
   realRoas,
   realCpa,
   modelLabel,
+  showTechnicalDetails = false,
 }: AttributionCardsProps) {
   const fmt = (v: number) =>
     `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -36,35 +38,40 @@ export function AttributionCards({
   const cards = [
     {
       id: "total_revenue",
-      title: "Total Revenue",
+      title: "Faturamento atribuído",
       value: fmt(totalRevenue),
-      subtext: `Atribuído via ${modelLabel}`,
+      subtext: "Valor das vendas conectadas às suas campanhas",
+      decisionExplanation: `Atribuído pelo critério: ${modelLabel}`,
       badge: "100% Auditado",
       badgeColor: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
       icon: DollarSign,
       iconColor: "text-emerald-400",
       iconBg: "bg-emerald-500/10",
+      techSubtext: `Ledger Idempotente (${modelLabel})`,
     },
     {
       id: "recovered_revenue",
-      title: "Recovered Revenue",
+      title: "Receita recuperada",
       value: fmt(recoveredRevenue),
-      subtext: `${recoveredPercent}% do faturamento resgatado`,
-      badge: "ATM Forensic",
+      subtext: "Vendas identificadas via rastreamento avançado ATM",
+      decisionExplanation: `${recoveredPercent}% das vendas foram salvas de perdas por bloqueadores de rastreio`,
+      badge: "Rastreio Avançado",
       badgeColor: "bg-purple-500/10 text-purple-400 border-purple-500/20",
       icon: Sparkles,
       iconColor: "text-purple-400",
       iconBg: "bg-purple-500/10",
+      techSubtext: "ATM Forensic Hash & Cookie Resilient",
     },
     {
       id: "real_roas",
-      title: "Real ROAS",
+      title: "ROAS real",
       value: realRoas !== null && realRoas > 0 ? `${realRoas.toFixed(2)}x` : "—",
-      subtext:
+      subtext: "Retorno real do investimento em anúncios",
+      decisionExplanation:
         realRoas !== null && realRoas > 0
-          ? "Receita contábil ÷ Spend real"
-          : "Spend não conectado",
-      badge: realRoas !== null && realRoas > 0 ? "Sem Inflação" : "Indisponível",
+          ? `Cada R$ 1 investido gerou R$ ${realRoas.toFixed(2).replace(".", ",")} em vendas`
+          : "Conecte o investimento para ver o retorno exato",
+      badge: realRoas !== null && realRoas > 0 ? "Sem Inflação" : "Pendente",
       badgeColor:
         realRoas !== null && realRoas > 0
           ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
@@ -72,16 +79,18 @@ export function AttributionCards({
       icon: TrendingUp,
       iconColor: "text-blue-400",
       iconBg: "bg-blue-500/10",
+      techSubtext: "Receita Atribuída ÷ Ad Spend",
     },
     {
       id: "real_cpa",
-      title: "Real CPA",
+      title: "Custo por venda",
       value: realCpa !== null && realCpa > 0 ? fmt(realCpa) : "—",
-      subtext:
+      subtext: "Quanto custa gerar cada compra",
+      decisionExplanation:
         realCpa !== null && realCpa > 0
-          ? "Spend real ÷ Pedidos auditados"
-          : "Spend não conectado",
-      badge: realCpa !== null && realCpa > 0 ? "Custo Real" : "Indisponível",
+          ? `Você investe em média ${fmt(realCpa)} em mídia para fechar cada pedido`
+          : "Conecte o investimento para ver o custo por venda",
+      badge: realCpa !== null && realCpa > 0 ? "Custo Real" : "Pendente",
       badgeColor:
         realCpa !== null && realCpa > 0
           ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
@@ -89,28 +98,33 @@ export function AttributionCards({
       icon: Target,
       iconColor: "text-amber-400",
       iconBg: "bg-amber-500/10",
+      techSubtext: "Ad Spend ÷ Pedidos Auditados",
     },
     {
       id: "total_orders",
-      title: "Total Orders",
+      title: "Pedidos identificados",
       value: totalOrders.toLocaleString("pt-BR"),
-      subtext: "Vendas únicas no Ledger",
+      subtext: "Compras encontradas e atribuídas às campanhas",
+      decisionExplanation: "Total de vendas com origem de anúncio comprovada",
       badge: "Pedidos Pagos",
       badgeColor: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
       icon: ShoppingBag,
       iconColor: "text-cyan-400",
       iconBg: "bg-cyan-500/10",
+      techSubtext: "Deduplicated Order Ledger",
     },
     {
       id: "assisted_conversions",
-      title: "Assisted Conversions",
+      title: "Campanhas que ajudaram",
       value: assistedConversions.toLocaleString("pt-BR"),
-      subtext: `${assistedPercent}% exigiram multi-touch`,
-      badge: "Jornada Longa",
+      subtext: "Anúncios que participaram mesmo sem serem o último clique",
+      decisionExplanation: `${assistedPercent}% das compras dependem de mais de 1 anúncio para fechar`,
+      badge: "Jornada Multi-Touch",
       badgeColor: "bg-violet-500/10 text-violet-400 border-violet-500/20",
       icon: GitFork,
       iconColor: "text-violet-400",
       iconBg: "bg-violet-500/10",
+      techSubtext: "Touchpoints Intermediários (is_assisted)",
     },
   ];
 
@@ -143,8 +157,8 @@ export function AttributionCards({
             key={card.id}
             className="bg-[#11141E] border border-zinc-800/80 hover:border-zinc-700/80 rounded-xl p-4 flex flex-col justify-between transition-all duration-200 shadow-lg hover:shadow-xl group"
           >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-zinc-400 group-hover:text-zinc-300 transition-colors">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-medium text-zinc-300 group-hover:text-white transition-colors">
                 {card.title}
               </span>
               <div
@@ -157,20 +171,33 @@ export function AttributionCards({
               </div>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <div className="text-lg font-bold text-white tracking-tight">
                 {card.value}
               </div>
-              <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-0.5">
-                <span className="truncate mr-1">{card.subtext}</span>
-                <span
-                  className={cn(
-                    "px-1.5 py-0.5 rounded text-[9px] font-semibold border whitespace-nowrap",
-                    card.badgeColor
-                  )}
-                >
-                  {card.badge}
-                </span>
+
+              <p className="text-[11px] text-zinc-400 leading-tight">
+                {card.subtext}
+              </p>
+
+              <div className="pt-2 border-t border-zinc-800/60 space-y-1">
+                <p className="text-[10px] text-purple-300/90 font-medium leading-tight">
+                  💡 {card.decisionExplanation}
+                </p>
+
+                {showTechnicalDetails && (
+                  <div className="flex items-center justify-between text-[9px] font-mono text-zinc-500 pt-0.5">
+                    <span className="truncate">{card.techSubtext}</span>
+                    <span
+                      className={cn(
+                        "px-1 py-0.2 rounded border whitespace-nowrap ml-1",
+                        card.badgeColor
+                      )}
+                    >
+                      {card.badge}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -179,3 +206,4 @@ export function AttributionCards({
     </div>
   );
 }
+

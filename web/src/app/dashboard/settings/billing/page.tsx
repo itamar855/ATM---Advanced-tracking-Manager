@@ -102,36 +102,36 @@ export default function BillingPage() {
   };
 
   return (
-    <div className="space-y-6 fade-in max-w-5xl mx-auto">
+    <div className="space-y-6 fade-in max-w-5xl mx-auto pb-12 select-none">
       {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-bold text-[var(--color-text-primary)] tracking-tight">
+        <h1 className="text-xl font-bold text-white tracking-tight">
           Assinatura e Plano
         </h1>
-        <p className="text-sm text-[var(--color-text-muted)] mt-1">
+        <p className="text-[13px] text-white/40 mt-1">
           Gerencie seu plano de assinatura e faturamento no Mercado Pago
         </p>
       </div>
 
       {/* Current plan card */}
-      <div className="glass-card p-6 flex flex-col md:flex-row items-center justify-between gap-6">
+      <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 shadow-[0_8px_24px_rgba(0,0,0,0.3)]">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-[var(--color-brand-400)]/10 flex items-center justify-center text-[var(--color-brand-300)]">
-            <CreditCard size={24} />
+          <div className="w-12 h-12 rounded-2xl bg-[#2997ff]/10 border border-[#2997ff]/20 flex items-center justify-center text-[#2997ff]">
+            <CreditCard size={22} />
           </div>
           <div>
-            <h3 className="text-base font-semibold text-[var(--color-text-primary)]">
+            <h3 className="text-sm font-semibold text-white/90">
               Plano Atual:{" "}
-              <span className="text-gradient capitalize font-bold">{currentPlan}</span>
+              <span className="text-[#2997ff] capitalize font-bold">{currentPlan}</span>
             </h3>
-            <p className="text-xs text-[var(--color-text-muted)] mt-1">
+            <p className="text-xs text-white/40 mt-0.5">
               Seu plano é renovado mensalmente de forma automática.
             </p>
           </div>
         </div>
 
         {currentPlan === "free" && (
-          <div className="flex items-center gap-2 text-xs text-[var(--color-warning-400)] px-3 py-1.5 rounded-lg bg-[var(--color-warning-500)]/10 border border-[var(--color-warning-500)]/20">
+          <div className="flex items-center gap-2 text-xs text-[#ffd60a] px-3.5 py-1.5 rounded-full bg-[#ffd60a]/10 border border-[#ffd60a]/20 font-medium">
             <ShieldAlert size={14} />
             <span>Métricas avançadas e CAPI bloqueadas neste plano</span>
           </div>
@@ -139,40 +139,40 @@ export default function BillingPage() {
       </div>
 
       {/* Pricing Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-2">
         {plans.map((plan) => {
           const isCurrent = currentPlan.toLowerCase() === plan.name.toLowerCase();
 
           return (
             <div
               key={plan.name}
-              className={`glass-card p-6 flex flex-col justify-between relative ${
-                plan.popular ? "border-[var(--color-brand-400)] bg-[var(--color-bg-card-hover)] shadow-glow" : ""
+              className={`bg-[#18181a] border rounded-3xl p-7 flex flex-col justify-between relative shadow-[0_8px_24px_rgba(0,0,0,0.3)] transition-all ${
+                plan.popular ? "border-[#2997ff]/40 bg-[#1a1a1d] shadow-[0_16px_40px_rgba(41,151,255,0.12)]" : "border-white/[0.06]"
               }`}
             >
               {plan.popular && (
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-[var(--color-brand-500)] to-[var(--color-accent-500)] text-white text-[10px] font-bold px-3 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-md">
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#2997ff] text-white text-[10px] font-bold px-3 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-md">
                   <Sparkles size={10} />
                   Recomendado
                 </span>
               )}
 
               <div>
-                <h3 className="text-lg font-bold text-[var(--color-text-primary)]">{plan.name}</h3>
-                <p className="text-xs text-[var(--color-text-muted)] mt-1">{plan.limit}</p>
+                <h3 className="text-base font-bold text-white tracking-tight">{plan.name}</h3>
+                <p className="text-xs text-white/40 mt-1">{plan.limit}</p>
 
                 <div className="mt-5 flex items-baseline">
-                  <span className="text-3xl font-extrabold text-[var(--color-text-primary)]">
+                  <span className="text-3xl font-extrabold text-white tracking-tight">
                     {formatCurrency(plan.price)}
                   </span>
-                  <span className="text-xs text-[var(--color-text-muted)] ml-1">/mês</span>
+                  <span className="text-xs text-white/40 ml-1.5">/mês</span>
                 </div>
 
                 <ul className="mt-6 space-y-3">
                   {plan.features.map((feature) => (
-                    <li key={feature} className="flex items-start gap-2.5 text-xs text-[var(--color-text-secondary)]">
-                      <CheckCircle2 size={14} className="text-[var(--color-brand-300)] shrink-0 mt-0.5" />
-                      <span>{feature}</span>
+                    <li key={feature} className="flex items-start gap-2.5 text-xs text-white/60">
+                      <CheckCircle2 size={14} className="text-[#30d158] shrink-0 mt-0.5" />
+                      <span className="leading-relaxed">{feature}</span>
                     </li>
                   ))}
                 </ul>
@@ -182,9 +182,11 @@ export default function BillingPage() {
                 <button
                   onClick={() => handleSubscribe(plan.name, plan.price)}
                   disabled={loading || isCurrent}
-                  className={`w-full ${
-                    plan.popular ? "btn-primary" : "btn-secondary"
-                  } py-2.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-2`}
+                  className={`w-full py-2.5 text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+                    plan.popular
+                      ? "bg-[#2997ff] hover:brightness-110 text-white shadow-[0_4px_16px_rgba(41,151,255,0.25)]"
+                      : "bg-white/[0.06] hover:bg-white/[0.1] text-white/90 border border-white/[0.08]"
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {loading ? (
                     <Loader2 size={14} className="animate-spin" />
