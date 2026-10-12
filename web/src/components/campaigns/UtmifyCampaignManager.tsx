@@ -828,7 +828,7 @@ export function UtmifyCampaignManager({
     }
   };
 
-  const handleSaveBudget = async (id: string, level: "campaign" | "adset") => {
+  const handleSaveBudget = async (id: string, level: "campaign" | "adset", accountCurrency?: string) => {
     const num = Number(editBudgetValue);
     if (isNaN(num) || num <= 0) {
       alert("Digite um valor de orçamento válido.");
@@ -845,6 +845,9 @@ export function UtmifyCampaignManager({
           level,
           action: "budget",
           value: num,
+          // O editor inline exibe e recebe o orçamento em BRL; o backend converte para a moeda nativa da conta
+          value_currency: "BRL",
+          accountCurrency,
           store_id: activeStore?.id,
         }),
       });
@@ -1707,7 +1710,8 @@ export function UtmifyCampaignManager({
                             onClick={() =>
                               handleSaveBudget(
                                 row.id,
-                                activeTab === "campaigns" ? "campaign" : "adset"
+                                activeTab === "campaigns" ? "campaign" : "adset",
+                                (row as any).currency_original || (row as any).currency
                               )
                             }
                             className="p-1 rounded bg-emerald-500 text-black hover:bg-emerald-400"
@@ -2061,12 +2065,12 @@ export function UtmifyCampaignManager({
                                   className="w-20 bg-zinc-800/80 border border-blue-500 rounded px-1.5 py-0.5 text-xs text-white font-mono text-right focus:outline-none"
                                   autoFocus
                                   onKeyDown={(e) => {
-                                    if (e.key === "Enter") handleSaveBudget(row.id, activeTab === "campaigns" ? "campaign" : "adset");
+                                    if (e.key === "Enter") handleSaveBudget(row.id, activeTab === "campaigns" ? "campaign" : "adset", (row as any).currency_original || (row as any).currency);
                                     if (e.key === "Escape") setEditingBudgetId(null);
                                   }}
                                 />
                                 <button
-                                  onClick={() => handleSaveBudget(row.id, activeTab === "campaigns" ? "campaign" : "adset")}
+                                  onClick={() => handleSaveBudget(row.id, activeTab === "campaigns" ? "campaign" : "adset", (row as any).currency_original || (row as any).currency)}
                                   className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
                                 >
                                   <Check size={10} />

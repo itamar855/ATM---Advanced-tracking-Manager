@@ -531,7 +531,7 @@ export async function GET(request: NextRequest) {
       );
 
       // 1. Busca os metadados da campanha, adsets e insights em chamada direta resiliente (isenta de Code 17)
-      const fields = "id,name,account_id,adsets.limit(250){id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id},insights.level(adset).limit(250){adset_id,spend,impressions,clicks,actions}";
+      const fields = `id,name,account_id,adsets.limit(250){id,name,status,effective_status,daily_budget,lifetime_budget,updated_time,campaign_id},insights.level(adset).time_range(${timeRangeParam}).limit(250){adset_id,spend,impressions,clicks,actions}`;
       const nestedUrl = `https://graph.facebook.com/v23.0/${requestedCampaignId}?fields=${fields}&access_token=${token}`;
 
       const [campNestedRes, dbEventsResult, entityHistoryResult] = await Promise.all([
@@ -842,7 +842,7 @@ export async function GET(request: NextRequest) {
       );
 
       // 1. Busca os metadados do adset, anúncios e insights em chamada direta resiliente (isenta de Code 17)
-      const fields = "id,name,campaign_id,account_id,ads.limit(250){id,name,status,effective_status,updated_time,adset_id,campaign_id},insights.level(ad).limit(250){ad_id,spend,impressions,clicks,actions}";
+      const fields = `id,name,campaign_id,account_id,ads.limit(250){id,name,status,effective_status,updated_time,adset_id,campaign_id},insights.level(ad).time_range(${timeRangeParam}).limit(250){ad_id,spend,impressions,clicks,actions}`;
       const nestedUrl = `https://graph.facebook.com/v23.0/${requestedAdsetId}?fields=${fields}&access_token=${token}`;
 
       const [adsetNestedRes, dbEventsResult] = await Promise.all([

@@ -151,6 +151,29 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Entrada em BRL (opt-in via value_currency): converte para a moeda nativa da conta antes de enviar à Meta.
+      // Espelha exatamente convertToBrl(): apenas USD é convertido; demais moedas são exibidas 1:1.
+      const inputCurrency = String(body.value_currency || "").toUpperCase();
+      if (inputCurrency === "BRL") {
+        const budgetCurrency = String(accountCurrency || budgetSnapshot?.currency_original || "").toUpperCase();
+        if (!budgetCurrency) {
+          return NextResponse.json(
+            { ok: false, error: "Não foi possível identificar a moeda da conta de anúncio. Atualize a tela e tente novamente." },
+            { status: 400 }
+          );
+        }
+        if (budgetCurrency === "USD") {
+          const rateForInput = Number(budgetSnapshot?.exchange_rate_used || usdBrlRate);
+          if (!rateForInput || isNaN(rateForInput) || rateForInput <= 0) {
+            return NextResponse.json(
+              { ok: false, error: "Cotação USD/BRL indisponível. Tente novamente em instantes." },
+              { status: 400 }
+            );
+          }
+          budgetAmount = budgetAmount / rateForInput;
+        }
+      }
+
       const budgetCents = Math.round(budgetAmount * 100);
 
       if (isNaN(budgetCents) || budgetCents <= 0) {
@@ -377,6 +400,8 @@ export async function POST(request: NextRequest) {
             exchange_rate_used: rateUsed,
             usd_rate: rateUsed,
             old_metrics: oldMetrics,
+            budget_input_currency: String(body.value_currency || curr).toUpperCase(),
+            new_budget_original: typeof payload.daily_budget === "number" ? payload.daily_budget / 100 : null,
           },
         });
       } catch (histErr) {
