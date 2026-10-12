@@ -828,12 +828,41 @@ export function UtmifyCampaignManager({
     }
   };
 
-  const handleSaveBudget = async (id: string, level: "campaign" | "adset", accountCurrency?: string) => {
+  const handleSaveBudget = async (
+    target: string | any,
+    level: "campaign" | "adset",
+    accountCurrency?: string
+  ) => {
+    const isRowObj = typeof target === "object" && target !== null && target.id;
+    const id = isRowObj ? target.id : String(target);
+    const rowObj = isRowObj ? target : null;
+    const resolvedAccountCurrency = accountCurrency || rowObj?.currency_original || rowObj?.currency;
+
     const num = Number(editBudgetValue);
     if (isNaN(num) || num <= 0) {
       alert("Digite um valor de orçamento válido.");
       return;
     }
+
+    const currentMetricsPayload = rowObj
+      ? {
+          name: rowObj.name,
+          budget: Number(rowObj.budget || 0),
+          budget_original: Number(rowObj.budget_original ?? rowObj.budget ?? 0),
+          spend: Number(rowObj.spend || 0),
+          spend_original: Number(rowObj.spend_original || 0),
+          spend_converted: Number(rowObj.spend_converted ?? rowObj.spend ?? 0),
+          sales: Number(rowObj.sales || 0),
+          revenue: Number(rowObj.revenue || 0),
+          profit: Number(rowObj.profit || 0),
+          roas: Number(rowObj.roas || 0),
+          cpa: Number(rowObj.cpa || 0),
+          roi: Number(rowObj.roi || 0),
+          currency_original: rowObj.currency_original || rowObj.currency || "USD",
+          exchange_rate_used: Number(rowObj.exchange_rate_used || 1),
+          date_preset: datePreset,
+        }
+      : undefined;
 
     setActionLoadingId(id);
     try {
@@ -847,7 +876,8 @@ export function UtmifyCampaignManager({
           value: num,
           // O editor inline exibe e recebe o orçamento em BRL; o backend converte para a moeda nativa da conta
           value_currency: "BRL",
-          accountCurrency,
+          accountCurrency: resolvedAccountCurrency,
+          current_metrics: currentMetricsPayload,
           store_id: activeStore?.id,
         }),
       });
@@ -1709,7 +1739,7 @@ export function UtmifyCampaignManager({
                           <button
                             onClick={() =>
                               handleSaveBudget(
-                                row.id,
+                                row,
                                 activeTab === "campaigns" ? "campaign" : "adset",
                                 (row as any).currency_original || (row as any).currency
                               )
@@ -2065,12 +2095,12 @@ export function UtmifyCampaignManager({
                                   className="w-20 bg-zinc-800/80 border border-blue-500 rounded px-1.5 py-0.5 text-xs text-white font-mono text-right focus:outline-none"
                                   autoFocus
                                   onKeyDown={(e) => {
-                                    if (e.key === "Enter") handleSaveBudget(row.id, activeTab === "campaigns" ? "campaign" : "adset", (row as any).currency_original || (row as any).currency);
+                                    if (e.key === "Enter") handleSaveBudget(row, activeTab === "campaigns" ? "campaign" : "adset", (row as any).currency_original || (row as any).currency);
                                     if (e.key === "Escape") setEditingBudgetId(null);
                                   }}
                                 />
                                 <button
-                                  onClick={() => handleSaveBudget(row.id, activeTab === "campaigns" ? "campaign" : "adset", (row as any).currency_original || (row as any).currency)}
+                                  onClick={() => handleSaveBudget(row, activeTab === "campaigns" ? "campaign" : "adset", (row as any).currency_original || (row as any).currency)}
                                   className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
                                 >
                                   <Check size={10} />

@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
       source_action?: string;
       copies?: number;
       newBudget?: number | string | null;
+      current_metrics?: any;
     };
 
     if (!id || !action || !store_id) {
@@ -120,7 +121,34 @@ export async function POST(request: NextRequest) {
       }
 
       // Captura segura de métricas antes da alteração na Meta (100% backend)
-      if (normalizedLevel === "campaign" || normalizedLevel === "adset") {
+      // Prioridade 1: snapshot contextual enviado pelo cliente (imune a isolamento de memória serverless)
+      if (body.current_metrics && typeof body.current_metrics === "object") {
+        const cm = body.current_metrics;
+        budgetSnapshot = {
+          name: cm.name || "",
+          budget: Number(cm.budget || 0),
+          budget_original: Number(cm.budget_original ?? cm.budget ?? 0),
+          spend: Number(cm.spend || 0),
+          spend_original: Number(cm.spend_original || 0),
+          spend_converted: Number(cm.spend_converted ?? cm.spend ?? 0),
+          sales: Number(cm.sales || 0),
+          revenue: Number(cm.revenue || 0),
+          profit: Number(cm.profit || 0),
+          roas: Number(cm.roas || 0),
+          cpa: Number(cm.cpa || 0),
+          roi: Number(cm.roi || 0),
+          currency_original: cm.currency_original || cm.currency || curr,
+          exchange_rate_used: Number(cm.exchange_rate_used || usdBrlRate || 1.0),
+          date_preset: cm.date_preset || "today",
+          timezone: cm.timezone || "America/Sao_Paulo",
+          snapshot_source: "cache" as const,
+        };
+        snapshotSource = "client_snapshot" as any;
+        datePresetUsed = budgetSnapshot.date_preset;
+        timezoneUsed = budgetSnapshot.timezone;
+        entityName = budgetSnapshot.name;
+        previousBudget = budgetSnapshot.budget;
+      } else if (normalizedLevel === "campaign" || normalizedLevel === "adset") {
         budgetSnapshot = getCachedEntityMetrics(store_id, id, normalizedLevel);
         if (budgetSnapshot) {
           snapshotSource = "cache";
