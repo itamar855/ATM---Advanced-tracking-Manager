@@ -2,6 +2,7 @@ import { createAdminClient } from "../supabase/server";
 import { sendMetaCAPIEvent, MetaEvent } from "../meta/capi";
 import { resolveMetaAccessToken } from "../meta/token";
 import { hashEmail, hashPhone, hashState, sha256Hash } from "../encryption";
+import { getStateFromZip } from "./event-builder";
 
 export interface VisitorPIIData {
   email?: string | null;
@@ -390,22 +391,39 @@ export async function enrichAndFlushBufferedEvents(
 ): Promise<{ flushed: number; errors: number }> {
   const finalStoreId = storeId || "dckb5g-7d";
 
-  // Se não temos dados de contato novos OU não temos nenhum identificador inequívoco, aborta
-  const phone = normalizePhone(pii.phone);
-  const email = normalizeEmail(pii.email);
-  if (!phone && !email) return { flushed: 0, errors: 0 };
   if (!trackId && !fbp) return { flushed: 0, errors: 0 };
 
   const supabase = createAdminClient();
 
-  // 1. Busca eventos com status 'buffered' desta loja
+  // 0. Consolidação com perfil vivo consolidado em visitor_identities
+  let stitched: VisitorPIIData = {};
+  try {
+    stitched = await getVisitorIdentity(finalStoreId, trackId, fbp);
+  } catch {}
+
+  const phone = normalizePhone(pii.phone) || normalizePhone(stitched.phone);
+  const email = normalizeEmail(pii.email) || normalizeEmail(stitched.email);
+
+  // Se não temos dados de contato novos nem consolidados, aborta o flush prematuro
+  if (!phone && !email) return { flushed: 0, errors: 0 };
+
+  const firstName = pii.firstName || stitched.firstName;
+  const lastName = pii.lastName || stitched.lastName;
+  const city = pii.city || stitched.city;
+  const zip = pii.zip || stitched.zip;
+  const state = (pii.state || stitched.state || "").trim() || getStateFromZip(zip);
+
+  // 1. Busca eventos com status 'buffered' desta loja nos últimos 7 dias (janela oficial Meta CAPI)
+  // Utiliza índice (status, created_at) com DESC para pegar primeiro os eventos recentes da sessão atual
+  const sevenDaysAgoIso = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
   const { data: bufferedEvents, error } = await supabase
     .from("events")
     .select("*")
     .eq("store_id", finalStoreId)
     .eq("status", "buffered")
-    .order("created_at", { ascending: true })
-    .limit(20);
+    .gte("created_at", sevenDaysAgoIso)
+    .order("created_at", { ascending: false })
+    .limit(100);
 
   if (error || !bufferedEvents || bufferedEvents.length === 0) {
     return { flushed: 0, errors: 0 };
@@ -443,7 +461,7 @@ export async function enrichAndFlushBufferedEvents(
     const evTrackId = evMeta.track_id;
     const evFbp = evMeta.fbp || evMeta.user_data?.fbp;
 
-    // Regra estrita de match: DEVE bater com track_id OU fbp válidos (elimina match anônimo genérico)
+    // Regra estrita de match: DEVE bater com track_id OU fbp válidos
     const matches = (trackId && evTrackId === trackId) || (fbp && evFbp === fbp);
     if (!matches) continue;
 
@@ -453,25 +471,31 @@ export async function enrichAndFlushBufferedEvents(
       .update({ status: "processing", updated_at: new Date().toISOString() })
       .eq("id", ev.id);
 
-    // Constrói payload Meta CAPI enriquecido
+    // Constrói payload Meta CAPI enriquecido com endereço e PII completos
     const user_data: MetaEvent["user_data"] = {
       fbp: fbp || evFbp || undefined,
-      fbc: pii.fbc || evMeta.fbc || undefined,
-      client_ip_address: pii.client_ip || evMeta.client_ip || undefined,
-      client_user_agent: pii.client_user_agent || evMeta.client_user_agent || undefined,
+      fbc: pii.fbc || stitched.fbc || evMeta.fbc || undefined,
+      client_ip_address: pii.client_ip || stitched.client_ip || evMeta.client_ip || undefined,
+      client_user_agent: pii.client_user_agent || stitched.client_user_agent || evMeta.client_user_agent || undefined,
     };
 
     if (email) user_data.em = [hashEmail(email)!];
     if (phone) user_data.ph = [hashPhone(phone)!];
-    if (pii.firstName) {
-      user_data.fn = [sha256Hash(pii.firstName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
+    if (firstName) {
+      user_data.fn = [sha256Hash(firstName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
     }
-    if (pii.lastName) {
-      user_data.ln = [sha256Hash(pii.lastName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
+    if (lastName) {
+      user_data.ln = [sha256Hash(lastName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
     }
-    if (pii.city) user_data.ct = [sha256Hash(pii.city.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
-    if (pii.state) user_data.st = [hashState(pii.state)];
-    if (pii.zip) user_data.zp = [sha256Hash(pii.zip.replace(/\D/g, ""))];
+    if (city) {
+      user_data.ct = [sha256Hash(city.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
+    }
+    if (state) {
+      user_data.st = [hashState(state)];
+    }
+    if (zip) {
+      user_data.zp = [sha256Hash(zip.replace(/\D/g, ""))];
+    }
     user_data.country = [sha256Hash("br")];
     user_data.co = [sha256Hash("br")];
 
@@ -508,9 +532,17 @@ export async function enrichAndFlushBufferedEvents(
     }
 
     const latencyMs = Date.now() - startTime;
-    const userDataKeys: string[] = ["fbp", "fbc", "ip", "ua", "addr"];
+    const userDataKeys: string[] = ["fbp", "country", "co"];
+    if (user_data.fbc) userDataKeys.push("fbc");
+    if (user_data.client_ip_address) userDataKeys.push("client_ip_address");
+    if (user_data.client_user_agent) userDataKeys.push("client_user_agent");
     if (email) userDataKeys.push("em");
     if (phone) userDataKeys.push("ph");
+    if (firstName) userDataKeys.push("fn");
+    if (lastName) userDataKeys.push("ln");
+    if (city) userDataKeys.push("ct");
+    if (state) userDataKeys.push("st");
+    if (zip) userDataKeys.push("zp");
     if (user_data.external_id) userDataKeys.push("external_id");
 
     const newScore = Math.min(100, Math.round((userDataKeys.length / 8) * 100));
@@ -533,7 +565,10 @@ export async function enrichAndFlushBufferedEvents(
             ...(evMeta.order_details || {}),
             customer_email: email || evMeta.order_details?.customer_email,
             customer_phone: phone || evMeta.order_details?.customer_phone,
-            customer_name: pii.firstName ? `${pii.firstName} ${pii.lastName || ""}`.trim() : evMeta.order_details?.customer_name,
+            customer_name: firstName ? `${firstName} ${lastName || ""}`.trim() : evMeta.order_details?.customer_name,
+            customer_city: city || evMeta.order_details?.customer_city,
+            customer_state: state || evMeta.order_details?.customer_state,
+            customer_zip: zip || evMeta.order_details?.customer_zip,
           },
         },
       })
@@ -542,7 +577,7 @@ export async function enrichAndFlushBufferedEvents(
     if (isOk) {
       flushed++;
       console.log(
-        `[Identity Stitcher] Evento ${ev.event_name} (${ev.event_id.slice(-8)}) liberado do buffer com PH (${phone ? "✓" : "✗"}) e EM (${email ? "✓" : "✗"}) | EMQ: ${newScore}%`
+        `[Identity Stitcher] Evento ${ev.event_name} (${ev.event_id.slice(-8)}) liberado do buffer com sinais [${userDataKeys.join(", ")}] | EMQ: ${newScore}%`
       );
     } else {
       errors++;

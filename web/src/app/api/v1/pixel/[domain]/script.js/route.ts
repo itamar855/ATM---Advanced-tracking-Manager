@@ -147,11 +147,10 @@ function generateATMScript(storeId: string, apiBase: string): string {
     _ctx.customer.country = "BR";
   } catch (e) {}
 
-  // Escuta digitação em qualquer campo da loja
-  document.addEventListener("input", function (e) {
-    var t = e.target;
+  // Escuta digitação e autofill em qualquer campo da loja (contato, endereço, simuladores de frete)
+  function harvestInput(t) {
     if (!t || !t.value) return;
-    var name = (t.name || t.id || t.placeholder || t.className || "").toLowerCase();
+    var name = (t.name || t.id || t.placeholder || t.getAttribute("aria-label") || t.className || "").toLowerCase();
     var val = t.value.trim();
     if (!val || val.length < 2) return;
 
@@ -171,9 +170,12 @@ function generateATMScript(storeId: string, apiBase: string): string {
     } else if (name.includes("sobrenome") || name.includes("last_name") || name.includes("lastname")) {
       _ctx.customer.lastName = val;
       try { localStorage.setItem("atm_p_ln", val); } catch (err) {}
-    } else if (name.includes("cep") || name.includes("zip") || name.includes("postal")) {
-      _ctx.customer.zip = val.replace(/\\D/g, "");
-      try { localStorage.setItem("atm_p_zp", _ctx.customer.zip); } catch (err) {}
+    } else if (name.includes("cep") || name.includes("zip") || name.includes("postal") || name.includes("frete") || name.includes("shipping")) {
+      var cleanZip = val.replace(/\\D/g, "");
+      if (cleanZip.length >= 5) {
+        _ctx.customer.zip = cleanZip;
+        try { localStorage.setItem("atm_p_zp", cleanZip); } catch (err) {}
+      }
     } else if (name.includes("cidade") || name.includes("city")) {
       _ctx.customer.city = val;
       try { localStorage.setItem("atm_p_ct", val); } catch (err) {}
@@ -189,7 +191,10 @@ function generateATMScript(storeId: string, apiBase: string): string {
         triggerLeadEvent();
       }, 1500);
     }
-  }, true);
+  }
+
+  document.addEventListener("input", function (e) { harvestInput(e.target); }, true);
+  document.addEventListener("change", function (e) { harvestInput(e.target); }, true);
 
   var _leadTimeout = null;
   var _leadDispatched = false;
@@ -353,6 +358,15 @@ function generateATMScript(storeId: string, apiBase: string): string {
       value: numPrice > 0 ? numPrice * numQty : (Number(_ctx.product ? _ctx.product.price : 0) * numQty),
       currency: _currency,
       num_items: numQty,
+    }, {
+      email: _ctx.customer.email || "",
+      phone: _ctx.customer.phone || "",
+      firstName: _ctx.customer.firstName || "",
+      lastName: _ctx.customer.lastName || _ctx.customer.firstName || "",
+      city: _ctx.customer.city || "",
+      state: _ctx.customer.state || "",
+      zip: _ctx.customer.zip || "",
+      country: "BR",
     });
   }
 

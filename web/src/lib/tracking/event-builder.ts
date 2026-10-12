@@ -59,6 +59,50 @@ function hashCountry(value: string): string {
 }
 
 /**
+ * Determina deterministicamente o estado brasileiro (UF de 2 letras) a partir do CEP (8 dígitos).
+ * Baseado na divisão postal oficial dos Correios do Brasil.
+ */
+export function getStateFromZip(zip?: string | null): string | null {
+  if (!zip) return null;
+  const digits = zip.replace(/\D/g, "");
+  if (digits.length < 5) return null;
+  const prefix = parseInt(digits.slice(0, 5), 10);
+
+  if (prefix >= 1000 && prefix <= 19999) return "sp";
+  if (prefix >= 20000 && prefix <= 28999) return "rj";
+  if (prefix >= 29000 && prefix <= 29999) return "es";
+  if (prefix >= 30000 && prefix <= 39999) return "mg";
+  if (prefix >= 40000 && prefix <= 48999) return "ba";
+  if (prefix >= 49000 && prefix <= 49999) return "se";
+  if (prefix >= 50000 && prefix <= 56999) return "pe";
+  if (prefix >= 57000 && prefix <= 57999) return "al";
+  if (prefix >= 58000 && prefix <= 58999) return "pb";
+  if (prefix >= 59000 && prefix <= 59999) return "rn";
+  if (prefix >= 60000 && prefix <= 63999) return "ce";
+  if (prefix >= 64000 && prefix <= 64999) return "pi";
+  if (prefix >= 65000 && prefix <= 65999) return "ma";
+  if (prefix >= 66000 && prefix <= 68899) return "pa";
+  if (prefix >= 68900 && prefix <= 68999) return "ap";
+  if (prefix >= 69000 && prefix <= 69299) return "am";
+  if (prefix >= 69300 && prefix <= 69399) return "rr";
+  if (prefix >= 69400 && prefix <= 69899) return "am";
+  if (prefix >= 69900 && prefix <= 69999) return "ac";
+  if (prefix >= 70000 && prefix <= 72799) return "df";
+  if (prefix >= 72800 && prefix <= 72999) return "go";
+  if (prefix >= 73000 && prefix <= 73699) return "df";
+  if (prefix >= 73700 && prefix <= 76799) return "go";
+  if (prefix >= 76800 && prefix <= 76999) return "ro";
+  if (prefix >= 77000 && prefix <= 77999) return "to";
+  if (prefix >= 78000 && prefix <= 78899) return "mt";
+  if (prefix >= 79000 && prefix <= 79999) return "ms";
+  if (prefix >= 80000 && prefix <= 87999) return "pr";
+  if (prefix >= 88000 && prefix <= 89999) return "sc";
+  if (prefix >= 90000 && prefix <= 99999) return "rs";
+
+  return null;
+}
+
+/**
  * Data de nascimento em formato YYYYMMDD → hasheia.
  * Meta aceita: "19900115" → SHA-256.
  */
@@ -216,8 +260,9 @@ export function buildMetaPurchaseEvent(
   }
 
   // Estado (st): código de 2 letras em lowercase
-  if (order.address?.state && order.address.state.trim()) {
-    user_data.st = [hashState(order.address.state)];
+  const purchaseState = (order.address?.state || "").trim() || getStateFromZip(order.address?.zip);
+  if (purchaseState) {
+    user_data.st = [hashState(purchaseState)];
   }
 
   // CEP (zp): apenas números
@@ -230,7 +275,7 @@ export function buildMetaPurchaseEvent(
     const countryHash = hashCountry(order.address.country);
     user_data.country = [countryHash];
     user_data.co = [countryHash];
-  } else if (order.address?.city || order.address?.state || order.address?.zip) {
+  } else if (order.address?.city || order.address?.state || order.address?.zip || purchaseState) {
     const brHash = hashCountry("br");
     user_data.country = [brHash];
     user_data.co = [brHash];
@@ -335,17 +380,17 @@ export function buildBrowserEvent(
   if (userData.city) {
     user_data.ct = [hashCity(userData.city)];
   }
-  if (userData.state) {
-    user_data.st = [hashState(userData.state)];
+  const browserState = (userData.state || "").trim() || getStateFromZip(userData.zip);
+  if (browserState) {
+    user_data.st = [hashState(browserState)];
   }
   if (userData.zip) {
     user_data.zp = [hashZip(userData.zip)];
   }
-  if (userData.country) {
-    const cHash = hashCountry(userData.country);
-    user_data.country = [cHash];
-    user_data.co = [cHash];
-  }
+  const effectiveCountry = (userData.country || "").trim() || (browserState || userData.zip ? "br" : "br");
+  const cHash = hashCountry(effectiveCountry);
+  user_data.country = [cHash];
+  user_data.co = [cHash];
   if (userData.dateOfBirth) {
     user_data.db = [hashDateOfBirth(userData.dateOfBirth)];
   }

@@ -2,6 +2,7 @@ import { createAdminClient } from "../supabase/server";
 import { sendMetaCAPIEvent, MetaEvent } from "../meta/capi";
 import { decrypt, hashEmail, hashPhone, hashState, sha256Hash } from "../encryption";
 import { getVisitorIdentity, normalizeEmail, normalizePhone } from "./identity-stitcher";
+import { getStateFromZip } from "./event-builder";
 import { classifyCapiError } from "./capi-error-classifier";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rridxhzbkitgcodzyctu.supabase.co";
@@ -90,6 +91,7 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
       .from("events")
       .select("*")
       .eq("status", "buffered")
+      .gte("created_at", sevenDaysAgoIso)
       .order("created_at", { ascending: true })
       .limit(maxEvents),
   ]);
@@ -164,8 +166,9 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
     if (orderDetails.customer_city) {
       user_data.ct = [sha256Hash(orderDetails.customer_city.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))];
     }
-    if (orderDetails.customer_state) {
-      user_data.st = [hashState(orderDetails.customer_state)];
+    const queueState = (orderDetails.customer_state || "").trim() || getStateFromZip(orderDetails.customer_zip);
+    if (queueState) {
+      user_data.st = [hashState(queueState)];
     }
     if (orderDetails.customer_zip) {
       user_data.zp = [sha256Hash(orderDetails.customer_zip.replace(/\D/g, ""))];

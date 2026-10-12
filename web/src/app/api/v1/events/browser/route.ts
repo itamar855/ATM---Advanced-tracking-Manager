@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { buildBrowserEvent, getUserDataKeys, BrowserEventName, BrowserUserData, BrowserEventCustomData } from "@/lib/tracking/event-builder";
+import { buildBrowserEvent, getUserDataKeys, getStateFromZip, BrowserEventName, BrowserUserData, BrowserEventCustomData } from "@/lib/tracking/event-builder";
 import { sendMetaCAPIEvent } from "@/lib/meta/capi";
 import { reserveEvent, updateEventResult } from "@/lib/tracking/dedup-engine";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
@@ -304,6 +304,9 @@ export async function POST(request: NextRequest) {
     if (!enrichedUserData.city && stitched.city) enrichedUserData.city = stitched.city;
     if (!enrichedUserData.state && stitched.state) enrichedUserData.state = stitched.state;
     if (!enrichedUserData.zip && stitched.zip) enrichedUserData.zip = stitched.zip;
+    if (!enrichedUserData.state && enrichedUserData.zip) {
+      enrichedUserData.state = getStateFromZip(enrichedUserData.zip) || undefined;
+    }
 
     if (!enrichedUserData.country) enrichedUserData.country = "BR";
 
