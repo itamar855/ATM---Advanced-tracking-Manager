@@ -797,8 +797,31 @@ export function UtmifyCampaignManager({
     const level = activeTab === "campaigns" ? "campaign" : activeTab === "adsets" ? "adset" : "ad";
 
     try {
-      const promises = selectedRowIds.map(id =>
-        fetch("/api/v1/meta/campaigns/manage", {
+      const promises = selectedRowIds.map((id) => {
+        const row = filteredData.find((r: any) => r.id === id);
+        const r = row as any;
+        const resolvedAccountCurrency = r?.currency_original || r?.currency || activeCurrency;
+        const currentMetricsPayload = r
+          ? {
+              name: r.name,
+              budget: Number(r.budget || 0),
+              budget_original: Number(r.budget_original ?? r.budget ?? 0),
+              spend: Number(r.spend || 0),
+              spend_original: Number(r.spend_original || 0),
+              spend_converted: Number(r.spend_converted ?? r.spend ?? 0),
+              sales: Number(r.sales || 0),
+              revenue: Number(r.revenue || 0),
+              profit: Number(r.profit || 0),
+              roas: Number(r.roas || 0),
+              cpa: Number(r.cpa || 0),
+              roi: Number(r.roi || 0),
+              currency_original: r.currency_original || r.currency || "USD",
+              exchange_rate_used: Number(r.exchange_rate_used || 1),
+              date_preset: datePreset,
+            }
+          : undefined;
+
+        return fetch("/api/v1/meta/campaigns/manage", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -806,10 +829,12 @@ export function UtmifyCampaignManager({
             level,
             action: "budget",
             value: bulkBudgetValue,
+            accountCurrency: resolvedAccountCurrency,
+            current_metrics: currentMetricsPayload,
             store_id: activeStore?.id,
           }),
-        })
-      );
+        });
+      });
       
       const results = await Promise.all(promises);
       for (const res of results) {
