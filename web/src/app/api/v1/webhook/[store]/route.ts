@@ -23,8 +23,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const payload = JSON.parse(rawBody);
     const orderId = String(payload.id);
 
-    const isPending = payload.financial_status === "pending" || payload.financial_status === "authorized";
-    const gatewayRaw = String(payload.payment_gateway_names?.[0] || payload.gateway || "").toLowerCase();
+    const statusLower = String(payload.financial_status || "").toLowerCase();
+    const isPending =
+      statusLower === "pending" ||
+      statusLower === "authorized" ||
+      statusLower === "unpaid" ||
+      statusLower === "waiting_payment" ||
+      statusLower.includes("pix");
+
+    const gatewayNames = Array.isArray(payload.payment_gateway_names) ? payload.payment_gateway_names.join(" ") : "";
+    const gatewayRaw = String(gatewayNames + " " + (payload.gateway || "") + " " + (payload.tags || "")).toLowerCase();
     const isPixMethod = gatewayRaw.includes("pix");
 
     const orderNoteAttributes = payload.note_attributes || [];
@@ -48,14 +56,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       payload.cancel_reason
     );
 
-    const isRealPix = isPixMethod && !isAbandon && isPending && hasPixData;
+    const isRealPix = (isPixMethod || hasPixData) && !isAbandon && isPending;
     const isBoleto = gatewayRaw.includes("boleto");
     const hasBoletoData = Boolean(
       payload.boleto_url ||
       payload.boleto_barcode ||
       orderNoteAttributes.some((attr: any) => String(attr?.name || "").toLowerCase().includes("boleto"))
     );
-    const isBoletoPending = isBoleto && !isAbandon && isPending && hasBoletoData;
+    const isBoletoPending = (isBoleto || hasBoletoData) && !isAbandon && isPending;
 
     const shouldNotify = (isRealPix || isBoletoPending);
 

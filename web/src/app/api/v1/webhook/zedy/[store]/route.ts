@@ -21,7 +21,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const eventType = (payload.eventType || payload.event || "").toUpperCase();
     const status = (payload.status || payload.order_status || "").toLowerCase();
     const isApproved = eventType === "ORDER_PAID" || status === "approved" || status === "paid";
-    const isPending = eventType === "ORDER_CREATED" || eventType === "ORDER_PENDING" || status === "pending" || status === "waiting_payment" || status === "aguardando_pagamento";
+    const isExplicitPix =
+      eventType === "PIX_CREATED" ||
+      eventType === "PIX_GENERATED" ||
+      eventType.includes("PIX") ||
+      status.includes("pix");
+
+    const isPending =
+      isExplicitPix ||
+      eventType === "ORDER_CREATED" ||
+      eventType === "ORDER_PENDING" ||
+      status === "pending" ||
+      status === "waiting_payment" ||
+      status === "aguardando_pagamento" ||
+      status === "created";
 
     if (!isApproved && !isPending) {
       return NextResponse.json({ ok: true, message: `Ignorado (evento ${eventType || status} não é venda ou pendente)` }, { status: 200 });
@@ -42,7 +55,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       ""
     ).toLowerCase();
 
-    const isPix = paymentMethodRaw.includes("pix");
+    const isPix = paymentMethodRaw.includes("pix") || isExplicitPix;
     const isBoleto = paymentMethodRaw.includes("boleto");
     const isCard = paymentMethodRaw.includes("card") || paymentMethodRaw.includes("cartao") || paymentMethodRaw.includes("credit");
 
@@ -59,15 +72,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       eventLower === "checkout_started" ||
       eventLower === "initiatecheckout";
 
-    // Evidência real de dados de cobrança PIX gerada
+    // Evidência real de dados de cobrança PIX gerada (incluindo pixQrCode da Zedy)
     const hasPixData = Boolean(
+      payload.pixQrCode ||
       payload.pix_code ||
       payload.pix_qr_code ||
+      payload.pixCode ||
       payload.qr_code ||
       payload.qrcode ||
       payload.qrCode ||
       payload.pix?.code ||
       payload.pix?.qrcode ||
+      payload.pix?.qrCode ||
       payload.pix?.qr_code ||
       payload.payment?.pix?.qrcode ||
       payload.payment?.pix?.code ||
@@ -76,23 +92,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       payload.qr_code_url ||
       payload.charges?.[0]?.last_transaction?.qr_code ||
       payload.charges?.[0]?.last_transaction?.pix_code ||
+      payload.charges?.[0]?.last_transaction?.pix_qr_code ||
       payload.point_of_interaction?.transaction_data?.qr_code
     );
 
     const isExplicitPixEvent =
+      isExplicitPix ||
+      eventLower === "pix_created" ||
       eventLower === "pix_generated" ||
       eventLower === "pix_gerado" ||
-      eventType === "PIX_GENERATED";
+      eventLower.includes("pix") ||
+      eventType.includes("PIX");
 
     const isWaitingPayment =
       statusLower === "waiting_payment" ||
       statusLower === "aguardando_pagamento" ||
-      statusLower === "pending";
+      statusLower === "pending" ||
+      statusLower === "created" ||
+      statusLower.includes("pix");
 
-    // Identificação de PIX realmente gerado (nunca em abandono, e nunca em order_created sem dados reais de PIX)
-    const isRealPix = isPix && !isAbandon && (
+    // Identificação de PIX realmente gerado (nunca em abandono)
+    const isRealPix = !isAbandon && (
       isExplicitPixEvent ||
-      (isWaitingPayment && hasPixData)
+      (isPix && (isWaitingPayment || isPending || hasPixData))
     );
 
     const isPixPending = isRealPix;
@@ -122,9 +144,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // Normalização inicial do cliente e valor para notificação antecipada
     const customer = payload.customer || {};
     const address = payload.address || {};
-    const rawValue = payload.commission?.totalPriceInCents ||
+    let rawVal =
+      payload.commission?.totalPriceInCents ||
+      payload.totalPriceInCents ||
+      payload.priceInCents ||
+      payload.value ||
+      payload.total ||
+      payload.amount ||
       (payload.products || []).reduce((acc: number, p: any) => acc + (p.priceInCents * (p.quantity || 1)), 0);
-    const orderValue = Number(rawValue || 0) / 100; // Converte centavos para reais
+
+    if (typeof rawVal === "string") {
+      rawVal = parseFloat(rawVal.replace("R$", "").replace(/\./g, "").replace(",", ".").trim()) || 0;
+    }
+    const orderValue = rawVal > 1000 && Number.isInteger(rawVal) ? rawVal / 100 : Number(rawVal || 0);
 
     // Método de pagamento — Zedy pode enviar em vários campos
     const paymentMethod =
