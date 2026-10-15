@@ -35,6 +35,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    if (!rawToken) {
+      const { data: store } = await supabase
+        .from("stores")
+        .select("settings")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (store?.settings?.zedy?.api_token) {
+        rawToken = store.settings.zedy.api_token;
+      }
+    }
+
     const lastSync =
       zedyIntegration?.config?.last_sync ||
       metaIntegration?.config?.zedy_last_sync ||
@@ -48,6 +60,7 @@ export async function GET(request: NextRequest) {
       ok: true,
       connected: !!rawToken,
       has_token: !!rawToken,
+      token: rawToken,
       masked_token: maskedToken,
       last_sync: lastSync,
     });
@@ -75,14 +88,41 @@ export async function POST(request: NextRequest) {
     // Criptografa o token para armazenamento seguro
     const tokenEnc = encrypt(cleanToken);
 
-    // Salva na integração do banco
+    // 1. Salva nas configurações da loja (compatível com todas as constraints do Supabase)
+    try {
+      const { data: store } = await supabase
+        .from("stores")
+        .select("id, settings")
+        .eq("id", store_id)
+        .maybeSingle();
+
+      if (store) {
+        await supabase
+          .from("stores")
+          .update({
+            settings: {
+              ...(store.settings || {}),
+              zedy: {
+                api_token: cleanToken,
+                token_enc: tokenEnc,
+                updated_at: new Date().toISOString(),
+              },
+            },
+          })
+          .eq("id", store_id);
+      }
+    } catch (e) {
+      console.warn("[Zedy Store Settings Update Warning]:", e);
+    }
+
+    // 2. Salva na integração existente da loja
     const { data: integrations } = await supabase
       .from("integrations")
-      .select("id, platform, config")
+      .select("id, platform, config, store_id")
       .order("updated_at", { ascending: false });
 
     const targetIntegration =
-      integrations?.find((i) => i.platform === "zedy") ||
+      integrations?.find((i) => i.store_id === store_id) ||
       integrations?.[0];
 
     if (targetIntegration) {

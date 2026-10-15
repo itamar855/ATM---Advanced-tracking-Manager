@@ -75,6 +75,9 @@ export default function OrdersPage() {
       if (mode === "reset_auto") {
         body.reset_today = true;
       }
+      if (activeStore?.id) {
+        body.store_id = activeStore.id;
+      }
       const res = await fetch("/api/v1/sync/zedy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -106,7 +109,10 @@ export default function OrdersPage() {
       const res = await fetch("/api/v1/sync/shopify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reset_today: resetToday }),
+        body: JSON.stringify({
+          store_id: activeStore?.id,
+          reset_today: resetToday,
+        }),
       });
       const data = await res.json();
       if (data.ok) {

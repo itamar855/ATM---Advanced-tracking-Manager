@@ -204,6 +204,7 @@ function IntegrationsContent() {
   const [showAdvancedShopify, setShowAdvancedShopify] = useState(false);
   const [showManualShopifyToken, setShowManualShopifyToken] = useState(false);
   const [zedyConnected, setZedyConnected] = useState(true);
+  const [savingZedy, setSavingZedy] = useState(false);
   const [syncingZedy, setSyncingZedy] = useState(false);
   const [syncingShopify, setSyncingShopify] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
@@ -230,24 +231,54 @@ function IntegrationsContent() {
 </script>
 <script src="${host}/api/v1/pixel/{{ shop.permanent_domain }}/script.js" defer></script>`;
 
+  const handleSaveZedyToken = async () => {
+    if (!zedyToken || !zedyToken.trim()) {
+      alert("Informe o Token da Zedy.");
+      return;
+    }
+    setSavingZedy(true);
+    setSaveSuccessMsg("");
+    try {
+      const res = await fetch("/api/v1/zedy/credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: zedyToken.trim(), store_id: storeId })
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setSaveSuccessMsg("✓ Token da Zedy salvo com sucesso!");
+      } else {
+        alert("Erro ao salvar token: " + (data.error || "Desconhecido"));
+      }
+    } catch (e: any) {
+      alert("Erro ao salvar: " + e.message);
+    } finally {
+      setSavingZedy(false);
+      setTimeout(() => setSaveSuccessMsg(""), 6000);
+    }
+  };
+
   const handleSyncZedy = async () => {
     if (!zedyToken) {
       alert("Token da Zedy não configurado.");
       return;
     }
+    // Salva o token automaticamente antes
+    await handleSaveZedyToken();
+
     setSyncingZedy(true);
     setSaveSuccessMsg("");
     try {
       const res = await fetch("/api/v1/sync/zedy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: zedyToken })
+        body: JSON.stringify({ token: zedyToken.trim() })
       });
       const data = await res.json();
       if (res.ok && data.ok !== false) {
         setSaveSuccessMsg(`Sincronização concluída com sucesso! ${data.synced_count || 0} vendas sincronizadas.`);
       } else {
-        alert("Erro na sincronização: " + (data.error || "Desconhecido"));
+        alert("Aviso de Sincronização Zedy:\n\n" + (data.error || "A Zedy sincroniza vendas automaticamente em tempo real via Webhook."));
       }
     } catch (e: any) {
       alert("Erro na requisição: " + e.message);
@@ -579,6 +610,14 @@ function IntegrationsContent() {
           if (data.telegramNotifyApproved !== undefined) setTelegramNotifyApproved(data.telegramNotifyApproved);
           if (data.telegramNotifyPending !== undefined) setTelegramNotifyPending(data.telegramNotifyPending);
         }
+
+        try {
+          const zedyRes = await fetch("/api/v1/zedy/credentials");
+          if (zedyRes.ok) {
+            const zedyData = await zedyRes.json();
+            if (zedyData.token) setZedyToken(zedyData.token);
+          }
+        } catch {}
       }
     } catch (err) {
       console.warn("[Integrations] Erro ao carregar contas reais:", err);
@@ -1252,22 +1291,34 @@ function IntegrationsContent() {
               </div>
 
               <div>
-                <label className="text-xs font-bold text-zinc-300">API Token de Reconciliação (Zedy)</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-zinc-300">API Token de Reconciliação (Zedy)</label>
+                  <span className="text-[11px] text-zinc-400">Exclusivo da sua loja Zedy</span>
+                </div>
                 <div className="flex items-center gap-2 mt-2">
                   <input
                     type="text"
                     value={zedyToken}
                     onChange={(e) => setZedyToken(e.target.value)}
-                    placeholder="Cole seu Token da Zedy aqui"
+                    placeholder="Cole seu Token da Zedy aqui (zdy_...)"
                     className="flex-1 px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-zinc-300 font-mono focus:outline-none focus:border-[#30d158]"
                   />
                   <button
+                    onClick={handleSaveZedyToken}
+                    disabled={savingZedy || !zedyToken.trim()}
+                    className="px-4 py-2.5 rounded-xl bg-[#30d158] hover:bg-[#30d158]/90 text-black text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-md shadow-[#30d158]/20 disabled:opacity-50 cursor-pointer"
+                  >
+                    {savingZedy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                    Salvar Token
+                  </button>
+                  <button
                     onClick={handleSyncZedy}
                     disabled={syncingZedy}
-                    className="px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                    title="Informações sobre sincronização"
+                    className="px-3.5 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
                   >
                     {syncingZedy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                    Sincronizar Pedidos
+                    Sincronizar
                   </button>
                   <button
                     onClick={handleResetAndSyncZedy}
@@ -1278,9 +1329,16 @@ function IntegrationsContent() {
                     <Trash2 size={14} />
                   </button>
                 </div>
+
+                <div className="mt-3 p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs flex items-start gap-2.5 leading-relaxed">
+                  <span className="text-sm">💡</span>
+                  <div>
+                    <span className="font-semibold text-white">Como funciona o rastreio Zedy:</span> Copie a <strong>URL do Webhook Zedy</strong> acima e cole no painel da sua loja Zedy em <em>Configurações &gt; Webhooks</em>. Todas as vendas novas cairão automaticamente no ATM em tempo real. Para importar pedidos anteriores em lote, vá até a aba <a href="/dashboard/orders" className="text-white underline font-bold hover:text-[#30d158]">Pedidos</a> e use a importação por JSON.
+                  </div>
+                </div>
               </div>
 
-              {saveSuccessMsg && (saveSuccessMsg.includes("Sincronização") || saveSuccessMsg.includes("Reset")) && (
+              {saveSuccessMsg && (saveSuccessMsg.includes("Sincronização") || saveSuccessMsg.includes("Reset") || saveSuccessMsg.includes("Token")) && (
                 <div className="p-3 rounded-2xl bg-[#30d158]/10 border border-[#30d158]/20 flex items-center gap-2 text-[#30d158] text-xs font-bold">
                   <CheckCircle2 size={16} />
                   {saveSuccessMsg}

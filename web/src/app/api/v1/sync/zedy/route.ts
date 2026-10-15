@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     if (ordersToProcess.length === 0) {
       return NextResponse.json({
         ok: false,
-        error: "Nenhum pedido encontrado para sincronização. Forneça o array de pedidos ou verifique a conexão com a API Zedy.",
+        error: "A Zedy Checkout opera via Webhook em tempo real. Configure a URL do Webhook no painel da Zedy para receber novas vendas instantaneamente, ou importe pedidos passados colando o JSON na aba Pedidos.",
         synced_count: 0,
       });
     }

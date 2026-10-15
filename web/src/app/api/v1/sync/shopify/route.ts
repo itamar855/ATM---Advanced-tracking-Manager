@@ -31,8 +31,12 @@ export async function POST(request: NextRequest) {
       store = data;
     }
     if (!store) {
-      const { data: stores } = await supabase.from("stores").select("*").limit(1);
-      store = stores?.[0];
+      const { data: stores } = await supabase.from("stores").select("*");
+      // Prioriza a loja que possui token da Shopify configurado
+      store =
+        stores?.find((s: any) =>
+          Boolean(s.settings?.shopify?.access_token || s.settings?.shopify?.access_token_enc || s.shopify_api_key)
+        ) || stores?.[0];
     }
 
     if (!store) {
