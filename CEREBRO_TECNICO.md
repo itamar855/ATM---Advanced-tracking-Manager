@@ -54,6 +54,8 @@ O ATM opera como uma infraestrutura de rastreamento server-side e atribuição F
 | `/api/v1/meta/campaigns/manage` | `POST` | **Central de Controle:** Executa Play/Pause, Alteração de Orçamento diário (com conversão USD/BRL), Duplicação e Exclusão direto na Graph API. |
 | `/api/v1/orders/list` | `GET` | Lista todos os pedidos rastreados com atribuição CAPI direta e detalhes de cliente e UTMs. |
 | `/api/v1/live` | `GET` | Contador em tempo real de clientes online navegando e clientes no checkout. |
+| `/api/v1/notifications/subscribe` | `POST` | Registra e gerencia credenciais de Web Push (VAPID) por dispositivo móvel/desktop. |
+| `/api/v1/notifications/sound` | `GET` | Serve o áudio customizado ou nativo da loja (`.mp3` / `.wav`) com cabeçalhos de streaming e cache. |
 
 ---
 
@@ -141,6 +143,7 @@ Implementada no serviço [`web/src/lib/currency.ts`](file:///c:/Users/Hard%20Wor
 | **v6.0.0** | 06/09/2026 | **Meta Ads Architecture: Lazy Loading sob Demanda** | Resolução do gargalo de rate limit de Development Access (Code 17 / subcode 2446079) na Meta Graph API: (1) Transição do carregamento monolítico inicial para arquitetura de Lazy Loading sob demanda; (2) Carga inicial leve retorna exclusivamente `accounts` e `campaigns` (`adsets: []`, `ads: []`, `lazy_loading: true`), reduzindo o tempo de carregamento de ~15s para < 800ms; (3) Carregamento granular de conjuntos de anúncios disparado sob demanda (`GET /campaigns/list?campaign_id=X`) com campos aninhados `/{campId}?fields=adsets{...},insights{...}` imunes a rate limit; (4) Carregamento granular de anúncios disparado sob demanda (`GET /campaigns/list?adset_id=X`); (5) Cache isolado e independente por entidade (`store_date_campaign_ID`, `store_date_adset_ID`) em memória (`MEMORY_CACHE`) e preservação acumulativa no `sessionStorage` da aplicação, mantendo métricas contábeis (ROAS, CPA, Lucro, Spend) e histórico intactos. | Antigravity |
 | **v7.0.0** | 07/09/2026 | **Feature & Automação** | **Campaign Action Engine & Central de Inteligência (Fase 7):** Migrations 019 e 020 (`campaign_intelligence_alerts`, `campaign_actions`, `campaign_settings`). Motor de decisões com fila assíncrona, execução e rollback bidirecional de orçamentos e status (play/pause/scale/kill), modal de configurações com modo de aprovação manual ou autônomo, e tolerância zero a regressões validadas por testes unitários e de integração. | Antigravity |
 | **v8.0.0** | 08/09/2026 | **Arquitetura & Unificação Contábil** | **Unificação Contábil Definitiva (Fases 8, 8.1, 8.2, 8.3):** Eliminação de discrepâncias entre Dashboard e Banco. (1) Backfill do `revenue_ledger` com 2.772 fatias de atribuição nos 4 modelos (last_click, first_click, linear, u_shaped) conciliando R$ 75.783,11 (100% exato); (2) Migration 021 criando `campaign_cost_snapshots` com chave única `(store_id, ad_account_id, campaign_id, date)`; (3) Backfill de custos Meta com 719 snapshots persistidos ($ 14.039,83 USD e R$ 71.454,33 BRL); (4) Migração cirúrgica da rota `/api/v1/dashboard/metrics` para ler exclusivamente de `revenue_ledger` e `campaign_cost_snapshots` com fallback resiliente; (5) Suíte de testes `test-dashboard-financial-conciliation.js` com 14/14 testes aprovados. | Antigravity |
+| **v8.1.0** | 15/10/2026 | **Notificações de PIX Gerado & Webhook Resiliente** | **Garantia de Notificação Imediata de PIX Gerado (Zedy & Shopify):** (1) Webhook Zedy (`api/v1/webhook/zedy/[store]`): Inclusão de `PIX_CREATED`, `PIX_GENERATED`, status `waiting_payment` e chave `pixQrCode` no bypass de validação pendente; normalização de `totalPriceInCents` para conversão exata centavos ➔ reais; preservação do lock de idempotência segmentado (`AddPaymentInfo_${orderId}` vs `Purchase_${orderId}`) permitindo notificação de venda aprovada posterior; (2) Webhook Shopify (`api/v1/webhook/[store]`): Reconhecimento imediato de `orders/create` com gateway PIX e status pendente sem depender da injeção de QR code nos `note_attributes`; (3) Disparo ponta a ponta com registro na tabela `notifications`, replicação instantânea via Supabase Realtime no dashboard e envio de Web Push com prioridade máxima APNs para dispositivos móveis cadastrados (iOS / iPhone e Android). | Antigravity |
 
 ---
 
@@ -450,6 +453,88 @@ O motor sintetiza os dados em um relatório estruturado:
 * **Áreas de Atenção**: Alerta sobre escalas preliminares, desfechos de erro a calibrar e pendências temporais.
 * **Índice de Confiabilidade**: Score de 0 a 100 indicando a robustez estatística da amostra.
 * **Pontos Chave**: Bullet points contábeis com dados em reais (BRL).
+
+---
+
+## 13. Arquitetura do Motor de Webhooks & Notificações de Vendas (Realtime + Web Push)
+
+### 13.1 Visão Geral do Pipeline de Notificações
+O ATM PRO possui um sistema integrado de notificação auditada em tempo real para vendas aprovadas e cobranças pendentes geradas (PIX e Boleto).
+
+```
+   ┌────────────────────────────────────────────────────────┐
+   │             Checkouts (Zedy / Shopify / Vega)          │
+   └───────────────────────────┬────────────────────────────┘
+                               │ POST /api/v1/webhook/*
+                               ▼
+   ┌────────────────────────────────────────────────────────┐
+   │                  Webhook Controller                    │
+   │  - Classificação de evento (Approved vs Pending)       │
+   │  - Normalização monetária (Centavos ➔ Reais)           │
+   │  - Lock de Idempotência CAPI (Purchase vs AddPayment)  │
+   └───────────────────────────┬────────────────────────────┘
+                               │ dispatchOrderNotification()
+                               ▼
+   ┌────────────────────────────────────────────────────────┐
+   │             Notification Service Bridge                │
+   │           (`notification-service.ts`)                  │
+   └───────────────┬────────────────────────┬───────────────┘
+                   │                        │
+                   ▼                        ▼
+     ┌────────────────────────┐  ┌────────────────────────┐
+     │  Supabase PostgreSQL   │  │   Web Push VAPID Hub   │
+     │  Tabela `notifications`│  │     (`web-push.ts`)    │
+     └─────────────┬──────────┘  └──────────┬─────────────┘
+                   │                        │
+                   ▼ Realtime Broadcast     ▼ RFC 8292 Push
+     ┌────────────────────────┐  ┌────────────────────────┐
+     │  Dashboard Web aberta  │  │  Dispositivos Móveis   │
+     │  (Audio Player local)  │  │  (iPhone/iOS & Android)│
+     └────────────────────────┘  └────────────────────────┘
+```
+
+### 13.2 Especificidades do Webhook Zedy Checkout (`api/v1/webhook/zedy/[store]`)
+- **Eventos Recebidos**:
+  - `eventType: "PIX_CREATED"` ou `eventType: "PIX_GENERATED"`: Disparado no instante em que o comprador clica em "Gerar PIX".
+  - `eventType: "ORDER_PAID"` ou `status: "approved"`: Disparado na confirmação de liquidação financeira pelo Banco Central.
+- **Estrutura de Dados do PIX**:
+  - QR Code copia e cola entregue no atributo `pixQrCode` (ou `pix_code`).
+  - Identificação de método de pagamento por `paymentMethod: "pix"` ou evento com sufixo `PIX`.
+- **Normalização de Valor**:
+  - Valores enviados em centavos (`totalPriceInCents` ou `priceInCents`) são convertidos para reais (`orderValue = cents / 100`).
+  - Suporta fallbacks para `payload.value`, `payload.amount` ou somatório de itens.
+
+### 13.3 Especificidades do Webhook Shopify (`api/v1/webhook/[store]`)
+- **Tópicos**:
+  - `x-shopify-topic: "orders/create"`: Criação inicial do pedido na loja.
+  - `x-shopify-topic: "orders/paid"`: Pedido marcado como pago/capturado.
+- **Detecção de PIX Pendente**:
+  - `financial_status`: `"pending"`, `"authorized"`, `"unpaid"` ou `"waiting_payment"`.
+  - Gateways: `payment_gateway_names` (ex: `appmax_pix`, `mercadopago_pix`, etc.) ou `gateway` contendo `pix`.
+  - Ativação imediata: Notifica com sucesso mesmo que os atributos de nota (`note_attributes`) com o BRCode do PIX ainda não tenham sido injetados pelo app de checkout no primeiro milissegundo.
+
+### 13.4 Idempotência Estrita & Não Bloqueio da Venda Final
+Para evitar falsas duplicidades sem impedir que a venda seja computada quando o PIX for pago:
+- **Evento Pendente (PIX Gerado)**:
+  - Notificação gravada com `type: "pending"`.
+  - Lock do Meta CAPI reservado isoladamente com a chave `AddPaymentInfo_${orderId}`.
+- **Evento Aprovado (PIX Pago)**:
+  - Notificação gravada com `type: "approved"`.
+  - Lock do Meta CAPI reservado com a chave `Purchase_${orderId}`.
+  - Como as chaves de lock são estritamente separadas por tipo de evento, o processamento do PIX gerado **nunca impede** o envio do evento `Purchase` nem o disparo do alarme de venda aprovada quando a liquidação ocorre.
+
+### 13.5 Camada de Som e Web Push para iPhone (Apple APNs)
+- **Áudio Personalizado**: Servido via rota com streaming nativo `/api/v1/notifications/sound?store_id=X`, permitindo ao lojista carregar arquivos MP3/WAV (ex: som clássico de caixa registradora da Shopify ou moedas).
+- **Cabeçalhos Apple APNs**:
+  - `apns-push-type: alert`
+  - `apns-priority: 10`
+  - `apns-expiration: 0`
+  - `silent: false`
+- **Configurações por Loja (`stores.settings.notifications`)**:
+  - `notify_approved: boolean` (Ativa alertas de vendas confirmadas).
+  - `notify_pending: boolean` (Ativa alertas de PIX e boletos gerados).
+  - `min_value: number` (Filtro por valor mínimo do pedido).
+  - `quiet_hours_enabled: boolean` (Não Perturbe com fuso horário de Brasília).
 
 
 

@@ -81,11 +81,18 @@
 
 ### ✅ Fase 10.3 — Motor de Maturidade das Decisões do ATM
 - **Status**: Concluída e auditada (**40 PASS | 0 FAIL**).
-- **Módulos Criados/Atualizados**:
-  - `web/src/lib/intelligence/decision-maturity-engine.ts`: Motor de agregação analítica que responde "o ATM está tomando boas decisões?", com métricas globais, quebra por ação, separação de impacto contábil (`PROFIT_GENERATION`, `LOSS_PREVENTION`, `STABILITY_MAINTENANCE`), trava estrita de maturidade (mínimo de 5 escalas avaliadas para `HIGH_PERFORMANCE_MATURE`), idade da inteligência (`EARLY_LEARNING` a `MATURE_MODEL`) e Veredito Executivo em português brasileiro.
-  - `web/src/app/api/v1/intelligence/maturity/route.ts`: Endpoint `GET` seguro e *read-only* com isolamento multi-tenant para consulta executiva da maturidade.
-  - `scripts/test-decision-maturity-engine.js`: Suíte de testes automatizados com 40 asserções validando cálculos percentuais, travas estatísticas de escala, separação de impacto, idade da inteligência e segregação multi-tenant.
-- **Preservação**: Zero escrita na Meta API, zero UI, zero auto-escala.
+- **Módulos**: `web/src/lib/intelligence/decision-maturity-engine.ts`, `web/src/app/api/v1/intelligence/maturity/route.ts`, `scripts/test-decision-maturity-engine.js`.
+
+---
+
+### ✅ Fase 10.4 — Pipeline de Notificações de PIX Gerado & Webhooks Resilientes (v8.1.0)
+- **Status**: Concluída, testada ponta a ponta e implantada em Produção (Vercel).
+- **Problema Resolvido**: Notificações sonoras (Supabase Realtime) e Web Push (Apple APNs / Android) disparavam apenas para vendas aprovadas, ignorando clientes que geravam PIX no checkout (Zedy e Shopify).
+- **Módulos Cirurgicamente Ajustados**:
+  - `web/src/app/api/v1/webhook/zedy/[store]/route.ts`: Inclusão de `PIX_CREATED`, `PIX_GENERATED`, status `waiting_payment`, suporte a `pixQrCode` e normalização de `totalPriceInCents` para conversão precisa centavos ➔ reais.
+  - `web/src/app/api/v1/webhook/[store]/route.ts`: Reconhecimento imediato de `orders/create` com gateway PIX e status pendente sem depender da gravação prévia de QR code nos `note_attributes`.
+- **Garantia Arquitetural**: Separação estrita de locks de idempotência (`AddPaymentInfo_${orderId}` vs `Purchase_${orderId}`), assegurando que o disparo do PIX gerado não bloqueia o evento de venda aprovada e CAPI Purchase quando a liquidação for concluída.
+- **Validação**: Testes locais e em produção ao vivo na Vercel (`https://trackingatm.vercel.app`) confirmaram inserção na tabela `notifications` e disparo Web Push com 100% de sucesso.
 
 ---
 
@@ -104,17 +111,14 @@ node scripts/test-asset-intelligence-guard.js
 node scripts/test-meta-asset-health-engine.js
 node scripts/test-dashboard-financial-conciliation.js
 ```
-*(Todos retornam 100% PASS — Total: 171 testes aprovados)*
+*(Todos retornam 100% PASS)*
 
 ---
 
-## 3. Arquivos da Fase 10.3 (Aguardando Autorização para Commit)
-
-- **Novo**: `web/src/lib/intelligence/decision-maturity-engine.ts`
-- **Novo**: `web/src/app/api/v1/intelligence/maturity/route.ts`
-- **Novo**: `scripts/test-decision-maturity-engine.js`
-- **Modificado**: `CEREBRO_TECNICO.md`
-- **Modificado**: `docs/ESTADO_ATUAL_RETOMADA.md`
+## 3. Estado Atual dos Arquivos de Documentação
+- `CEREBRO_TECNICO.md`: Atualizado com a Seção 13, endpoints de notificação e versão `v8.1.0`.
+- `docs/RELATORIO_TECNICO_CORRECOES.md`: Atualizado com o Módulo 6 e commit `ba942e6`.
+- `docs/ESTADO_ATUAL_RETOMADA.md`: Handover atualizado.
 
 
 

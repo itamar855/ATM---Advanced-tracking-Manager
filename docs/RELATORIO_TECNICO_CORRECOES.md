@@ -130,6 +130,36 @@ No arquivo [currency.ts](file:///c:/Users/Hard%20Work/Desktop/ATM%20-%20Advanced
 
 ---
 
+### 📌 Módulo 6: Notificação Imediata de PIX Gerado nos Webhooks (Zedy Checkout & Shopify)
+
+#### O Problema
+Ao gerar uma cobrança via PIX no checkout (Zedy ou Shopify), o sistema não emitia aviso sonoro no dashboard nem notificação Web Push nos celulares cadastrados (ex: iPhone via Apple APNs), notificando exclusivamente vendas aprovadas já pagas.
+
+#### Causa Raiz
+1. **Webhook Zedy (`/api/v1/webhook/zedy/[store]`)**:
+   - A Zedy emite o evento `eventType: "PIX_CREATED"` com `status: "waiting_payment"`.
+   - A validação inicial rejeitava esses eventos como "não sendo venda ou pendente".
+   - O payload da Zedy entrega o QR Code no atributo `pixQrCode` (camelCase), que não era verificado no detector de dados de PIX.
+   - O valor do pedido vinha em `totalPriceInCents` na raiz do payload e não era convertido para reais.
+2. **Webhook Shopify (`/api/v1/webhook/[store]`)**:
+   - Pedidos pendentes criados (`orders/create`) exigiam a presença imediata do código textual nos atributos da nota (`note_attributes`), que em muitos casos não são injetados no primeiro segundo pelo gateway.
+
+#### O Que Foi Feito
+- **No arquivo [zedy/[store]/route.ts](file:///c:/Users/Hard%20Work/Desktop/ATM%20-%20Advanced%20Tracking%20Manager%20ADS/web/src/app/api/v1/webhook/zedy/%5Bstore%5D/route.ts)**:
+  - Criado `isExplicitPix` cobrindo `PIX_CREATED`, `PIX_GENERATED`, etc., liberando o fluxo de notificações pendentes.
+  - Incluído `pixQrCode` e `pixCode` no detector de dados de cobrança ativa.
+  - Normalização monetária de `totalPriceInCents` e `priceInCents` (conversão centavos ➔ reais).
+  - Isolamento estrito de idempotência: `AddPaymentInfo_${orderId}` para o PIX gerado e `Purchase_${orderId}` para a venda aprovada posterior.
+- **No arquivo [[store]/route.ts](file:///c:/Users/Hard%20Work/Desktop/ATM%20-%20Advanced%20Tracking%20Manager%20ADS/web/src/app/api/v1/webhook/%5Bstore%5D/route.ts)**:
+  - Detecção abrangente de status (`pending`, `authorized`, `unpaid`, `waiting_payment`) e gateway PIX.
+  - Disparo de notificação ativado por gateway PIX sem dependência de QR textual inline.
+- **Disparo Ponta a Ponta**:
+  - Inserção na tabela `notifications` do Supabase com `type: "pending"`.
+  - Disparo em tempo real via Supabase Realtime tocando o áudio no painel.
+  - Envio de Web Push VAPID com prioridade máxima APNs para dispositivos móveis cadastrados.
+
+---
+
 ## 📈 3. Tabela Comparativa Antes vs Depois
 
 | Aspecto | Antes das Correções | Depois das Correções |
@@ -141,6 +171,7 @@ No arquivo [currency.ts](file:///c:/Users/Hard%20Work/Desktop/ATM%20-%20Advanced
 | **Taxas de Gateway** | Taxa fixa arbitrária de R$ 5,00 por venda | Regras reais cadastradas pelo usuário na tabela `taxes_and_duties` |
 | **Tela de Custos/COGS** | Produtos fictícios mockados (Gummies CBD) | 100% gerenciável pelo usuário com importação de produtos de vendas reais |
 | **Velocidade da Tela de Campanhas** | Lentidão por chamadas repetidas à Meta | Resposta instantânea (< 100ms) com cache inteligente de 60 segundos |
+| **Notificação de PIX Gerado** | Webhook descartado como inválido | Notificação instantânea via Realtime e Web Push no celular com som e valor exato |
 
 ---
 
@@ -151,3 +182,4 @@ No arquivo [currency.ts](file:///c:/Users/Hard%20Work/Desktop/ATM%20-%20Advanced
 3. `f2b6bf9`: Propagação universal de UTMs para checkouts, cálculo real de IC e CPI, ajuste de taxas e cache rápido.
 4. `392ac7e`: Ajuste de fuso horário para Horário de Brasília (`America/Sao_Paulo` UTC-3) e deduplicação de pedidos.
 5. `6fc4eaf`: Painel de Custos, Impostos e Taxas (COGS) 100% personalizado e conciliado com a Dashboard e Campanhas.
+6. `ba942e6`: fix(webhook): garantir notificacoes de PIX gerado no Zedy e Shopify.
