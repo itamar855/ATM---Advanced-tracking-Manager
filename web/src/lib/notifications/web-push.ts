@@ -178,7 +178,7 @@ export async function sendStorePushNotification(
               headers: {
                 "apns-push-type": "alert",
                 "apns-priority": "10",
-                "apns-expiration": "0",
+                "apns-expiration": String(Math.floor(Date.now() / 1000) + 86400),
               },
             }
           );

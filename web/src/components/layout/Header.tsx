@@ -2,9 +2,11 @@
 
 import { Bell, Search, Menu } from "lucide-react";
 import { useState } from "react";
+import { useNotifications } from "@/contexts/NotificationContext";
 
 export default function Header() {
   const [showNotifications, setShowNotifications] = useState(false);
+  const { notifications, unreadCount, markAllAsRead, markAsRead } = useNotifications();
 
   return (
     <header
@@ -55,36 +57,69 @@ export default function Header() {
             className="relative p-2 rounded-xl hover:bg-white/[0.06] text-white/30 hover:text-white/70 transition-colors"
           >
             <Bell size={16} />
-            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#ff453a]" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#ff453a]" />
+            )}
           </button>
 
           {showNotifications && (
             <div className="absolute right-0 top-full mt-2 w-80 bg-[#161618]/95 backdrop-blur-2xl border border-white/[0.09] rounded-2xl shadow-[0_24px_64px_rgba(0,0,0,0.7)] z-50 fade-in overflow-hidden">
               <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-white/80">Notificações</h3>
-                <span className="text-[10px] font-medium text-[#2997ff] cursor-pointer">
-                  Marcar como lidas
-                </span>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-white/80">Notificações</h3>
+                  {unreadCount > 0 && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-[#2997ff]/20 text-[#2997ff]">
+                      {unreadCount}
+                    </span>
+                  )}
+                </div>
+                {unreadCount > 0 && (
+                  <button
+                    onClick={() => void markAllAsRead()}
+                    className="text-[10px] font-medium text-[#2997ff] hover:text-[#2997ff]/80 cursor-pointer transition-colors"
+                  >
+                    Marcar todas como lidas
+                  </button>
+                )}
               </div>
               <div className="py-1 max-h-72 overflow-y-auto scrollbar-none">
-                <NotificationItem
-                  type="warning"
-                  title="Health Score baixo"
-                  message="3 eventos com score abaixo de 60 nas últimas 2h"
-                  time="5min atrás"
-                />
-                <NotificationItem
-                  type="success"
-                  title="Purchase aceito"
-                  message="Pedido #1234 rastreado com sucesso pela Meta"
-                  time="12min atrás"
-                />
-                <NotificationItem
-                  type="danger"
-                  title="Possível emissor duplicado"
-                  message="Razão Server/Browser de 4.2x detectada"
-                  time="1h atrás"
-                />
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-xs text-white/30">
+                    Nenhuma notificação registrada ainda.
+                  </div>
+                ) : (
+                  notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      onClick={() => void markAsRead(n.id)}
+                      className={`px-4 py-3 hover:bg-white/[0.03] transition-colors cursor-pointer border-b border-white/[0.02] last:border-0 ${
+                        !n.read ? "bg-white/[0.02]" : ""
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full mt-2 shrink-0 ${
+                            n.type === "approved" ? "bg-[#30d158]" : "bg-[#2997ff]"
+                          }`}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[12.5px] font-semibold text-white/80 truncate">
+                              {n.title}
+                            </p>
+                            {!n.read && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#2997ff] shrink-0" />
+                            )}
+                          </div>
+                          <p className="text-[11px] text-white/40 mt-0.5 truncate">{n.body}</p>
+                          <p className="text-[10px] text-white/20 mt-1">
+                            {formatRelativeTime(n.created_at)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -94,33 +129,14 @@ export default function Header() {
   );
 }
 
-function NotificationItem({
-  type,
-  title,
-  message,
-  time,
-}: {
-  type: "success" | "warning" | "danger";
-  title: string;
-  message: string;
-  time: string;
-}) {
-  const colors = {
-    success: "bg-[#30d158]",
-    warning: "bg-[#ff9f0a]",
-    danger:  "bg-[#ff453a]",
-  };
-
-  return (
-    <div className="px-4 py-3 hover:bg-white/[0.03] transition-colors cursor-pointer">
-      <div className="flex items-start gap-3">
-        <span className={`w-1.5 h-1.5 rounded-full mt-2 shrink-0 ${colors[type]}`} />
-        <div className="flex-1 min-w-0">
-          <p className="text-[12.5px] font-semibold text-white/80">{title}</p>
-          <p className="text-[11px] text-white/30 mt-0.5 truncate">{message}</p>
-          <p className="text-[10px] text-white/20 mt-1">{time}</p>
-        </div>
-      </div>
-    </div>
-  );
+function formatRelativeTime(iso: string) {
+  try {
+    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (diff < 60) return "Agora";
+    if (diff < 3600) return `${Math.floor(diff / 60)}min atrás`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h atrás`;
+    return `${Math.floor(diff / 86400)}d atrás`;
+  } catch {
+    return "";
+  }
 }

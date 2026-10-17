@@ -102,6 +102,70 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     void loadNotifications();
   }, [activeStore?.id, loadNotifications]);
 
+  // Sincroniza silenciosamente a inscrição Web Push do aparelho caso permissão já esteja concedida
+  useEffect(() => {
+    const storeId = activeStore?.id;
+    if (!storeId || typeof window === "undefined" || !("serviceWorker" in navigator) || !("Notification" in window)) {
+      return;
+    }
+
+    if (Notification.permission === "granted") {
+      navigator.serviceWorker.ready.then(async (reg) => {
+        try {
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) {
+            const rawSub = sub.toJSON();
+            if (rawSub.endpoint && rawSub.keys) {
+              const ua = navigator.userAgent.toLowerCase();
+              let deviceType: "ios" | "android" | "desktop" = "desktop";
+              let deviceName = "Computador / Desktop";
+              if (/iphone|ipad|ipod/.test(ua)) {
+                deviceType = "ios";
+                deviceName = "Apple iPhone / iPad";
+              } else if (/android/.test(ua)) {
+                deviceType = "android";
+                deviceName = "Smartphone Android";
+              }
+
+              await fetch("/api/v1/notifications/subscribe", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  store_id: storeId,
+                  subscription: rawSub,
+                  device_name: deviceName,
+                  device_type: deviceType,
+                }),
+              });
+            }
+          }
+        } catch {
+          // Silencioso se o SW ainda não estiver pronto
+        }
+      });
+    }
+  }, [activeStore?.id]);
+
+  // Escuta mensagens disparadas pelo Service Worker (quando aba estiver aberta)
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "ATM_PUSH_RECEIVED" && event.data?.payload) {
+        const payload = event.data.payload;
+        try {
+          const soundName = payload.data?.type === "pending" ? "safe_coins" : "chaching";
+          playNotificationSound(soundName);
+        } catch {}
+      }
+    };
+
+    navigator.serviceWorker.addEventListener("message", handleMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener("message", handleMessage);
+    };
+  }, []);
+
   // Inscrição no Supabase Realtime (postgres_changes na tabela notifications)
   useEffect(() => {
     const storeId = activeStore?.id;

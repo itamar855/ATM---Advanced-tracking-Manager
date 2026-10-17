@@ -1,7 +1,7 @@
 // ATM PRO - Service Worker v1.0.0
 // Caching inteligente para PWA com proteção estrita de APIs em tempo real
 
-const CACHE_NAME = 'atm-pro-cache-v2';
+const CACHE_NAME = 'atm-pro-cache-v3';
 const PRECACHE_ASSETS = [
   '/manifest.json',
   '/icons/icon-192x192.png',
@@ -111,43 +111,56 @@ self.addEventListener('push', (event) => {
     const isSilent = data.silent === true || data.sound === 'silent';
     const soundUrl = data.sound && data.sound !== 'silent' ? data.sound : undefined;
 
+    // Sanitiza opções para compatibilidade universal (iOS WebKit / Android / Chromium / Safari)
     const options = {
       body: data.body || '',
       icon: data.icon || '/icons/icon-192x192.png',
       badge: data.badge || '/icons/favicon-32x32.png',
       data: data.data || { url: '/dashboard/orders' },
-      vibrate: isSilent ? [] : [200, 100, 200, 100, 300], // Vibração característica de venda
       tag: 'atm-order-' + (data.data?.orderId || Date.now()),
       renotify: true,
-      requireInteraction: true,
       silent: isSilent,
     };
 
-    if (soundUrl) {
-      options.sound = soundUrl;
+    // Vibração apenas se o navegador suportar nativamente (evita falhas de validação no iOS WebKit)
+    if (!isSilent && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      options.vibrate = [200, 100, 200, 100, 300];
     }
 
-    // Notifica também os clientes abertos (se houver aba aberta do ATM PRO, reproduz áudio in-app)
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      windowClients.forEach((client) => {
-        client.postMessage({
-          type: 'ATM_PUSH_RECEIVED',
-          payload: data,
-          sound: soundUrl,
-        });
+    // Exibe notificação e trata qualquer rejeição assíncrona com fallback simples
+    const showPromise = self.registration.showNotification(title, options).catch((err) => {
+      console.warn('[SW] Falha ao exibir com opções avançadas, aplicando fallback básico:', err);
+      return self.registration.showNotification(title, {
+        body: data.body || '',
+        icon: '/icons/icon-192x192.png',
+        badge: '/icons/favicon-32x32.png',
+        data: data.data || { url: '/dashboard/orders' },
       });
-    }).catch(() => {});
+    });
 
-    event.waitUntil(
-      self.registration.showNotification(title, options)
-    );
+    // Notifica também os clientes abertos (se houver aba aberta do ATM PRO, reproduz áudio in-app)
+    const clientPromise = self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((windowClients) => {
+        windowClients.forEach((client) => {
+          client.postMessage({
+            type: 'ATM_PUSH_RECEIVED',
+            payload: data,
+            sound: soundUrl,
+          });
+        });
+      })
+      .catch(() => {});
+
+    event.waitUntil(Promise.all([showPromise, clientPromise]));
   } catch (err) {
-    const text = event.data.text();
+    const text = event.data ? event.data.text() : 'Nova venda registrada no ATM PRO';
     event.waitUntil(
       self.registration.showNotification('ATM PRO', {
         body: text,
         icon: '/icons/icon-192x192.png',
-      })
+        badge: '/icons/favicon-32x32.png',
+      }).catch(() => {})
     );
   }
 });

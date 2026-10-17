@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { StoreProvider } from "@/contexts/StoreContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 import PwaRegister from "@/components/pwa/PwaRegister";
 import "./globals.css";
 
@@ -61,8 +62,10 @@ export default function RootLayout({
     <html lang="pt-BR" className="dark">
       <body className={`${inter.variable} font-sans antialiased bg-[#0B0E14] text-zinc-100`}>
         <StoreProvider>
-          <PwaRegister />
-          {children}
+          <NotificationProvider>
+            <PwaRegister />
+            {children}
+          </NotificationProvider>
         </StoreProvider>
       </body>
     </html>
