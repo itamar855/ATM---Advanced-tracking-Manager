@@ -18,7 +18,7 @@ export async function GET(
   const { domain } = await params;
 
   let storeId = "dckb5g-7d";
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://trackingatm.vercel.app";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://atmtracking.vercel.app";
   const apiBase = `${appUrl.replace(/\/$/, "")}/api/v1`;
 
   try {

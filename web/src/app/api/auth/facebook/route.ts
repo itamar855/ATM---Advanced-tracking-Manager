@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: NextRequest) {
   const appId = process.env.FACEBOOK_APP_ID || "1058930460171432";
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://trackingatm.vercel.app";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://atmtracking.vercel.app";
   const redirectUri = `${appUrl.replace(/\/$/, "")}/api/auth/facebook/callback`;
 
   const { searchParams } = new URL(request.url);

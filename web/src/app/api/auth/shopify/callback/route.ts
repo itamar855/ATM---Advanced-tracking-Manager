@@ -176,7 +176,7 @@ export async function GET(request: NextRequest) {
     console.log(`[Shopify OAuth Success] Loja ${store.id} (${cleanShop}) conectada com sucesso! Token gerado.`);
 
     // 6. Dispara sincronização em segundo plano
-    const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "trackingatm.vercel.app";
+    const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "atmtracking.vercel.app";
     const protocol = host.includes("localhost") ? "http" : "https";
     const syncUrl = `${protocol}://${host}/api/v1/sync/shopify`;
 

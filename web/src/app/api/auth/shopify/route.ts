@@ -81,8 +81,8 @@ export async function GET(request: NextRequest) {
   }
 
   // Define Redirect URI
-  // Prioridade: NEXT_PUBLIC_APP_URL > host do request (Vercel) > fallback trackingatm
-  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "trackingatm.vercel.app";
+  // Prioridade: NEXT_PUBLIC_APP_URL > host do request (Vercel) > fallback atmtracking
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "atmtracking.vercel.app";
   const protocol = host.includes("localhost") ? "http" : "https";
   const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`;
   const redirectUri = `${appBaseUrl.replace(/\/$/, "")}/api/auth/shopify/callback`;

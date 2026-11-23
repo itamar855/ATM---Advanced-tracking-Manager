@@ -214,7 +214,7 @@ function IntegrationsContent() {
   const host =
     typeof window !== "undefined" && window.location.origin && !window.location.origin.includes("localhost")
       ? window.location.origin.replace(/\/$/, "")
-      : "https://trackingatm.vercel.app";
+      : "https://atmtracking.vercel.app";
 
   const vegaWebhookUrl = `${host}/api/v1/webhook/vega/${storeId}`;
   const zedyWebhookUrl = `${host}/api/v1/webhook/zedy/${storeId}`;

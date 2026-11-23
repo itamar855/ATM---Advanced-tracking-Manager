@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const errorDescription = searchParams.get("error_description");
   const stateRaw = searchParams.get("state");
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://trackingatm.vercel.app";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://atmtracking.vercel.app";
   const redirectUri = `${appUrl.replace(/\/$/, "")}/api/auth/facebook/callback`;
 
   // Extrai store_id do state (se presente)
