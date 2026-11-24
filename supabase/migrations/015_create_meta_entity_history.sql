@@ -5,7 +5,7 @@
 
 CREATE TABLE IF NOT EXISTS public.meta_entity_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    store_id TEXT NOT NULL REFERENCES public.stores(id) ON DELETE CASCADE,
+    store_id UUID NOT NULL REFERENCES public.stores(id) ON DELETE CASCADE,
     user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     user_email TEXT,
     

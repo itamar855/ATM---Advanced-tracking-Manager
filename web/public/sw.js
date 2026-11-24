@@ -47,6 +47,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
+  // 0. Só cuida de requisições do próprio site. Qualquer outro domínio (Supabase com domínio
+  //    próprio, CDNs, checkout) vai direto para a rede: se falhasse aqui, virava "offline" falso.
+  if (url.origin !== self.location.origin) return;
+
   // 1. REGRAS CRÍTICAS DE REDE DIRETA (Nunca usar cache):
   // - Todas as chamadas de API (/api/*)
   // - Chamadas para Supabase, Meta Graph API, Webhooks

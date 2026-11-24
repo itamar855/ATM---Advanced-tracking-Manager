@@ -75,7 +75,7 @@ CREATE POLICY "Tenants can view their store alerts"
     FOR SELECT
     USING (
         store_id IN (
-            SELECT id FROM public.stores WHERE tenant_id = auth.uid()
+            SELECT id::text FROM public.stores WHERE tenant_id = auth.uid()
         )
     );
 

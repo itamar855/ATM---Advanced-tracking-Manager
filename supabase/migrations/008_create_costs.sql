@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS public.campaign_costs (
     ctr DECIMAL(8,6),
     currency TEXT DEFAULT 'BRL',
     synced_at TIMESTAMPTZ DEFAULT now(),
-    UNIQUE(store_id, date, COALESCE(campaign_id, ''), COALESCE(adset_id, ''), COALESCE(ad_id, ''))
+    -- Postgres não aceita COALESCE dentro de UNIQUE; NULLS NOT DISTINCT trata vazio como igual
+    -- e casa com o onConflict do código (store_id,date,campaign_id,adset_id,ad_id).
+    UNIQUE NULLS NOT DISTINCT (store_id, date, campaign_id, adset_id, ad_id)
 );
 
 CREATE TABLE IF NOT EXISTS public.product_costs (
@@ -37,7 +39,7 @@ CREATE TABLE IF NOT EXISTS public.product_costs (
     currency TEXT DEFAULT 'BRL',
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),
-    UNIQUE(store_id, shopify_product_id, COALESCE(shopify_variant_id, ''))
+    UNIQUE NULLS NOT DISTINCT (store_id, shopify_product_id, shopify_variant_id)
 );
 
 -- RLS via store ownership

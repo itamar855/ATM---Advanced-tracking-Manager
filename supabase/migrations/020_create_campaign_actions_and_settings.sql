@@ -37,7 +37,7 @@ CREATE POLICY "Tenants view their store automation settings"
     FOR SELECT
     USING (
         store_id IN (
-            SELECT id FROM public.stores WHERE tenant_id = auth.uid()
+            SELECT id::text FROM public.stores WHERE tenant_id = auth.uid()
         )
     );
 
@@ -46,7 +46,7 @@ CREATE POLICY "Tenants update their store automation settings"
     FOR UPDATE
     USING (
         store_id IN (
-            SELECT id FROM public.stores WHERE tenant_id = auth.uid()
+            SELECT id::text FROM public.stores WHERE tenant_id = auth.uid()
         )
     );
 
@@ -160,7 +160,7 @@ CREATE POLICY "Tenants view their store actions"
     FOR SELECT
     USING (
         store_id IN (
-            SELECT id FROM public.stores WHERE tenant_id = auth.uid()
+            SELECT id::text FROM public.stores WHERE tenant_id = auth.uid()
         )
     );
 
@@ -169,7 +169,7 @@ CREATE POLICY "Tenants update their store actions"
     FOR UPDATE
     USING (
         store_id IN (
-            SELECT id FROM public.stores WHERE tenant_id = auth.uid()
+            SELECT id::text FROM public.stores WHERE tenant_id = auth.uid()
         )
     );
 

@@ -1,4 +1,4 @@
-import { createClient } from "../supabase/server";
+import { createAdminClient } from "../supabase/server";
 
 export interface CampaignAdSpend {
   date: string;
@@ -92,7 +92,9 @@ export async function persistCampaignCosts(
   integrationId: string,
   insights: CampaignAdSpend[]
 ): Promise<{ count: number; error?: string }> {
-  const supabase = await createClient();
+  // Chamado só pelo cron (autenticado por CRON_SECRET), sem usuário logado: a tabela só tem
+  // policy de leitura para o dono, então a gravação precisa da chave de serviço.
+  const supabase = createAdminClient();
 
   try {
     let count = 0;

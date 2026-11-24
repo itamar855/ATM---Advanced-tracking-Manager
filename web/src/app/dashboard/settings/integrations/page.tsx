@@ -606,7 +606,7 @@ atm("track", "Purchase", { order_id: "txn_123", value: 97 });
                   },
                 ];
 
-          const profileName = accData.profile?.name || accData.diagnostics?.userName || accData.user?.name || "Itamar Almeida (Meta Ads)";
+          const profileName = accData.profile?.name || accData.diagnostics?.userName || accData.user?.name || "Conta Meta conectada";
           const realProfile: ProfileItem = {
             id: "prof-main",
             name: profileName,

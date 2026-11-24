@@ -5,7 +5,7 @@
 
 CREATE TABLE IF NOT EXISTS public.notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    store_id TEXT NOT NULL REFERENCES public.stores(id) ON DELETE CASCADE,
+    store_id UUID NOT NULL REFERENCES public.stores(id) ON DELETE CASCADE,
     order_id TEXT NOT NULL,
     type TEXT NOT NULL CHECK (type IN ('approved', 'pending')),
     title TEXT NOT NULL,

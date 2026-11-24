@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
       const customData = metaResp.custom_data || {};
       const tracking = orderDetails.tracking_params || customData.tracking_params || {};
 
-      const val = Number(orderDetails.value || customData.value || 172.88);
+      const val = Number(orderDetails.value || customData.value || 0);
       const isPix = String(orderDetails.payment_method || customData.payment_method || ev.order_id || "").toLowerCase().includes("pix");
 
       // Cascata de extração das UTMs
@@ -72,7 +72,8 @@ export async function GET(request: NextRequest) {
       const rawMedium = String(orderDetails.utm_medium || customData.utm_medium || tracking.utm_medium || "").trim();
       const rawContent = String(orderDetails.utm_content || customData.utm_content || tracking.utm_content || "").trim();
 
-      const orderKey = ev.order_id || `PED-${ev.event_id?.slice(-8)}` || "";
+      const fallbackId = ev.event_id ? `PED-${String(ev.event_id).slice(-8)}` : "S/I";
+      const orderKey = ev.order_id || fallbackId;
       const recovered = recoveryMap.get(orderKey) || recoveryMap.get(ev.order_id);
 
       let utmCamp = rawCamp;
@@ -87,17 +88,13 @@ export async function GET(request: NextRequest) {
         recoveryScore = recovered.confidence_score;
       }
 
-      if (!utmCamp && ev.order_id?.includes("VEGA")) {
-        utmCamp = "USD 02 - ABO - GAIOALA - ESCALA — 07";
-      }
-
       const cleanSource = utmSourceVal ? (utmSourceVal.startsWith("FB") ? "FB" : utmSourceVal.toUpperCase()) : "FB";
 
       return {
         id: ev.id,
-        orderId: ev.order_id || `PED-${ev.event_id?.slice(-8)}` || "S/I",
-        customerName: orderDetails.customer_name || "Itamar Monteiro de Almeida",
-        customerEmail: orderDetails.customer_email ? `${orderDetails.customer_email.slice(0, 3)}***@gmail.com` : "ita****@gmail.com",
+        orderId: orderKey,
+        customerName: orderDetails.customer_name || "Cliente não informado",
+        customerEmail: maskEmail(orderDetails.customer_email),
         status: ev.status === "accepted" ? "PAGO" : "PROCESSANDO",
         value: val,
         paymentMethod: orderDetails.payment_method || (isPix ? "Pix" : "Cartão / Gateway"),
@@ -115,4 +112,12 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error.message, orders: [] }, { status: 500 });
   }
+}
+
+/** "maria@uol.com.br" → "mar***@uol.com.br". Vazio quando o checkout não mandou e-mail. */
+function maskEmail(email: unknown): string {
+  const e = String(email || "").trim();
+  const at = e.indexOf("@");
+  if (at < 1) return "";
+  return `${e.slice(0, Math.min(3, at))}***${e.slice(at)}`;
 }

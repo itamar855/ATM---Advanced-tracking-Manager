@@ -340,8 +340,8 @@ export default function NotificationSettingsPage() {
 
   const previewVars: Record<string, string> = {
     "{valor}": "R$ 247,90",
-    "{cliente_nome}": "Itamar Almeida",
-    "{cliente_primeiro_nome}": "Itamar",
+    "{cliente_nome}": "Maria Souza",
+    "{cliente_primeiro_nome}": "Maria",
     "{metodo_pagamento}": activeTab === "pending" ? "PIX" : "Cartão de Crédito",
     "{loja}": activeStore?.name || "Atacadão das Gaiolas",
     "{pedido_id}": "#4829",

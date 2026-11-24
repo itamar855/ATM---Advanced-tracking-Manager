@@ -78,6 +78,7 @@ export default function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { stores, activeStore, setActiveStore } = useStore();
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
+  const [userName, setUserName] = useState("");
   const navigation = buildNavigation(projectInfo(activeStore));
 
   useEffect(() => {
@@ -94,6 +95,31 @@ export default function Sidebar() {
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+
+  // Nome de quem está logado (nome do cadastro, ou o começo do e-mail).
+  useEffect(() => {
+    let cancelled = false;
+    import("@/lib/supabase/client")
+      .then(({ createClient }) => createClient().auth.getUser())
+      .then(({ data }) => {
+        const u = data.user;
+        if (cancelled || !u) return;
+        const meta = (u.user_metadata || {}) as { name?: string; full_name?: string };
+        setUserName(meta.name || meta.full_name || (u.email || "").split("@")[0]);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const initials =
+    userName
+      .split(/[s._-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0]!.toUpperCase())
+      .join("") || "··";
 
   const handleLogout = async () => {
     try {
@@ -305,12 +331,12 @@ export default function Sidebar() {
           <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl bg-white/[0.03] border border-white/[0.05]">
             <div className="flex items-center gap-2 min-w-0">
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#2997ff] to-[#30d158] flex items-center justify-center font-bold text-white text-[9px] shrink-0">
-                IT
+                {initials}
               </div>
               {!collapsed && (
                 <div className="flex flex-col min-w-0">
                   <span className="text-[11.5px] font-semibold text-white/80 truncate">
-                    Itamar Almeida
+                    {userName || "Minha conta"}
                   </span>
                   <span className="text-[9px] text-[#30d158] flex items-center gap-1 leading-none mt-0.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#30d158] animate-pulse" />
