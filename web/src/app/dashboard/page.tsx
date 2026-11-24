@@ -86,7 +86,7 @@ function MetricCard({
   }[color ?? "default"];
 
   return (
-    <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-4 flex flex-col gap-3 hover:border-white/[0.1] hover:bg-[#1c1c1e] transition-all group relative overflow-hidden">
+    <div className="@container bg-[#18181a] border border-white/[0.06] rounded-2xl p-4 flex flex-col gap-3 hover:border-white/[0.1] hover:bg-[#1c1c1e] transition-all group relative overflow-hidden">
       {/* Subtle top shimmer on hover */}
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.08] to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
@@ -103,7 +103,8 @@ function MetricCard({
       </div>
 
       <div className="flex flex-col gap-1">
-        <span className={cn("text-[22px] font-bold font-mono tracking-tight leading-none", valueColor)}>
+        {/* O valor nunca quebra linha: a fonte diminui quando o card fica estreito */}
+        <span className={cn("text-[15px] @min-[10rem]:text-[18px] @min-[12.5rem]:text-[22px] whitespace-nowrap font-bold font-mono tracking-tight leading-none", valueColor)}>
           {value}
         </span>
         {sub && (
@@ -364,7 +365,7 @@ export default function DashboardResumoPage() {
               </Link>
             </div>
           )}
-          <div className={cn("grid grid-cols-2 gap-3", pnl.project_type === "app" ? "md:grid-cols-5" : "md:grid-cols-4")}>
+          <div className={cn("grid grid-cols-2 gap-3", pnl.project_type === "app" ? "md:grid-cols-3 xl:grid-cols-5" : "lg:grid-cols-4")}>
             <MetricCard label="Impostos" value={fmt(pnl.operational_taxes)} tooltip="Impostos cadastrados em Custos & Taxas." />
             <MetricCard label="Afiliados" value={fmt(pnl.affiliate)} tooltip="Comissão de afiliado: % sobre o valor depois da taxa do gateway." />
             <MetricCard label="Coprodução" value={fmt(pnl.coproduction)} tooltip="Parte do coprodutor: % sobre o que sobra depois da taxa e do afiliado." />

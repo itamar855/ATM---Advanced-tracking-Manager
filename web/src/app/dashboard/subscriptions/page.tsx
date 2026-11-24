@@ -41,15 +41,16 @@ function StatCard({
     amber: "bg-[#ff9f0a]/10 border-[#ff9f0a]/20 text-[#ff9f0a]",
   };
   return (
-    <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-5 flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/40 block mb-1.5">{label}</span>
-        <span className="text-2xl font-bold text-white tracking-tight tabular-nums">{value}</span>
-        {hint && <span className="text-[11.5px] text-white/40 block mt-1">{hint}</span>}
+    <div className="@container bg-[#18181a] border border-white/[0.06] rounded-2xl p-5">
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/40 leading-snug pt-1">{label}</span>
+        <div className={cn("w-8 h-8 rounded-xl border flex items-center justify-center shrink-0", tones[tone])}>
+          <Icon size={15} />
+        </div>
       </div>
-      <div className={cn("w-10 h-10 rounded-2xl border flex items-center justify-center shrink-0", tones[tone])}>
-        <Icon size={18} />
-      </div>
+      {/* O valor usa a largura toda e nunca quebra linha: a fonte diminui quando o card fica estreito */}
+      <span className="block whitespace-nowrap text-lg @min-[11rem]:text-2xl font-bold text-white tracking-tight tabular-nums">{value}</span>
+      {hint && <span className="text-[11.5px] text-white/40 block mt-1">{hint}</span>}
     </div>
   );
 }
