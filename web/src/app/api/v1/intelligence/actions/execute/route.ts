@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
@@ -16,6 +17,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { store_id, action_id, idempotency_key, decision = "approve" } = body;
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
 
     // 1. Validação de parâmetros obrigatórios
     if (!store_id || !action_id || !idempotency_key) {

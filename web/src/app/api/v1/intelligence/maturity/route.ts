@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import {
@@ -20,6 +21,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get("store_id");
+    const access = await requireStoreAccess(storeId);
+    if (!access.ok) return access.response;
     const days = Math.min(365, Math.max(1, parseInt(searchParams.get("days") || "30", 10)));
     const includeSimulations = searchParams.get("include_simulations") !== "false";
 

@@ -1,3 +1,4 @@
+import { requireCronOrUser } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { processEventQueue } from "@/lib/tracking/queue-engine";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
  * Retorna as estatísticas de saúde da fila de eventos
  */
 export async function GET(request: NextRequest) {
+  const auth = await requireCronOrUser(request);
+  if (!auth.ok) return auth.response;
   try {
     const supabase = createAdminClient();
 
@@ -57,6 +60,8 @@ export async function GET(request: NextRequest) {
  * Executa o reprocessamento imediato da fila
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireCronOrUser(request);
+  if (!auth.ok) return auth.response;
   try {
     const result = await processEventQueue(100);
     const parts = [

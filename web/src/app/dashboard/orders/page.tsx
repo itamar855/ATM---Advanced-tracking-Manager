@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useStore } from "@/contexts/StoreContext";
+import { projectInfo } from "@/lib/projects/types";
 import {
   ShoppingCart,
   DollarSign,
@@ -25,6 +26,7 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("today");
   const { activeStore } = useStore();
+  const info = projectInfo(activeStore);
 
   const loadOrders = async (silent = false) => {
     if (!activeStore) return;
@@ -174,7 +176,7 @@ export default function OrdersPage() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            Pedidos Rastreados & Atribuição CAPI
+            {info.showShopify ? "Pedidos Rastreados & Atribuição CAPI" : "Vendas Rastreadas & Atribuição CAPI"}
           </h1>
           <p className="text-[13px] text-white/40 mt-0.5">
             Histórico e atribuição em tempo real de vendas vinculadas à Meta Conversions API
@@ -232,10 +234,11 @@ export default function OrdersPage() {
               </div>
             )}
 
-            {/* Opção 1 Principal: Sincronizar via Shopify */}
+            {/* Shopify: só aparece em projeto do tipo loja */}
+            {info.showShopify && (
             <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-white/90 block">Opção 1: Sincronização Automática (Shopify API)</span>
+                <span className="text-xs font-semibold text-white/90 block">Sincronização automática (Shopify API)</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#2997ff]/15 text-[#2997ff] font-semibold border border-[#2997ff]/20">Recomendado</span>
               </div>
               <p className="text-[11.5px] text-white/40 leading-relaxed">
@@ -265,10 +268,11 @@ export default function OrdersPage() {
                 </button>
               </div>
             </div>
+            )}
 
-            {/* Opção 2: Colar JSON / Array de Pedidos */}
+            {/* Colar JSON / Array de Pedidos */}
             <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] space-y-2.5">
-              <span className="text-xs font-semibold text-white/90 block">Opção 2: Importar JSON Exportado (Zedy)</span>
+              <span className="text-xs font-semibold text-white/90 block">Importar JSON exportado (Zedy)</span>
               <p className="text-[11.5px] text-white/40">Exporte os pedidos recentes, cole o conteúdo JSON abaixo e clique em importar:</p>
               <textarea
                 value={jsonInput}

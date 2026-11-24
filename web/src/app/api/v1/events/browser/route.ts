@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
     const validEvents: BrowserEventName[] = [
       "PageView", "ViewContent", "AddToCart",
       "InitiateCheckout", "AddPaymentInfo", "Purchase",
-      "Search", "Lead", "CompleteRegistration", "Subscribe",
+      "Search", "Lead", "CompleteRegistration", "Subscribe", "StartTrial",
     ];
     if (!validEvents.includes(event_name)) {
       return jsonWithCors(

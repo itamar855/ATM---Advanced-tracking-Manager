@@ -4,9 +4,8 @@ import { decrypt, hashEmail, hashPhone, hashState, sha256Hash } from "../encrypt
 import { getVisitorIdentity, normalizeEmail, normalizePhone } from "./identity-stitcher";
 import { getStateFromZip } from "./event-builder";
 import { classifyCapiError } from "./capi-error-classifier";
+import { getSupabaseUrl, getServiceRoleKey } from "../supabase/env";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rridxhzbkitgcodzyctu.supabase.co";
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzcxNTUzMCwiZXhwIjoyMTAzMjkxNTMwfQ.gGxjPtKXABAYM4r6RsHcebVwwHsdpMD-RyRnxJn3QxE";
 
 export interface QueueProcessResult {
   totalProcessed: number;
@@ -246,11 +245,11 @@ export async function processEventQueue(maxEvents = 100): Promise<QueueProcessRe
 
       // Registra a tentativa na tabela event_attempts
       try {
-        await fetch(`${SUPABASE_URL}/rest/v1/event_attempts`, {
+        await fetch(`${getSupabaseUrl()}/rest/v1/event_attempts`, {
           method: "POST",
           headers: {
-            apikey: SUPABASE_SERVICE_ROLE_KEY,
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            apikey: getServiceRoleKey(),
+            Authorization: `Bearer ${getServiceRoleKey()}`,
             "Content-Type": "application/json",
             Prefer: "return=minimal",
           },

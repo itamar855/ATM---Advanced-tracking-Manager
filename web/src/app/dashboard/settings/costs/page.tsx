@@ -14,14 +14,25 @@ import {
   Sparkles,
   AlertCircle,
   Save,
+  Users,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useStore } from "@/contexts/StoreContext";
+import { projectInfo, projectTypeOf } from "@/lib/projects/types";
+
+type RuleType = "tax" | "duty" | "affiliate" | "coproduction";
+
+const RULE_TITLES: Record<RuleType, string> = {
+  tax: "Cadastrar Imposto",
+  duty: "Cadastrar Taxa de Gateway",
+  affiliate: "Cadastrar Comissão de Afiliado",
+  coproduction: "Cadastrar Coprodução",
+};
 
 interface TaxOrDuty {
   id?: string;
   name: string;
-  type: "tax" | "duty";
+  type: RuleType;
   calculation_rule: "revenue_value" | "commission_value";
   payment_method: "all" | "credit_card" | "pix" | "boleto" | "other";
   value_type: "percentage" | "fixed";
@@ -40,7 +51,9 @@ interface ProductCost {
 
 export default function CostsPage() {
   const { activeStore } = useStore();
-  const currentStoreId = activeStore?.id || "dckb5g-7d";
+  const currentStoreId = activeStore?.id || "";
+  const projectType = projectTypeOf(activeStore);
+  const isInfoOrApp = projectType !== "ecommerce";
 
   const [loading, setLoading] = useState(true);
   const [storeId, setStoreId] = useState<string>(currentStoreId);
@@ -51,7 +64,7 @@ export default function CostsPage() {
 
   // Modal Imposto / Taxa
   const [showTaxModal, setShowTaxModal] = useState(false);
-  const [modalType, setModalType] = useState<"tax" | "duty">("tax");
+  const [modalType, setModalType] = useState<RuleType>("tax");
   const [formName, setFormName] = useState("");
   const [formRule, setFormRule] = useState<"revenue_value" | "commission_value">("revenue_value");
   const [formMethod, setFormMethod] = useState<"all" | "credit_card" | "pix" | "boleto" | "other">("all");
@@ -67,6 +80,10 @@ export default function CostsPage() {
   useEffect(() => {
     const targetId = activeStore?.id || currentStoreId;
     setStoreId(targetId);
+    if (!targetId) {
+      setLoading(false);
+      return;
+    }
     loadData(targetId);
   }, [activeStore?.id]);
 
@@ -100,11 +117,13 @@ export default function CostsPage() {
 
   // ── Handlers de Impostos / Taxas ──────────────────────────────────────────
 
-  const handleOpenTaxModal = (type: "tax" | "duty") => {
+  const handleOpenTaxModal = (type: RuleType) => {
     setModalType(type);
-    setFormName(type === "tax" ? "Simples Nacional" : "Taxa Gateway");
+    setFormName(
+      type === "tax" ? "Simples Nacional" : type === "duty" ? "Taxa Gateway" : type === "affiliate" ? "Afiliados" : "Coprodução"
+    );
     setFormRule("revenue_value");
-    setFormMethod(type === "tax" ? "all" : "pix");
+    setFormMethod(type === "duty" ? "pix" : "all");
     setFormValType("percentage");
     setFormValue("");
     setShowTaxModal(true);
@@ -115,12 +134,18 @@ export default function CostsPage() {
     if (!storeId) return;
 
     const numVal = Number(formValue) || 0;
+    // Imposto, afiliado e coprodução são sempre %; só a taxa do gateway pode ser R$ fixo.
+    const valueType = modalType === "duty" ? formValType : "percentage";
+    if (numVal < 0 || (valueType === "percentage" && numVal > 100)) {
+      alert("O percentual precisa ficar entre 0 e 100.");
+      return;
+    }
     const newRecord: TaxOrDuty = {
       name: formName.trim(),
       type: modalType,
-      calculation_rule: formRule,
-      payment_method: formMethod,
-      value_type: formValType,
+      calculation_rule: modalType === "tax" ? formRule : "revenue_value",
+      payment_method: modalType === "duty" ? formMethod : "all",
+      value_type: valueType,
       value: numVal,
     };
 
@@ -144,15 +169,16 @@ export default function CostsPage() {
     }
   };
 
-  const handleDeleteTax = async (id?: string, index?: number) => {
+  const handleDeleteTax = async (item: TaxOrDuty) => {
     if (!confirm("Tem certeza que deseja remover esta regra?")) return;
 
     try {
-      if (id) {
+      if (item.id) {
         const supabase = createClient();
-        await supabase.from("taxes_and_duties").delete().eq("id", id);
+        const { error } = await supabase.from("taxes_and_duties").delete().eq("id", item.id);
+        if (error) throw error;
       }
-      setTaxesAndDuties(taxesAndDuties.filter((_, i) => i !== index));
+      setTaxesAndDuties(taxesAndDuties.filter((t) => t !== item));
     } catch (err: any) {
       alert("Erro ao excluir: " + err.message);
     }
@@ -328,6 +354,7 @@ export default function CostsPage() {
 
   const taxesList = taxesAndDuties.filter((t) => t.type === "tax");
   const dutiesList = taxesAndDuties.filter((t) => t.type === "duty");
+  const shareList = taxesAndDuties.filter((t) => t.type === "affiliate" || t.type === "coproduction");
 
   return (
     <div className="space-y-6 fade-in max-w-5xl mx-auto pb-16 select-none">
@@ -338,7 +365,9 @@ export default function CostsPage() {
           Custos, Impostos e Taxas
         </h1>
         <p className="text-[13px] text-white/40 mt-1">
-          Configure suas alíquotas de imposto, taxas reais do gateway e custo de mercadorias (COGS) para conciliação automática com o Dashboard e Campanhas.
+          {isInfoOrApp
+            ? `Projeto de ${projectInfo(activeStore).short.toLowerCase()}: cadastre imposto, taxa do gateway, afiliado e coprodução. O lucro do Resumo usa esses valores.`
+            : "Configure suas alíquotas de imposto, taxas reais do gateway e custo de mercadorias (COGS) para conciliação automática com o Dashboard e Campanhas."}
         </p>
       </div>
 
@@ -381,13 +410,13 @@ export default function CostsPage() {
                     <div>
                       <p className="font-semibold text-white/90">{item.name}</p>
                       <p className="text-[10px] text-white/40 mt-0.5">
-                        Regra: {item.calculation_rule === "revenue_value" ? "Valor de Faturamento" : "Valor de Comissão"}
+                        Regra: {item.calculation_rule === "revenue_value" ? "Sobre o faturamento" : "Sobre a sua comissão"}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="font-mono font-bold text-[#2997ff] text-sm">{item.value}%</span>
                       <button
-                        onClick={() => handleDeleteTax(item.id, idx)}
+                        onClick={() => handleDeleteTax(item)}
                         className="text-white/30 hover:text-[#ff453a] p-1 rounded transition"
                         title="Remover imposto"
                       >
@@ -428,6 +457,11 @@ export default function CostsPage() {
                   <p className="text-[11px] text-white/30 mt-0.5">
                     Clique em &quot;Adicionar Taxa&quot; para definir as taxas cobradas pelo seu checkout.
                   </p>
+                  <p className="text-[11px] text-white/30 mt-1.5">
+                    {isInfoOrApp
+                      ? "Enquanto não houver nenhuma regra, o Resumo considera taxa zero."
+                      : "Enquanto não houver nenhuma regra, o Resumo estima 9,9% no PIX e 15% no cartão."}
+                  </p>
                 </div>
               ) : (
                 dutiesList.map((item, idx) => (
@@ -449,7 +483,7 @@ export default function CostsPage() {
                         {item.value_type === "percentage" ? `${item.value}%` : `R$ ${item.value}`}
                       </span>
                       <button
-                        onClick={() => handleDeleteTax(item.id, idx)}
+                        onClick={() => handleDeleteTax(item)}
                         className="text-white/30 hover:text-[#ff453a] p-1 rounded transition"
                         title="Remover taxa"
                       >
@@ -464,6 +498,70 @@ export default function CostsPage() {
         </div>
       </div>
 
+      {/* ── CARD: AFILIADOS E COPRODUÇÃO (infoproduto e app) ── */}
+      {(isInfoOrApp || shareList.length > 0) && (
+        <div className="p-6 rounded-2xl bg-[#18181a] border border-white/[0.06] shadow-[0_8px_24px_rgba(0,0,0,0.3)] space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-white/90 flex items-center gap-2">
+              <Users className="text-[#bf5af2]" size={16} />
+              Afiliados e Coprodução
+            </h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleOpenTaxModal("affiliate")}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#bf5af2]/15 hover:bg-[#bf5af2]/25 text-[#bf5af2] border border-[#bf5af2]/25 text-xs font-semibold transition active:scale-[0.98]"
+              >
+                <Plus size={13} /> Afiliado
+              </button>
+              <button
+                onClick={() => handleOpenTaxModal("coproduction")}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#bf5af2]/15 hover:bg-[#bf5af2]/25 text-[#bf5af2] border border-[#bf5af2]/25 text-xs font-semibold transition active:scale-[0.98]"
+              >
+                <Plus size={13} /> Coprodução
+              </button>
+            </div>
+          </div>
+          <p className="text-[12px] text-white/40 leading-relaxed">
+            Afiliado: % sobre o valor da venda depois da taxa do gateway. Coprodução: % sobre o que sobra depois da taxa e do afiliado.
+            Se só parte das vendas vem de afiliado, use a comissão média. Num reembolso, essa parte volta e não sai do seu lucro.
+          </p>
+          {shareList.length === 0 ? (
+            <div className="p-5 rounded-xl border border-dashed border-white/[0.08] bg-white/[0.02] text-center">
+              <p className="text-xs font-semibold text-white/60">Nenhum afiliado ou coprodutor cadastrado</p>
+              <p className="text-[11px] text-white/30 mt-0.5">Se você vende sozinho, deixe vazio.</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {shareList.map((item, idx) => (
+                <div
+                  key={item.id || idx}
+                  className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.05] text-xs hover:border-white/[0.1] transition"
+                >
+                  <div>
+                    <p className="font-semibold text-white/90">{item.name}</p>
+                    <p className="text-[10px] text-white/40 mt-0.5">
+                      {item.type === "affiliate" ? "Afiliado" : "Coprodução"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono font-bold text-[#bf5af2] text-sm">{item.value}%</span>
+                    <button
+                      onClick={() => handleDeleteTax(item)}
+                      className="text-white/30 hover:text-[#ff453a] p-1 rounded transition"
+                      title="Remover regra"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!isInfoOrApp && (
+      <>
       {/* ── CARD 3: PREÇO DE CUSTO POR PRODUTO (COGS) ── */}
       <div className="p-6 rounded-2xl bg-[#18181a] border border-white/[0.06] shadow-[0_8px_24px_rgba(0,0,0,0.3)] space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.06] pb-4">
@@ -533,6 +631,9 @@ export default function CostsPage() {
         )}
       </div>
 
+      </>
+      )}
+
       {/* ── MODAL: ADICIONAR IMPOSTO OU TAXA ── */}
       {showTaxModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4 fade-in">
@@ -542,8 +643,14 @@ export default function CostsPage() {
           >
             <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
               <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                {modalType === "tax" ? <Shield className="text-[#2997ff]" size={16} /> : <DollarSign className="text-[#30d158]" size={16} />}
-                {modalType === "tax" ? "Cadastrar Imposto" : "Cadastrar Taxa de Gateway"}
+                {modalType === "tax" ? (
+                  <Shield className="text-[#2997ff]" size={16} />
+                ) : modalType === "duty" ? (
+                  <DollarSign className="text-[#30d158]" size={16} />
+                ) : (
+                  <Users className="text-[#bf5af2]" size={16} />
+                )}
+                {RULE_TITLES[modalType]}
               </h3>
               <button
                 type="button"
@@ -575,10 +682,10 @@ export default function CostsPage() {
                   className="w-full px-3.5 py-2 rounded-xl bg-white/[0.04] border border-white/[0.07] text-white/90 text-xs focus:border-[#2997ff]/40 focus:outline-none cursor-pointer"
                 >
                   <option value="revenue_value" className="bg-[#18181a]">Sobre o Faturamento Bruto (Padrão)</option>
-                  <option value="commission_value" className="bg-[#18181a]">Sobre o Valor de Comissão</option>
+                  <option value="commission_value" className="bg-[#18181a]">Sobre a sua comissão (depois de taxa, afiliado e coprodução)</option>
                 </select>
               </div>
-            ) : (
+            ) : modalType === "duty" ? (
               <>
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-wider">Forma de Pagamento</label>
@@ -622,11 +729,17 @@ export default function CostsPage() {
                   </div>
                 </div>
               </>
+            ) : (
+              <p className="text-[11.5px] text-white/40 leading-relaxed">
+                {modalType === "affiliate"
+                  ? "Percentual pago ao afiliado, sobre o valor da venda depois da taxa do gateway."
+                  : "Percentual do coprodutor, sobre o que sobra depois da taxa do gateway e do afiliado."}
+              </p>
             )}
 
             <div className="space-y-1.5">
               <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-wider">
-                Valor {formValType === "percentage" ? "(%)" : "(R$)"}
+                Valor {modalType !== "duty" || formValType === "percentage" ? "(%)" : "(R$)"}
               </label>
               <input
                 type="number"

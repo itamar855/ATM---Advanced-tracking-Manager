@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,6 +13,8 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { store_id, botToken, chatId, notifyApproved, notifyPending } = body;
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
 
     if (!store_id) {
       return NextResponse.json({ error: "store_id é obrigatório" }, { status: 400 });

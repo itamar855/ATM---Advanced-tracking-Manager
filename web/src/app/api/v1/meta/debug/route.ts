@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
@@ -14,6 +15,8 @@ const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const storeId = searchParams.get("store_id");
+  const access = await requireStoreAccess(storeId);
+  if (!access.ok) return access.response;
   const directToken = searchParams.get("token");
 
   const debugLog: {

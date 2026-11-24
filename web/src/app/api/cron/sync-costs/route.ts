@@ -1,3 +1,4 @@
+import { isCronRequest } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { fetchMetaSpendInsights, persistCampaignCosts } from "@/lib/meta/marketing-api";
@@ -9,6 +10,9 @@ import { resolveMetaAccessToken } from "@/lib/meta/token";
  * Query Params: ?date=YYYY-MM-DD
  */
 export async function GET(request: NextRequest) {
+  if (!isCronRequest(request)) {
+    return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get("date");

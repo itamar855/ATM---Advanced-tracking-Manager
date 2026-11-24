@@ -152,7 +152,8 @@ export type BrowserEventName =
   | "Search"
   | "Lead"
   | "CompleteRegistration"
-  | "Subscribe";
+  | "Subscribe"
+  | "StartTrial";
 
 export interface BrowserEventSession {
   // Cookies do browser — NÃO hasheados (regra Meta + CEREBRO_TECNICO)

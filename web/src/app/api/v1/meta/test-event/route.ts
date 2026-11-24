@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { sendMetaCAPIEvent } from "@/lib/meta/capi";
@@ -14,6 +15,8 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { store_id, test_event_code, event_name } = body;
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
 
     if (!store_id || !test_event_code || !event_name) {
       return NextResponse.json({ error: "store_id, test_event_code e event_name são obrigatórios" }, { status: 400 });

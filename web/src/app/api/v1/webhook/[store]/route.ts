@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
+import { isValidShopifyHmac, shopifyWebhookSecrets } from "@/lib/webhook-auth";
 import { reservePurchase, updateEventStatus } from "@/lib/tracking/dedup-engine";
 import { buildMetaPurchaseEvent } from "@/lib/tracking/event-builder";
 import { sendMetaCAPIEvent } from "@/lib/meta/capi";
@@ -18,6 +19,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     if (!hmacHeader || (topicHeader !== "orders/paid" && topicHeader !== "orders/create")) {
       return new NextResponse("Invalid topic or headers", { status: 400 });
+    }
+
+    // Valida a assinatura HMAC da Shopify antes de processar qualquer dado
+    const supabase = createAdminClient();
+    const { data: storeRow } = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(storeId)
+      ? await supabase.from("stores").select("id, webhook_secret, settings").eq("id", storeId).maybeSingle()
+      : { data: null };
+    if (!storeRow || !isValidShopifyHmac(rawBody, hmacHeader, shopifyWebhookSecrets(storeRow))) {
+      console.warn(`[Shopify Webhook] Assinatura HMAC inválida ou loja desconhecida (store=${storeId}).`);
+      return new NextResponse("Invalid signature", { status: 401 });
     }
 
     const payload = JSON.parse(rawBody);
@@ -124,7 +135,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ ok: true, message: "Purchase em processamento concorrente" }, { status: 202 });
     }
 
-    const supabase = await createClient();
 
     // 2. Tentar buscar integração ativa da Meta CAPI para esta loja
     const { data: integration, error: intError } = await supabase

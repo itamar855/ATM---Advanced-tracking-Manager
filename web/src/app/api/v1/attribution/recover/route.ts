@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { recoverOrderAttribution, batchRecoverUntrackedOrders } from "@/lib/tracking/attribution-engine";
 
@@ -10,7 +11,9 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const storeId = body.store_id || request.nextUrl.searchParams.get("store_id") || "dckb5g-7d";
+    const storeId = body.store_id || request.nextUrl.searchParams.get("store_id");
+    const access = await requireStoreAccess(storeId);
+    if (!access.ok) return access.response;
     const mode = body.mode || request.nextUrl.searchParams.get("mode") || "single";
 
     if (mode === "batch") {

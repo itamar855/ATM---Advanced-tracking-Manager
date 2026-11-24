@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
@@ -5,6 +6,8 @@ import { getUsdBrlRate, convertToBrl } from "@/lib/currency";
 import { resolveAccountDateRange, AccountDateRange } from "@/lib/date-utils";
 import { metaCache } from "@/lib/meta/meta-cache";
 import { performanceMonitor } from "@/lib/meta/performance-monitor";
+import { isMissingProjectTypeColumn, projectTypeOf, type ProjectType } from "@/lib/projects/types";
+import { refundLoss, saleCosts, summarizePnl, type CostRule } from "@/lib/pnl/project-pnl";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +22,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get("store_id");
+    const access = await requireStoreAccess(storeId);
+    if (!access.ok) return access.response;
     const datePreset = searchParams.get("date_preset") || "today";
     const selectedAccountId = searchParams.get("ad_account_id") || "all";
     const refresh = searchParams.get("refresh") === "true";
@@ -367,9 +372,26 @@ export async function GET(request: NextRequest) {
       .select("*")
       .eq("store_id", storeId);
 
+    // Tipo do projeto (loja, infoproduto, app): muda as taxas padrão, reembolsos e renovações.
+    let projectType: ProjectType = "ecommerce";
+    {
+      const { data: storeRow, error: storeErr } = await supabase
+        .from("stores")
+        .select("project_type")
+        .eq("id", storeId)
+        .maybeSingle();
+      if (storeErr && !isMissingProjectTypeColumn(storeErr)) {
+        console.warn("[Dashboard Metrics] Tipo do projeto indisponível:", storeErr.message);
+      }
+      projectType = projectTypeOf(storeErr ? null : storeRow);
+    }
+    const costRules = (storeTaxesAndDuties || []) as CostRule[];
+
     let grossRevenue = 0;
     let totalTaxes = 0;
     let totalOperationalTaxes = 0;
+    let totalAffiliate = 0;
+    let totalCoproduction = 0;
     let totalCogs = 0;
     let paidSalesCount = 0;
     let pixCount = 0;
@@ -381,7 +403,6 @@ export async function GET(request: NextRequest) {
     let naSalesCount = 0;
 
     const seenOrderIds = new Set<string>();
-    const hasCustomRules = (storeTaxesAndDuties || []).length > 0;
 
     if (hasLedgerData) {
       // ── FLUXO CONTÁBIL PRINCIPAL: REVENUE LEDGER ─────────────────────────────
@@ -425,42 +446,12 @@ export async function GET(request: NextRequest) {
 
         grossRevenue += val;
 
-        // Cálculo de Taxas e Impostos Dinâmicos (Cadastrados pelo Usuário)
-        let fee = 0;
-        let operationalTax = 0;
-
-        if (hasCustomRules) {
-          (storeTaxesAndDuties || []).filter((t: any) => t.type === "tax").forEach((t: any) => {
-            operationalTax += val * (Number(t.value || 0) / 100);
-          });
-
-          (storeTaxesAndDuties || []).filter((t: any) => t.type === "duty").forEach((t: any) => {
-            const method = String(row.payment_method || "").toLowerCase();
-            const isCard = method.includes("card") || method.includes("cartao") || method.includes("credit");
-            const isBoleto = method.includes("boleto");
-            const isPix = method.includes("pix") || method === "";
-            const matchMethod = t.payment_method === "all" ||
-              (isPix && t.payment_method === "pix") ||
-              (isCard && t.payment_method === "credit_card") ||
-              (isBoleto && t.payment_method === "boleto");
-
-            if (matchMethod) {
-              if (t.value_type === "percentage") {
-                fee += val * (Number(t.value || 0) / 100);
-              } else {
-                fee += Number(t.value || 0);
-              }
-            }
-          });
-        } else {
-          if (val > 0) {
-            const isCard = String(row.payment_method || "").toLowerCase().includes("card");
-            fee = isCard ? (val * 0.15) : (val * 0.099);
-          }
-        }
-
-        totalTaxes += fee;
-        totalOperationalTaxes += operationalTax;
+        // Taxas, impostos, afiliado e coprodução (tela Custos & Taxas)
+        const costs = saleCosts(val, row.payment_method, costRules, projectType);
+        totalTaxes += costs.gatewayFee;
+        totalOperationalTaxes += costs.operationalTax;
+        totalAffiliate += costs.affiliate;
+        totalCoproduction += costs.coproduction;
       });
     } else {
       // ── FALLBACK RESILIENTE: CONSULTA VIA EVENTS (CASO LEDGER VAZIO) ────────
@@ -512,33 +503,12 @@ export async function GET(request: NextRequest) {
         const isBoleto = method.includes("boleto");
         const isPix = method.includes("pix") || method === "";
 
-        let fee = 0;
-        let operationalTax = 0;
-
-        if (hasCustomRules) {
-          (storeTaxesAndDuties || []).filter((t: any) => t.type === "tax").forEach((t: any) => {
-            operationalTax += val * (Number(t.value || 0) / 100);
-          });
-
-          (storeTaxesAndDuties || []).filter((t: any) => t.type === "duty").forEach((t: any) => {
-            const matchMethod = t.payment_method === "all" ||
-              (isPix && t.payment_method === "pix") ||
-              (isCard && t.payment_method === "credit_card") ||
-              (isBoleto && t.payment_method === "boleto");
-
-            if (matchMethod) {
-              if (t.value_type === "percentage") {
-                fee += val * (Number(t.value || 0) / 100);
-              } else {
-                fee += Number(t.value || 0);
-              }
-            }
-          });
-        } else {
-          if (val > 0) {
-            fee = isCard ? (val * 0.15) : (val * 0.099);
-          }
-        }
+        // Taxas, impostos, afiliado e coprodução (tela Custos & Taxas)
+        const costs = saleCosts(val, method, costRules, projectType);
+        totalTaxes += costs.gatewayFee;
+        totalOperationalTaxes += costs.operationalTax;
+        totalAffiliate += costs.affiliate;
+        totalCoproduction += costs.coproduction;
 
         const products = orderDetails.products || customData.products || [];
         if (Array.isArray(products) && (storeProductCosts || []).length > 0) {
@@ -553,9 +523,6 @@ export async function GET(request: NextRequest) {
             }
           });
         }
-
-        totalTaxes += fee;
-        totalOperationalTaxes += operationalTax;
 
         paidSalesCount += 1;
 
@@ -606,6 +573,62 @@ export async function GET(request: NextRequest) {
       pendingSalesValue += Number(orderDetails.value || customData.value || 0);
     });
 
+    // Reembolsos (infoproduto e app) e renovações de assinatura (app).
+    // Só na visão "todas as contas": um reembolso ou renovação não tem a conta de anúncio gravada.
+    let refundsValue = 0;
+    let refundsLossValue = 0;
+    let refundsCount = 0;
+    let renewalRevenue = 0;
+    let renewalsCount = 0;
+    const isInfoOrApp = projectType !== "ecommerce";
+    if (isInfoOrApp && selectedAccountId === "all") {
+      const [refundRes, renewalRes] = await Promise.all([
+        supabase
+          .from("orders")
+          .select("order_id, value, refund_value, payment_method")
+          .eq("store_id", storeId)
+          .eq("status", "refunded")
+          .gte("refunded_at", effectiveStartDate)
+          .lte("refunded_at", queryEndUtc)
+          .limit(5000),
+        projectType === "app"
+          ? supabase
+              .from("orders")
+              .select("order_id, value, payment_method, status")
+              .eq("store_id", storeId)
+              .not("subscription_id", "is", null)
+              .in("status", ["paid", "refunded"])
+              .gte("order_paid_at", effectiveStartDate)
+              .lte("order_paid_at", queryEndUtc)
+              .limit(5000)
+          : Promise.resolve({ data: [] as { order_id: string; value: number; payment_method: string | null }[], error: null }),
+      ]);
+      if (refundRes.error) console.warn("[Dashboard Metrics] Reembolsos indisponíveis:", refundRes.error.message);
+      if (renewalRes.error) console.warn("[Dashboard Metrics] Renovações indisponíveis:", renewalRes.error.message);
+
+      for (const r of refundRes.data || []) {
+        const v = Number(r.refund_value ?? r.value ?? 0);
+        refundsValue += v;
+        refundsLossValue += refundLoss(v, r.payment_method, costRules, projectType);
+        refundsCount += 1;
+      }
+      // A 1ª cobrança já veio como Purchase; as renovações não vão para a Meta e só existem em orders.
+      for (const r of renewalRes.data || []) {
+        const id = String(r.order_id || "").trim();
+        if (!id || seenOrderIds.has(id)) continue;
+        seenOrderIds.add(id);
+        const v = Number(r.value || 0);
+        renewalRevenue += v;
+        renewalsCount += 1;
+        grossRevenue += v;
+        const costs = saleCosts(v, r.payment_method, costRules, projectType);
+        totalTaxes += costs.gatewayFee;
+        totalOperationalTaxes += costs.operationalTax;
+        totalAffiliate += costs.affiliate;
+        totalCoproduction += costs.coproduction;
+      }
+    }
+
     const totalOrders = paidSalesCount;
     const pixPercent = totalOrders > 0 ? Math.round((pixCount / totalOrders) * 100) : 0;
     const cardPercent = totalOrders > 0 ? Math.round((cardCount / totalOrders) * 100) : 0;
@@ -615,13 +638,25 @@ export async function GET(request: NextRequest) {
     const taxes = totalTaxes;
     const operationalTaxes = totalOperationalTaxes;
     const cogs = totalCogs;
-    const netRevenue = grossRevenue - taxes - operationalTaxes;
     const totalSpend = totalSpendBrl;
-    const totalProfit = netRevenue - totalSpend - cogs;
-    // ROAS da Utmify é baseado no Faturamento BRUTO
-    const roas = totalSpend > 0 ? grossRevenue / totalSpend : 0;
-    const roi = totalSpend > 0 ? totalProfit / totalSpend : 0;
-    const margin = netRevenue > 0 ? (totalProfit / netRevenue) * 100 : 0;
+    // ROAS da Utmify é baseado no Faturamento BRUTO (calculado em summarizePnl)
+    const pnl = summarizePnl({
+      grossRevenue,
+      gatewayFees: taxes,
+      operationalTaxes,
+      affiliate: totalAffiliate,
+      coproduction: totalCoproduction,
+      refunds: refundsValue,
+      refundLoss: refundsLossValue,
+      cogs,
+      adSpend: totalSpend,
+    });
+    const netRevenue = pnl.netRevenue;
+    const totalProfit = pnl.profit;
+    const roas = pnl.roas;
+    const roi = pnl.roi;
+    const margin = pnl.margin;
+    const round2 = (v: number) => Math.round(v * 100) / 100;
     const cpa = totalOrders > 0 && totalSpend > 0 ? totalSpend / totalOrders : 0;
     const arpu = totalOrders > 0 ? netRevenue / totalOrders : 0;
 
@@ -649,13 +684,31 @@ export async function GET(request: NextRequest) {
         cogs: Math.round(cogs * 100) / 100,
         roi: Math.round(roi * 100) / 100,
         cpa: Math.round(cpa * 100) / 100,
-        refund_rate: 0.0,
+        refund_rate: isInfoOrApp && totalOrders > 0 ? Math.round((refundsCount / totalOrders) * 1000) / 10 : 0.0,
         arpu: Math.round(arpu * 100) / 100,
         chargeback_rate: 0.0,
         approval_rate: totalOrders > 0 ? 100.0 : 0.0,
         impressions: totalImpressions,
         clicks: totalClicks,
         total_orders: totalOrders,
+      },
+      pnl: {
+        project_type: projectType,
+        gateway_fees: round2(taxes),
+        operational_taxes: round2(operationalTaxes),
+        affiliate: round2(totalAffiliate),
+        coproduction: round2(totalCoproduction),
+        refunds: round2(refundsValue),
+        refund_loss: round2(refundsLossValue),
+        refunds_count: refundsCount,
+        renewal_revenue: round2(renewalRevenue),
+        renewals_count: renewalsCount,
+        cogs: round2(cogs),
+        // Sem regra cadastrada: loja usa a estimativa antiga (9,9% / 15%); info e app ficam com taxa zero.
+        fees_configured: costRules.length > 0,
+        fees_estimated: costRules.length === 0 && projectType === "ecommerce",
+        // Reembolsos e renovações não têm conta de anúncio: só entram na visão "todas as contas".
+        refunds_and_renewals_included: isInfoOrApp && selectedAccountId === "all",
       },
       payment_methods: {
         total: totalOrders,

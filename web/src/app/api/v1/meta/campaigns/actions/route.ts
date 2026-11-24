@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { decrypt } from "@/lib/encryption";
 import { createClient } from "@/lib/supabase/server";
@@ -9,6 +10,8 @@ import { createClient } from "@/lib/supabase/server";
 export async function POST(request: NextRequest) {
   try {
     const { store_id, action, campaign_id, value, adset_id, ad_id } = await request.json();
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
 
     if (!store_id || !action || !campaign_id) {
       return NextResponse.json({ ok: false, error: "Parâmetros ausentes" }, { status: 400 });

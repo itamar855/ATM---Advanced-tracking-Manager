@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 
@@ -19,11 +20,14 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { startDate, endDate, eventNames } = body as {
+    const { startDate, endDate, eventNames, store_id } = body as {
+      store_id?: string;
       startDate?: string;
       endDate?: string;
       eventNames?: string[];
     };
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
 
     if (!startDate) {
       return NextResponse.json({ ok: false, error: "A data de início (startDate) é obrigatória." }, { status: 400 });
@@ -44,6 +48,7 @@ export async function POST(request: NextRequest) {
         status: "pending", 
         attempt_count: 0 
       })
+      .eq("store_id", access.storeId)
       .in("event_name", eventsToRescue)
       .gte("created_at", start.toISOString())
       .lte("created_at", end.toISOString())
@@ -54,7 +59,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Chama o queue-engine assincronamente para começar a disparar imediatamente (fire and forget)
-    fetch(`${request.nextUrl.origin}/api/v1/events/queue`, { method: "POST" }).catch(() => {});
+    fetch(`${request.nextUrl.origin}/api/v1/events/queue`, {
+      method: "POST",
+      headers: { cookie: request.headers.get("cookie") || "" },
+    }).catch(() => {});
 
     return NextResponse.json({
       ok: true,

@@ -1,3 +1,5 @@
+import { webhookTokenFor } from "@/lib/webhook-auth";
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { encrypt, decrypt } from "@/lib/encryption";
@@ -17,8 +19,11 @@ export async function POST(request: NextRequest) {
       shopify_client_id, // Client ID do App Partners
       shopify_client_secret, // Client Secret (shpss_...)
       shopify_shop_domain, // Domínio myshopify
+      shopify_webhook_secret, // Chave de assinatura dos webhooks (admin Shopify > Notificações > Webhooks)
       mercadopago_token,
     } = body;
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
 
     if (!store_id) {
       return NextResponse.json({ ok: false, error: "store_id obrigatório" }, { status: 400 });
@@ -84,6 +89,10 @@ export async function POST(request: NextRequest) {
       updatePayload.shop_domain = shopify_shop_domain.trim();
     }
 
+    if (typeof shopify_webhook_secret === "string" && shopify_webhook_secret.trim() && !shopify_webhook_secret.includes("••••")) {
+      updatePayload.webhook_secret = shopify_webhook_secret.trim();
+    }
+
     const { error: updateErr } = await supabase
       .from("stores")
       .update(updatePayload)
@@ -111,12 +120,14 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const store_id = request.nextUrl.searchParams.get("store_id");
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
     if (!store_id) return NextResponse.json({ error: "store_id obrigatório" }, { status: 400 });
 
     const supabase = createAdminClient();
     const { data: store } = await supabase
       .from("stores")
-      .select("id, name, shop_domain, settings")
+      .select("id, name, shop_domain, settings, webhook_secret")
       .eq("id", store_id)
       .maybeSingle();
 
@@ -126,8 +137,18 @@ export async function GET(request: NextRequest) {
     const hasAccessToken = Boolean(shopify.access_token || shopify.access_token_enc);
     const hasClientSecret = Boolean(shopify.client_secret_enc);
 
+    // Token secreto das URLs de webhook (Zedy, Vega, Gateway7) desta loja
+    let webhookToken: string | null = null;
+    try {
+      webhookToken = webhookTokenFor(access.storeId);
+    } catch (err) {
+      console.error((err as Error).message);
+    }
+
     return NextResponse.json({
       ok: true,
+      webhookToken,
+      shopifyWebhookSecretSet: Boolean(store.webhook_secret),
       shopifyConnected: hasAccessToken || shopify.connected === true,
       shopifyClientId: shopify.client_id || "",
       shopifyClientSecretMasked: hasClientSecret ? "shpss_••••••••••••••••••••••••" : "",

@@ -1,6 +1,12 @@
 import crypto from "crypto";
 
-const DEFAULT_SECRET = process.env.ATM_ENCRYPTION_KEY || "atm-shopify-oauth-secret-fallback-key-32b";
+function getStateSecret(): string {
+  const secret = process.env.ATM_ENCRYPTION_KEY;
+  if (!secret) {
+    throw new Error("[ATM] ATM_ENCRYPTION_KEY não configurada: impossível assinar o state OAuth.");
+  }
+  return secret;
+}
 
 /**
  * Escopos necessários para leitura de pedidos, produtos e clientes
@@ -21,7 +27,7 @@ export const SHOPIFY_OAUTH_SCOPES = [
 export function signOAuthState(storeId: string, clientId: string = ""): string {
   const timestamp = Date.now();
   const payload = `${storeId}:${clientId}:${timestamp}`;
-  const hmac = crypto.createHmac("sha256", DEFAULT_SECRET).update(payload).digest("hex");
+  const hmac = crypto.createHmac("sha256", getStateSecret()).update(payload).digest("hex");
   const data = Buffer.from(JSON.stringify({ storeId, clientId, timestamp, hmac })).toString("base64url");
   return data;
 }
@@ -52,7 +58,7 @@ export function verifyOAuthState(stateString: string): {
     }
 
     const payload = `${storeId}:${clientId || ""}:${timestamp}`;
-    const expectedHmac = crypto.createHmac("sha256", DEFAULT_SECRET).update(payload).digest("hex");
+    const expectedHmac = crypto.createHmac("sha256", getStateSecret()).update(payload).digest("hex");
 
     if (crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expectedHmac))) {
       return { valid: true, storeId, clientId };

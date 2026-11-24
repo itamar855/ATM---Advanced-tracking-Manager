@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 
@@ -26,6 +27,8 @@ export async function GET(req: NextRequest) {
 
     // 1. Validação obrigatória de store_id (Isolamento Multi-tenant)
     const storeId = searchParams.get("store_id");
+    const access = await requireStoreAccess(storeId);
+    if (!access.ok) return access.response;
     if (!storeId || storeId.trim() === "") {
       return NextResponse.json(
         { ok: false, error: "store_id is required" },

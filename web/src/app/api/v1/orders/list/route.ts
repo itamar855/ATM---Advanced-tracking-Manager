@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -11,6 +12,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get("store_id");
+    const access = await requireStoreAccess(storeId);
+    if (!access.ok) return access.response;
 
     if (!storeId) {
       return NextResponse.json({ ok: false, error: "store_id is required", orders: [] }, { status: 400 });

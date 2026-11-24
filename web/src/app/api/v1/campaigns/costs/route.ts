@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { getCampaignCosts, calculateReconciledMetrics } from "@/lib/tracking/campaign-cost-sync";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -22,6 +23,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get("store_id");
+    const access = await requireStoreAccess(storeId);
+    if (!access.ok) return access.response;
 
     if (!storeId) {
       return NextResponse.json(

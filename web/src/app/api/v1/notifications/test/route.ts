@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { sendStorePushNotification } from "@/lib/notifications/web-push";
 
@@ -11,6 +12,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { store_id, type = "approved" } = body;
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
 
     if (!store_id) {
       return NextResponse.json({ ok: false, error: "store_id obrigatório" }, { status: 400 });

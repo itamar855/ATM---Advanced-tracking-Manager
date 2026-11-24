@@ -21,10 +21,12 @@ import {
   FolderTree,
   Bell,
   Plus,
+  Repeat,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { useStore } from "@/contexts/StoreContext";
+import { projectInfo, type ProjectTypeInfo } from "@/lib/projects/types";
 
 interface NavItem {
   label: string;
@@ -38,16 +40,19 @@ interface NavSection {
   items: NavItem[];
 }
 
-const navigation: NavSection[] = [
-  {
-    section: "Principal",
-    items: [
-      { label: "Resumo", href: "/dashboard", icon: LayoutDashboard },
-      { label: "Campanhas", href: "/dashboard/campaigns", icon: BarChart3 },
-      { label: "Eventos CAPI", href: "/dashboard/events", icon: Activity },
-      { label: "Pedidos & Vendas", href: "/dashboard/orders", icon: ShoppingCart },
-    ],
-  },
+/** Menu conforme o tipo do projeto ativo (loja, infoproduto ou web app). */
+function buildNavigation(info: ProjectTypeInfo): NavSection[] {
+  const principal: NavItem[] = [
+    { label: "Resumo", href: "/dashboard", icon: LayoutDashboard },
+    { label: "Campanhas", href: "/dashboard/campaigns", icon: BarChart3 },
+    { label: "Eventos CAPI", href: "/dashboard/events", icon: Activity },
+    { label: info.salesLabel, href: "/dashboard/orders", icon: ShoppingCart },
+  ];
+  if (info.showSubscriptions) principal.push({ label: "Assinaturas", href: "/dashboard/subscriptions", icon: Repeat });
+  return [{ section: "Principal", items: principal }, ...FIXED_SECTIONS];
+}
+
+const FIXED_SECTIONS: NavSection[] = [
   {
     section: "Saúde",
     items: [
@@ -58,11 +63,11 @@ const navigation: NavSection[] = [
   {
     section: "Configurações",
     items: [
-      { label: "Loja", href: "/dashboard/settings/store", icon: Store },
+      { label: "Projeto", href: "/dashboard/settings/store", icon: Store },
       { label: "Integrações", href: "/dashboard/settings/integrations", icon: Plug },
       { label: "Notificações", href: "/dashboard/settings/notifications", icon: Bell },
       { label: "Custos & Taxas", href: "/dashboard/settings/costs", icon: DollarSign },
-      { label: "Assinatura", href: "/dashboard/settings/billing", icon: CreditCard },
+      { label: "Plano do ATM", href: "/dashboard/settings/billing", icon: CreditCard },
     ],
   },
 ];
@@ -73,6 +78,7 @@ export default function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { stores, activeStore, setActiveStore } = useStore();
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
+  const navigation = buildNavigation(projectInfo(activeStore));
 
   useEffect(() => {
     const handleToggle = () => setMobileOpen((prev) => !prev);
@@ -171,8 +177,8 @@ export default function Sidebar() {
                 <FolderTree size={13} className="text-[#2997ff] shrink-0" />
                 <span className="font-medium truncate text-[11.5px] text-white/80">
                   {activeStore
-                    ? activeStore.name || activeStore.shop_domain || "Minha Loja"
-                    : "Lojas"}
+                    ? activeStore.name || activeStore.shop_domain || "Meu projeto"
+                    : "Projetos"}
                 </span>
               </div>
               <ChevronDown
@@ -188,7 +194,7 @@ export default function Sidebar() {
               <div className="absolute left-3 right-3 top-full mt-1 bg-[#161618] border border-white/[0.09] rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.6)] z-50 py-1.5 overflow-hidden">
                 <div className="px-3 pb-1.5 pt-1 border-b border-white/[0.06]">
                   <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25">
-                    Dashboards
+                    Projetos
                   </p>
                 </div>
                 <div className="max-h-48 overflow-y-auto pt-1">
@@ -217,15 +223,18 @@ export default function Sidebar() {
                       >
                         {store.name?.substring(0, 2).toUpperCase() || "ST"}
                       </div>
-                      <span
-                        className={cn(
-                          "text-[11.5px] truncate font-medium",
-                          activeStore?.id === store.id
-                            ? "text-[#2997ff]"
-                            : "text-white/60"
-                        )}
-                      >
-                        {store.name || store.shop_domain}
+                      <span className="flex flex-col min-w-0">
+                        <span
+                          className={cn(
+                            "text-[11.5px] truncate font-medium",
+                            activeStore?.id === store.id
+                              ? "text-[#2997ff]"
+                              : "text-white/60"
+                          )}
+                        >
+                          {store.name || store.shop_domain}
+                        </span>
+                        <span className="text-[9.5px] text-white/30 truncate">{projectInfo(store).short}</span>
                       </span>
                     </button>
                   ))}
@@ -237,7 +246,7 @@ export default function Sidebar() {
                     className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-white/40 hover:text-[#2997ff] hover:bg-[#2997ff]/[0.08] rounded-lg transition-colors"
                   >
                     <Plus size={12} className="shrink-0" />
-                    <span className="font-medium">Adicionar loja</span>
+                    <span className="font-medium">Novo projeto</span>
                   </Link>
                 </div>
               </div>

@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { VAPID_PUBLIC_KEY } from "@/lib/notifications/vapid-keys";
@@ -16,7 +17,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const storeId = searchParams.get("store_id") || "dckb5g-7d";
+    const storeId = searchParams.get("store_id");
+    const access = await requireStoreAccess(storeId);
+    if (!access.ok) return access.response;
 
     const supabase = createAdminClient();
     const { data: store, error } = await supabase
@@ -64,6 +67,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { store_id, subscription, device_name, device_type } = body;
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
 
     if (!store_id || !subscription?.endpoint || !subscription?.keys) {
       return NextResponse.json(
@@ -140,6 +145,8 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
     const { store_id, config } = body;
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
 
     if (!store_id || !config) {
       return NextResponse.json(
@@ -202,6 +209,8 @@ export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json();
     const { store_id, endpoint } = body;
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
 
     if (!store_id || !endpoint) {
       return NextResponse.json({ ok: false, error: "store_id e endpoint são obrigatórios" }, { status: 400 });

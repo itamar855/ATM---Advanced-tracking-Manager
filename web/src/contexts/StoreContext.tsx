@@ -3,12 +3,15 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { playNotificationSound } from "@/lib/notifications/sound-effects";
+import { isMissingProjectTypeColumn, type ProjectType } from "@/lib/projects/types";
 
 interface Store {
   id: string;
   name: string;
   shop_domain?: string;
   platform?: string;
+  /** Tipo do projeto. Sem a migration 030, fica vazio e conta como loja. */
+  project_type?: ProjectType | null;
 }
 
 interface StoreContextType {
@@ -60,10 +63,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
 
       // 2. Consulta lojas protegida por RLS (Postgres: tenant_id = auth.uid())
-      const { data, error } = await supabase
+      const first = await supabase
         .from("stores")
-        .select("id, name, shop_domain")
+        .select("id, name, shop_domain, platform, project_type")
         .order("created_at", { ascending: true });
+      let data: Store[] | null = first.data as Store[] | null;
+      let error = first.error;
+
+      // Sem a migration 030 a coluna project_type não existe: carrega sem ela (tudo conta como loja).
+      if (error && isMissingProjectTypeColumn(error)) {
+        const legacy = await supabase
+          .from("stores")
+          .select("id, name, shop_domain, platform")
+          .order("created_at", { ascending: true });
+        data = legacy.data as Store[] | null;
+        error = legacy.error;
+      }
 
       if (error) {
         console.error("[StoreContext] Error loading stores:", error);

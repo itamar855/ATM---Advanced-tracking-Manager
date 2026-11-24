@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
@@ -17,10 +18,14 @@ export async function POST(request: NextRequest) {
     let providedOrders: any[] = [];
     let resetToday = false;
     let bodyToken = "";
+    let bodyStoreId: string | null = null;
     try {
       const body = await request.json();
       if (body?.reset_today) {
         resetToday = true;
+      }
+      if (body?.store_id) {
+        bodyStoreId = body.store_id;
       }
       if (body?.token) {
         bodyToken = body.token;
@@ -40,9 +45,13 @@ export async function POST(request: NextRequest) {
     }
 
     // 1. Busca token salvo do Zedy e Meta
+    const access = await requireStoreAccess(bodyStoreId || request.nextUrl.searchParams.get("store_id"));
+    if (!access.ok) return access.response;
+
     const { data: integrations } = await supabase
       .from("integrations")
       .select("*")
+      .eq("store_id", access.storeId)
       .order("updated_at", { ascending: false });
 
     const zedyIntegration = integrations?.find((i) => i.platform === "zedy");
@@ -63,7 +72,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const storeId = metaIntegration?.store_id || "dckb5g-7d";
+    const storeId = access.storeId;
 
     let ordersToProcess = [...providedOrders];
     let sourceUsed = providedOrders.length > 0 ? "manual_payload" : "api_probe";

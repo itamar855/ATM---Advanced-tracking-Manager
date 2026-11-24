@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
       retroactivelyEnrichCompletedEvents(store_id, track_id, fbp, piiObj).catch(() => {});
     }
 
-    const sessionData = {
+    const sessionData: Record<string, unknown> = {
       store_id,
       track_id,
       fbp: fbp || null,
@@ -92,6 +92,10 @@ export async function POST(request: NextRequest) {
       utm_term: utm_term || null,
       updated_at: new Date().toISOString(),
     };
+    // Campos vazios não entram no upsert: o heartbeat de outra página não apaga UTMs, fbc e fbclid já gravados
+    for (const key of Object.keys(sessionData)) {
+      if (sessionData[key] === null || sessionData[key] === "") delete sessionData[key];
+    }
 
     // Persistir/enriquecer a sessão no Supabase via Admin Client
     const supabase = createAdminClient();

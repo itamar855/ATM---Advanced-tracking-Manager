@@ -5,17 +5,21 @@ const IV_LENGTH = 16;
 const TAG_LENGTH = 16;
 const SALT_LENGTH = 32;
 
-const FALLBACK_KEY_HEX = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+/**
+ * Chave antiga, que ficou embutida no código e é pública (SHA-256 de string vazia).
+ * Usada SOMENTE para ler dados cifrados antes da migração, nunca para cifrar.
+ * Remova depois de recifrar os tokens salvos com a ATM_ENCRYPTION_KEY.
+ */
+const LEGACY_PUBLIC_KEY_HEX = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 /**
- * Get encryption key from environment variable.
- * Key must be 32 bytes (256 bits) hex-encoded (64 chars).
- * Fallback to deterministic project key if env var is missing or invalid.
+ * Chave de criptografia vinda de ATM_ENCRYPTION_KEY (64 caracteres hex = 32 bytes).
+ * Sem valor reserva: se faltar ou for inválida, a operação falha.
  */
 function getEncryptionKey(): Buffer {
-  const keyHex = process.env.ATM_ENCRYPTION_KEY || FALLBACK_KEY_HEX;
-  if (!keyHex || keyHex.length !== 64) {
-    return Buffer.from(FALLBACK_KEY_HEX, "hex");
+  const keyHex = process.env.ATM_ENCRYPTION_KEY || "";
+  if (!/^[0-9a-fA-F]{64}$/.test(keyHex)) {
+    throw new Error("[ATM] ATM_ENCRYPTION_KEY ausente ou inválida (precisa ter 64 caracteres hexadecimais).");
   }
   return Buffer.from(keyHex, "hex");
 }
@@ -46,7 +50,21 @@ export function encrypt(plaintext: string): string {
  * Decrypt a base64-encoded encrypted string.
  */
 export function decrypt(encryptedBase64: string): string {
-  const key = getEncryptionKey();
+  try {
+    return decryptWithKey(encryptedBase64, getEncryptionKey());
+  } catch (err) {
+    // Dados cifrados antes da migração usam a chave antiga pública.
+    try {
+      const value = decryptWithKey(encryptedBase64, Buffer.from(LEGACY_PUBLIC_KEY_HEX, "hex"));
+      console.warn("[ATM] Dado lido com a chave de criptografia antiga. Recifre os tokens salvos.");
+      return value;
+    } catch {
+      throw err;
+    }
+  }
+}
+
+function decryptWithKey(encryptedBase64: string, key: Buffer): string {
   const combined = Buffer.from(encryptedBase64, "base64");
 
   const salt = combined.subarray(0, SALT_LENGTH);
@@ -146,8 +164,9 @@ export function verifyHmac(
     .update(body, "utf8")
     .digest("base64");
 
-  return crypto.timingSafeEqual(
-    Buffer.from(computed),
-    Buffer.from(signature)
-  );
+  const a = Buffer.from(computed);
+  const b = Buffer.from(signature || "");
+  // timingSafeEqual lança exceção com tamanhos diferentes: assinatura malformada é apenas inválida.
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }

@@ -4,8 +4,10 @@ import { useState, useEffect } from "react";
 import { AlertTriangle, AlertCircle, CheckCircle2, ShieldAlert, Loader2 } from "lucide-react";
 import { formatRelativeTime } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { useStore } from "@/contexts/StoreContext";
 
 export default function DiagnosticsPage() {
+  const { activeStore } = useStore();
   const [loading, setLoading] = useState(true);
   const [diagnostics, setDiagnostics] = useState<any[]>([]);
   const [isRecovering, setIsRecovering] = useState(false);
@@ -100,7 +102,7 @@ export default function DiagnosticsPage() {
                   const res = await fetch('/api/v1/sync/recovery', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ startDate: start.toISOString(), endDate: end.toISOString() })
+                    body: JSON.stringify({ store_id: activeStore?.id, startDate: start.toISOString(), endDate: end.toISOString() })
                   });
                   const json = await res.json();
                   

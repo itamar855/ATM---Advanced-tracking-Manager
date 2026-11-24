@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { updateEventResult } from "@/lib/tracking/dedup-engine";
@@ -21,6 +22,8 @@ export async function POST(request: NextRequest) {
     if (!storeId) {
       storeId = request.nextUrl.searchParams.get("store_id");
     }
+    const access = await requireStoreAccess(storeId);
+    if (!access.ok) return access.response;
 
     const supabase = createAdminClient();
 

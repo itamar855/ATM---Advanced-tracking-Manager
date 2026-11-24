@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getStoreAutomationSettings,
@@ -12,6 +13,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get("store_id");
+    const access = await requireStoreAccess(storeId);
+    if (!access.ok) return access.response;
 
     if (!storeId) {
       return NextResponse.json(
@@ -43,6 +46,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { store_id, ...updates } = body;
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
 
     if (!store_id) {
       return NextResponse.json(

@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 
 import { useStore } from "@/contexts/StoreContext";
+import { projectInfo } from "@/lib/projects/types";
 import UtmBuilderPage from "../../utms/page";
 
 interface AdAccount {
@@ -191,11 +192,11 @@ function IntegrationsContent() {
   };
 
   // Zedy Integration
-  const [zedyToken, setZedyToken] = useState("zdy_5c8e40e58c6649fe9f02e43f561a70e12de18e9c89d14a89b3f6b633d0fc0066");
+  const [zedyToken, setZedyToken] = useState("");
   const [shopifyToken, setShopifyToken] = useState("");
   const [shopifyClientId, setShopifyClientId] = useState("");
   const [shopifyClientSecret, setShopifyClientSecret] = useState("");
-  const [shopifyShopDomain, setShopifyShopDomain] = useState("dckb5g-7d.myshopify.com");
+  const [shopifyShopDomain, setShopifyShopDomain] = useState("");
   const [shopifyConnected, setShopifyConnected] = useState(false);
   const [shopifyConnectedAt, setShopifyConnectedAt] = useState<string | null>(null);
   const [copiedShopifyAuthLink, setCopiedShopifyAuthLink] = useState(false);
@@ -209,6 +210,14 @@ function IntegrationsContent() {
   const [syncingShopify, setSyncingShopify] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
   const [showShopifyHelp, setShowShopifyHelp] = useState(false);
+  const [webhookToken, setWebhookToken] = useState("");
+  const [shopifyWebhookSecret, setShopifyWebhookSecret] = useState("");
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const copyWithKey = (text: string, key: string) => {
+    navigator.clipboard?.writeText(text).catch(() => {});
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 2000);
+  };
 
   const storeId = activeStore?.id || "";
   const host =
@@ -216,8 +225,34 @@ function IntegrationsContent() {
       ? window.location.origin.replace(/\/$/, "")
       : "https://atmtracking.vercel.app";
 
-  const vegaWebhookUrl = `${host}/api/v1/webhook/vega/${storeId}`;
-  const zedyWebhookUrl = `${host}/api/v1/webhook/zedy/${storeId}`;
+  // As URLs de Zedy/Vega levam o token secreto da loja; sem ele o webhook é recusado (401).
+  const webhookTokenQuery = webhookToken ? `?token=${webhookToken}` : "";
+  const vegaWebhookUrl = webhookToken ? `${host}/api/v1/webhook/vega/${storeId}${webhookTokenQuery}` : "Carregando URL segura…";
+  const zedyWebhookUrl = webhookToken ? `${host}/api/v1/webhook/zedy/${storeId}${webhookTokenQuery}` : "Carregando URL segura…";
+  const shopifyWebhookUrl = `${host}/api/v1/webhook/${storeId}`;
+
+  // Página própria (infoproduto / web app) e API universal de conversões
+  const conversionsApiUrl = `${host}/api/v1/conversions/${storeId}`;
+  const conversionsAuthHeader = webhookToken ? `Authorization: Bearer ${webhookToken}` : "Carregando token…";
+  const ownPageSnippet = `<!-- ATM Pixel — cole antes de </head> em todas as páginas (vendas, checkout, obrigado) -->
+<script>
+  window.atmq = window.atmq || []; function atm(){ atmq.push(arguments); }
+  window.__ATM_CTX__ = { offer: { id: "meu-produto", name: "Nome do produto", value: 97.00 } };
+</script>
+<script src="${host}/api/v1/pixel/site/script.js?store=${storeId}" async></script>`;
+  const ownPageUsage = `// Cadastro ou formulário de checkout próprio
+atm("identify", { email: "...", phone: "...", name: "..." });
+atm("track", "Lead");                       // ou "CompleteRegistration", "StartTrial"
+
+// Ao gerar o PIX / criar a assinatura, mande isto ao SEU backend
+// e repasse em "tracking" na API de conversões:
+const tracking = ATM.getAttribution();      // { track_id, fbp, fbc, utm_..., user_agent }
+
+// Página de obrigado (opcional: o servidor já manda a compra)
+atm("track", "Purchase", { order_id: "txn_123", value: 97 });
+
+// Sem código, em qualquer botão ou link:
+// <a href="/checkout" data-atm-event="InitiateCheckout" data-atm-value="97">Comprar</a>`;
 
   const installSnippet = `<!-- ATM Pixel v4.4 — Cole antes de </head> no theme.liquid -->
 <script>
@@ -272,7 +307,7 @@ function IntegrationsContent() {
       const res = await fetch("/api/v1/sync/zedy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: zedyToken.trim() })
+        body: JSON.stringify({ token: zedyToken.trim(), store_id: storeId })
       });
       const data = await res.json();
       if (res.ok && data.ok !== false) {
@@ -302,7 +337,7 @@ function IntegrationsContent() {
       const res = await fetch("/api/v1/sync/zedy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: zedyToken, reset_today: true })
+        body: JSON.stringify({ token: zedyToken, reset_today: true, store_id: storeId })
       });
       const data = await res.json();
       if (res.ok && data.ok !== false) {
@@ -331,6 +366,7 @@ function IntegrationsContent() {
           shopify_client_id: shopifyClientId.trim(),
           shopify_client_secret: shopifyClientSecret.trim(),
           shopify_shop_domain: shopifyShopDomain.trim(),
+          shopify_webhook_secret: shopifyWebhookSecret.trim(),
         }),
       });
       const data = await res.json();
@@ -605,6 +641,8 @@ function IntegrationsContent() {
           if (data.shopifyShopDomain) setShopifyShopDomain(data.shopifyShopDomain);
           if (data.shopifyConnected) setShopifyConnected(true);
           if (data.shopifyConnectedAt) setShopifyConnectedAt(data.shopifyConnectedAt);
+          setWebhookToken(data.webhookToken || "");
+          setShopifyWebhookSecret(data.shopifyWebhookSecretSet ? "••••••••••••••••" : "");
           if (data.telegramBotToken) setTelegramBotToken(data.telegramBotToken);
           if (data.telegramChatId) setTelegramChatId(data.telegramChatId);
           if (data.telegramNotifyApproved !== undefined) setTelegramNotifyApproved(data.telegramNotifyApproved);
@@ -612,7 +650,7 @@ function IntegrationsContent() {
         }
 
         try {
-          const zedyRes = await fetch("/api/v1/zedy/credentials");
+          const zedyRes = await fetch(`/api/v1/zedy/credentials?store_id=${encodeURIComponent(targetStoreId)}`);
           if (zedyRes.ok) {
             const zedyData = await zedyRes.json();
             if (zedyData.token) setZedyToken(zedyData.token);
@@ -1348,6 +1386,7 @@ function IntegrationsContent() {
           </div>
 
           {/* Shopify Official OAuth 2.0 Card */}
+          {projectInfo(activeStore).showShopify && (
           <div className="rounded-3xl border border-white/[0.06] glass-card shadow-2xl p-6 space-y-5">
             {/* Header */}
             <div className="flex items-center justify-between">
@@ -1451,6 +1490,30 @@ function IntegrationsContent() {
                   </div>
                   <p className="text-[11px] text-zinc-500 mt-1">
                     Digite apenas o nome da loja ou o endereço completo (.myshopify.com).
+                  </p>
+                </div>
+
+                {/* Chave de assinatura dos webhooks da Shopify */}
+                <div className="max-w-xl">
+                  <label className="block text-xs font-bold text-zinc-200 mb-1.5">
+                    Chave de assinatura dos webhooks
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={shopifyWebhookSecret}
+                    onChange={(e) => setShopifyWebhookSecret(e.target.value)}
+                    onFocus={() => {
+                      if (shopifyWebhookSecret.includes("••••")) setShopifyWebhookSecret("");
+                    }}
+                    placeholder="Cole aqui a chave mostrada no admin da Shopify"
+                    className="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.15] focus:border-[#2997ff] focus:ring-1 focus:ring-[#2997ff] text-xs text-white placeholder:text-zinc-500 font-mono transition-all"
+                  />
+                  <p className="text-[11px] text-zinc-500 mt-1">
+                    No admin da Shopify, em Configurações → Notificações → Webhooks, aponte os eventos{" "}
+                    <span className="font-mono">orders/create</span> e <span className="font-mono">orders/paid</span> para{" "}
+                    <span className="font-mono break-all">{shopifyWebhookUrl}</span> e cole aqui a chave de assinatura exibida na mesma página.
+                    Webhooks sem assinatura válida são recusados.
                   </p>
                 </div>
 
@@ -1583,6 +1646,7 @@ function IntegrationsContent() {
               )}
             </div>
           </div>
+          )}
 
           {/* Vega Checkout Card */}
           <div className="rounded-3xl border border-white/[0.06] glass-card shadow-2xl p-6 space-y-4">
@@ -1922,6 +1986,7 @@ function IntegrationsContent() {
           </div>
 
           {/* Card 2: Script Universal */}
+          {projectInfo(activeStore).showShopify && (
           <div className="rounded-3xl border border-white/[0.06] glass-card shadow-2xl p-6 space-y-5">
             <div className="flex items-center justify-between">
               <div>
@@ -1942,6 +2007,75 @@ function IntegrationsContent() {
             <pre className="p-5 rounded-2xl bg-black/40 border border-white/[0.06] text-zinc-300 font-mono text-[11px] overflow-x-auto leading-relaxed max-h-72 select-all">
               {installSnippet}
             </pre>
+          </div>
+          )}
+
+          {/* Card 3: Página própria (infoproduto / web app) + API de conversões */}
+          <div className="rounded-3xl border border-white/[0.06] glass-card shadow-2xl p-6 space-y-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-bold text-white tracking-tight">Página própria: infoproduto e web app</h3>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Para páginas fora da Shopify (WordPress, Elementor, site próprio, web app). Cole antes de{" "}
+                  <code className="text-[#2997ff]">&lt;/head&gt;</code> em todas as páginas e troque os dados da oferta.
+                </p>
+              </div>
+              <button
+                onClick={() => copyWithKey(ownPageSnippet, "ownPage")}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-[#2997ff] hover:bg-[#2997ff]/90 text-white transition-all flex items-center gap-1.5 shadow-md shadow-[#2997ff]/25 cursor-pointer shrink-0"
+              >
+                {copiedKey === "ownPage" ? <Check size={14} /> : <Copy size={14} />}
+                {copiedKey === "ownPage" ? "Copiado!" : "Copiar script"}
+              </button>
+            </div>
+            <pre className="p-5 rounded-2xl bg-black/40 border border-white/[0.06] text-zinc-300 font-mono text-[11px] overflow-x-auto leading-relaxed select-all">
+              {ownPageSnippet}
+            </pre>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-bold text-white">Como usar na página</p>
+                <button
+                  onClick={() => copyWithKey(ownPageUsage, "ownUsage")}
+                  className="text-[11px] font-bold text-[#2997ff] hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedKey === "ownUsage" ? <Check size={12} /> : <Copy size={12} />}
+                  {copiedKey === "ownUsage" ? "Copiado!" : "Copiar exemplos"}
+                </button>
+              </div>
+              <pre className="p-4 rounded-2xl bg-black/40 border border-white/[0.06] text-zinc-400 font-mono text-[11px] overflow-x-auto leading-relaxed">
+                {ownPageUsage}
+              </pre>
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <p className="text-xs font-bold text-white">API de conversões (do seu servidor)</p>
+              <p className="text-xs text-zinc-400">
+                Sua API de PIX ou seu web app avisam o ATM quando a venda é paga, a assinatura renova ou há reembolso.
+                Guarde o token só no servidor. Manual completo em <code className="text-[#2997ff]">docs/API_CONVERSOES.md</code>.
+              </p>
+              {[
+                { key: "apiUrl", label: "POST", value: conversionsApiUrl },
+                { key: "apiAuth", label: "Cabeçalho", value: conversionsAuthHeader },
+              ].map((row) => (
+                <div key={row.key} className="flex items-center gap-2">
+                  <span className="w-20 shrink-0 text-[11px] font-bold text-zinc-500">{row.label}</span>
+                  <input
+                    type="text"
+                    readOnly
+                    value={row.value}
+                    className="flex-1 min-w-0 px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-zinc-300 font-mono select-all focus:outline-none"
+                  />
+                  <button
+                    onClick={() => copyWithKey(row.value, row.key)}
+                    disabled={row.key === "apiAuth" && !webhookToken}
+                    className="px-3 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-white text-xs font-bold border border-white/[0.08] transition-all flex items-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-40"
+                  >
+                    {copiedKey === row.key ? <Check size={14} className="text-[#30d158]" /> : <Copy size={14} />}
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

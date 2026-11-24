@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
@@ -33,6 +34,9 @@ export async function POST(request: NextRequest) {
       current_metrics?: any;
     };
 
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
+
     if (!id || !action || !store_id) {
       return NextResponse.json({ ok: false, error: "ID, action e store_id são obrigatórios" }, { status: 400 });
     }
@@ -59,7 +63,8 @@ export async function POST(request: NextRequest) {
     } catch {}
 
     // 1. Busca token da Meta da loja selecionada com fallback
-    let { data: integration } = await supabase
+    // Nunca usa o token de outra loja: sem integração própria, a ação não é executada.
+    const { data: integration } = await supabase
       .from("integrations")
       .select("*")
       .eq("store_id", store_id)
@@ -67,18 +72,6 @@ export async function POST(request: NextRequest) {
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-
-    if (!integration) {
-      const { data: fallbackInt } = await supabase
-        .from("integrations")
-        .select("*")
-        .eq("platform", "meta")
-        .eq("status", "active")
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      integration = fallbackInt;
-    }
 
     let token = resolveMetaAccessToken(integration?.access_token_enc) || resolveMetaAccessToken(process.env.META_ACCESS_TOKEN) || "";
 

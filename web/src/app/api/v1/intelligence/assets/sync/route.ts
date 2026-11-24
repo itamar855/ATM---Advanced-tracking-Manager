@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { syncMetaAssetsHealth } from "@/lib/intelligence/meta-asset-sync";
 
@@ -16,6 +17,8 @@ export async function POST(request: NextRequest) {
     const { searchParams } = new URL(request.url);
 
     const storeId = body.store_id || searchParams.get("store_id");
+    const access = await requireStoreAccess(storeId);
+    if (!access.ok) return access.response;
     const adAccountId = body.ad_account_id || searchParams.get("ad_account_id");
 
     if (!storeId) {
@@ -48,6 +51,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get("store_id");
+    const access = await requireStoreAccess(storeId);
+    if (!access.ok) return access.response;
     const adAccountId = searchParams.get("ad_account_id") || undefined;
 
     if (!storeId) {

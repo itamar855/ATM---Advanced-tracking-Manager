@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseUrl, getServiceRoleKey } from "@/lib/supabase/env";
+import { requireStoreAccess } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rridxhzbkitgcodzyctu.supabase.co";
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyaWR4aHpia2l0Z2NvZHp5Y3R1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzcxNTUzMCwiZXhwIjoyMTAzMjkxNTMwfQ.gGxjPtKXABAYM4r6RsHcebVwwHsdpMD-RyRnxJn3QxE";
 
 /**
  * GET /api/v1/events/list
@@ -12,20 +12,30 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJh
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const access = await requireStoreAccess(searchParams.get("store_id"));
+    if (!access.ok) return access.response;
+
     const eventNameFilter = searchParams.get("event_name");
-    const limit = Math.min(Number(searchParams.get("limit") || 500), 1000);
+    const requestedLimit = Number(searchParams.get("limit") || 500);
+    const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.floor(requestedLimit), 1), 1000) : 500;
 
     const headers = {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: getServiceRoleKey(),
+      Authorization: `Bearer ${getServiceRoleKey()}`,
       "Content-Type": "application/json",
     };
 
-    // 1. Busca eventos no banco ordenados por criação descrescente
-    let query = `${SUPABASE_URL}/rest/v1/events?select=*&order=created_at.desc&limit=${limit}`;
+    // 1. Busca eventos da loja no banco, ordenados por criação decrescente
+    const params = new URLSearchParams({
+      store_id: `eq.${access.storeId}`,
+      select: "*",
+      order: "created_at.desc",
+      limit: String(limit),
+    });
     if (eventNameFilter && eventNameFilter !== "all") {
-      query = `${SUPABASE_URL}/rest/v1/events?event_name=eq.${eventNameFilter}&select=*&order=created_at.desc&limit=${limit}`;
+      params.set("event_name", `eq.${eventNameFilter}`);
     }
+    const query = `${getSupabaseUrl()}/rest/v1/events?${params.toString()}`;
 
     const resp = await fetch(query, { method: "GET", headers, cache: "no-store" });
     const rawEvents: any[] = resp.ok ? await resp.json() : [];

@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
@@ -108,6 +109,8 @@ export async function GET(request: NextRequest) {
     const isRefresh = searchParams.get("refresh") === "true";
 
     const storeId = searchParams.get("store_id");
+    const access = await requireStoreAccess(storeId);
+    if (!access.ok) return access.response;
     if (!storeId) {
       return NextResponse.json({ ok: false, error: "store_id is required" }, { status: 400 });
     }

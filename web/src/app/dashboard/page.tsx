@@ -10,6 +10,25 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
+
+/** Detalhe do P&L devolvido por /api/v1/dashboard/metrics (custos de info e app). */
+interface PnlBreakdown {
+  project_type: "ecommerce" | "infoproduct" | "app";
+  gateway_fees: number;
+  operational_taxes: number;
+  affiliate: number;
+  coproduction: number;
+  refunds: number;
+  refund_loss: number;
+  refunds_count: number;
+  renewal_revenue: number;
+  renewals_count: number;
+  cogs: number;
+  fees_configured: boolean;
+  fees_estimated: boolean;
+  refunds_and_renewals_included: boolean;
+}
 
 interface DashboardMetrics {
   gross_revenue?: number;
@@ -103,6 +122,7 @@ export default function DashboardResumoPage() {
   const [selectedAccountId, setSelectedAccountId] = useState("all");
   const [showBanner, setShowBanner] = useState(true);
   const { activeStore } = useStore();
+  const [pnl, setPnl] = useState<PnlBreakdown | null>(null);
 
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     net_revenue: 0,
@@ -155,6 +175,7 @@ export default function DashboardResumoPage() {
         const data = await res.json();
         if (data.ok) {
           if (data.metrics) setMetrics(data.metrics);
+          setPnl(data.pnl || null);
           if (data.payment_methods) setPaymentMethods(data.payment_methods);
           if (data.traffic_sources) setTrafficSources(data.traffic_sources);
           if (data.available_accounts) setAvailableAccounts(data.available_accounts);
@@ -185,6 +206,20 @@ export default function DashboardResumoPage() {
     `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const gross = metrics.gross_revenue || metrics.net_revenue + metrics.taxes;
+  const isInfoOrApp = !!pnl && pnl.project_type !== "ecommerce";
+  const profitParts = [
+    `Vendido (${fmt(gross)})`,
+    `Ads (${fmt(metrics.ad_spend)})`,
+    `Taxas (${fmt(metrics.taxes)})`,
+  ];
+  if (pnl) {
+    if (pnl.operational_taxes) profitParts.push(`Impostos (${fmt(pnl.operational_taxes)})`);
+    if (pnl.affiliate) profitParts.push(`Afiliados (${fmt(pnl.affiliate)})`);
+    if (pnl.coproduction) profitParts.push(`Coprodução (${fmt(pnl.coproduction)})`);
+    if (pnl.refund_loss) profitParts.push(`Reembolsos (${fmt(pnl.refund_loss)})`);
+    if (pnl.cogs) profitParts.push(`Produto (${fmt(pnl.cogs)})`);
+  }
+  const profitTooltip = `${profitParts.join(" − ")} = ${fmt(metrics.profit)}`;
 
   return (
     <div className="max-w-[1400px] mx-auto pb-20 space-y-5 fade-in select-none">
@@ -196,7 +231,7 @@ export default function DashboardResumoPage() {
             Resumo do Dashboard
           </h1>
           <p className="text-[11.5px] text-white/30 mt-0.5">
-            {activeStore?.name || "Selecione uma loja"}
+            {activeStore?.name || "Selecione um projeto"}
           </p>
         </div>
 
@@ -292,17 +327,66 @@ export default function DashboardResumoPage() {
           value={metrics.profit >= 0 ? `+${fmt(metrics.profit)}` : fmt(metrics.profit)}
           sub={`Margem: ${metrics.margin.toFixed(1)}% · ROI: ${metrics.roi.toFixed(2)}x`}
           color={metrics.profit >= 0 ? "green" : "red"}
-          tooltip={`Vendido (${fmt(gross)}) − Ads (${fmt(metrics.ad_spend)}) − Taxas (${fmt(metrics.taxes)}) = ${fmt(metrics.profit)}`}
+          tooltip={profitTooltip}
         />
       </div>
 
       {/* ── 5. Secondary Metrics ──────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MetricCard label="Margem" value={`${metrics.margin.toFixed(1)}%`} color="green" />
-        <MetricCard label="Taxas Gateway" value={fmt(metrics.taxes)} tooltip="Taxas configuradas para sua loja (6,99% + R$ 1,99 no PIX)." />
+        <MetricCard
+          label="Taxas Gateway"
+          value={fmt(metrics.taxes)}
+          sub={pnl?.fees_estimated ? "Estimativa" : pnl && !pnl.fees_configured ? "Nenhuma cadastrada" : undefined}
+          tooltip={
+            pnl?.fees_estimated
+              ? "Estimativa: 9,9% no PIX e 15% no cartão. Cadastre as taxas reais em Custos & Taxas."
+              : "Taxas do gateway cadastradas em Custos & Taxas."
+          }
+        />
         <MetricCard label="Vendas Pendentes" value={fmt(metrics.pending_sales_value)} />
         <MetricCard label="ROI" value={metrics.roi.toFixed(2)} color="green" />
       </div>
+
+      {/* ── 5b. Custos de infoproduto e app ────────────────────── */}
+      {isInfoOrApp && pnl && (
+        <>
+          {!pnl.fees_configured && (
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#ff9f0a]/10 border border-[#ff9f0a]/20 text-[12.5px] text-[#ff9f0a]">
+              <span>
+                Nenhum custo cadastrado: o lucro está sem taxa do gateway, imposto, afiliado e coprodução.
+              </span>
+              <Link
+                href="/dashboard/settings/costs"
+                className="px-3 py-1.5 rounded-xl bg-[#ff9f0a]/15 hover:bg-[#ff9f0a]/25 border border-[#ff9f0a]/25 font-semibold text-xs transition-colors"
+              >
+                Cadastrar custos
+              </Link>
+            </div>
+          )}
+          <div className={cn("grid grid-cols-2 gap-3", pnl.project_type === "app" ? "md:grid-cols-5" : "md:grid-cols-4")}>
+            <MetricCard label="Impostos" value={fmt(pnl.operational_taxes)} tooltip="Impostos cadastrados em Custos & Taxas." />
+            <MetricCard label="Afiliados" value={fmt(pnl.affiliate)} tooltip="Comissão de afiliado: % sobre o valor depois da taxa do gateway." />
+            <MetricCard label="Coprodução" value={fmt(pnl.coproduction)} tooltip="Parte do coprodutor: % sobre o que sobra depois da taxa e do afiliado." />
+            <MetricCard
+              label="Reembolsos"
+              value={pnl.refunds_and_renewals_included ? fmt(pnl.refunds) : "—"}
+              sub={pnl.refunds_and_renewals_included ? `${pnl.refunds_count} no período · −${fmt(pnl.refund_loss)} no lucro` : "Só com a conta \"Qualquer\""}
+              color={pnl.refunds > 0 ? "red" : "default"}
+              tooltip="Valor devolvido no período. No lucro sai o valor menos a parte do afiliado e do coprodutor, que também é estornada."
+            />
+            {pnl.project_type === "app" && (
+              <MetricCard
+                label="Renovações"
+                value={pnl.refunds_and_renewals_included ? fmt(pnl.renewal_revenue) : "—"}
+                sub={pnl.refunds_and_renewals_included ? `${pnl.renewals_count} cobrança(s) · já no vendido` : "Só com a conta \"Qualquer\""}
+                color="blue"
+                tooltip="Cobranças de renovação no período. Entram no valor vendido e no lucro, mas não vão para a Meta como compra nova."
+              />
+            )}
+          </div>
+        </>
+      )}
 
       {/* ── 6. Bottom row ─────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">

@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { encrypt, decrypt } from "@/lib/encryption";
@@ -10,12 +11,15 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: NextRequest) {
   try {
+    const access = await requireStoreAccess(request.nextUrl.searchParams.get("store_id"));
+    if (!access.ok) return access.response;
     const supabase = createAdminClient();
 
     // Busca integração zedy ou na config da integração principal
     const { data: integrations } = await supabase
       .from("integrations")
       .select("*")
+      .eq("store_id", access.storeId)
       .order("updated_at", { ascending: false });
 
     const zedyIntegration = integrations?.find((i) => i.platform === "zedy");
@@ -76,7 +80,9 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { token, store_id = "dckb5g-7d" } = await request.json();
+    const { token, store_id } = await request.json();
+    const access = await requireStoreAccess(store_id);
+    if (!access.ok) return access.response;
 
     if (!token || typeof token !== "string" || !token.trim()) {
       return NextResponse.json({ ok: false, error: "Token do Zedy é obrigatório" }, { status: 400 });
@@ -119,11 +125,11 @@ export async function POST(request: NextRequest) {
     const { data: integrations } = await supabase
       .from("integrations")
       .select("id, platform, config, store_id")
+      .eq("store_id", access.storeId)
       .order("updated_at", { ascending: false });
 
     const targetIntegration =
-      integrations?.find((i) => i.store_id === store_id) ||
-      integrations?.[0];
+      integrations?.find((i) => i.store_id === store_id);
 
     if (targetIntegration) {
       const newConfig = {

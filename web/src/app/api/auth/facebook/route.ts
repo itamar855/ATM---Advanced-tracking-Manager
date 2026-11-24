@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,8 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const storeId = searchParams.get("store_id") || searchParams.get("state") || "";
+  const access = await requireStoreAccess(storeId);
+  if (!access.ok) return access.response;
 
   // Permissões oficiais da Meta para leitura e gestão de contas e anúncios
   const scopes = [
@@ -22,7 +25,7 @@ export async function GET(request: NextRequest) {
     "public_profile"
   ].join(",");
 
-  const nonce = Math.random().toString(36).substring(2, 10);
+  const nonce = crypto.randomUUID();
   const statePayload = JSON.stringify({ store_id: storeId, nonce });
   const state = Buffer.from(statePayload).toString("base64url");
 

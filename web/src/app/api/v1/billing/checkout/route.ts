@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 
 export interface MercadoPagoPreferenceConfig {
@@ -15,6 +16,11 @@ export interface MercadoPagoPreferenceConfig {
 export async function POST(request: NextRequest) {
   try {
     const { email, name, planName, price, tenantId }: MercadoPagoPreferenceConfig = await request.json();
+    const auth = await requireUser();
+    if (!auth.ok) return auth.response;
+    if (tenantId && tenantId !== auth.user.id) {
+      return NextResponse.json({ ok: false, error: "Acesso negado." }, { status: 403 });
+    }
 
     if (!email || !price || !tenantId) {
       return NextResponse.json({ ok: false, error: "Parâmetros de assinatura ausentes" }, { status: 400 });

@@ -1,3 +1,4 @@
+import { requireStoreAccess } from "@/lib/auth/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { signOAuthState, buildShopifyAuthorizeUrl } from "@/lib/shopify-oauth";
@@ -56,6 +57,9 @@ export async function GET(request: NextRequest) {
   }
 
   // Resolve clientId (prioridade: query param > settings no banco > env var)
+  const access = await requireStoreAccess(storeId);
+  if (!access.ok) return access.response;
+
   if (!clientId && storeId) {
     const { data: s } = await supabase.from("stores").select("settings").eq("id", storeId).maybeSingle();
     if (s?.settings?.shopify?.client_id) {

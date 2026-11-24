@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { discoverFullMetaHierarchy } from "@/lib/meta/graph-service";
 import { resolveMetaAccessToken } from "@/lib/meta/token";
+import { requireStoreAccess } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -37,8 +38,25 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Proteção CSRF: o state devolvido pela Meta precisa ser o mesmo gravado no cookie ao iniciar o login.
+  const expectedState = request.cookies.get("fb_oauth_state")?.value;
+  if (!stateRaw || !expectedState || stateRaw !== expectedState) {
+    return NextResponse.redirect(
+      `${appUrl}/dashboard/settings/integrations?error=${encodeURIComponent("Sessão de autorização inválida ou expirada. Tente conectar novamente.")}`
+    );
+  }
+
+  // Só o dono da loja pode vincular uma conta Meta a ela.
+  const access = await requireStoreAccess(targetStoreId);
+  if (!access.ok) return access.response;
+
   const appId = process.env.FACEBOOK_APP_ID || "1058930460171432";
-  const appSecret = process.env.FACEBOOK_APP_SECRET || "04d87caa98d0e4d2d05037ac2668569e";
+  const appSecret = process.env.FACEBOOK_APP_SECRET;
+  if (!appSecret) {
+    return NextResponse.redirect(
+      `${appUrl}/dashboard/settings/integrations?error=${encodeURIComponent("FACEBOOK_APP_SECRET não configurado no servidor.")}`
+    );
+  }
 
   try {
     // 1. Troca o code pelo Short-Lived Access Token
@@ -72,16 +90,15 @@ export async function GET(request: NextRequest) {
     // 4. Salva no banco de dados do Supabase com propagação multi-lojas
     const supabase = createAdminClient();
 
-    // Busca todas as lojas existentes para garantir sincronização
-    const { data: allStores } = await supabase
+    // Propaga a conexão apenas para as lojas do próprio usuário (nunca para lojas de outros clientes)
+    const { data: userStores } = await supabase
       .from("stores")
       .select("id")
+      .eq("tenant_id", access.user.id)
       .order("created_at", { ascending: false });
 
-    const storeIdsToSync = new Set<string>();
-    if (targetStoreId) storeIdsToSync.add(targetStoreId);
-    (allStores || []).forEach((s: any) => storeIdsToSync.add(s.id));
-    if (storeIdsToSync.size === 0) storeIdsToSync.add("dckb5g-7d");
+    const storeIdsToSync = new Set<string>([access.storeId]);
+    (userStores || []).forEach((s: { id: string }) => storeIdsToSync.add(s.id));
 
     for (const sid of Array.from(storeIdsToSync)) {
       const { data: existing } = await supabase

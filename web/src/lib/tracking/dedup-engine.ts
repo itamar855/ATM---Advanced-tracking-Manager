@@ -1,4 +1,5 @@
 import { createAdminClient } from "../supabase/server";
+import { getSupabaseUrl, getServiceRoleKey } from "../supabase/env";
 
 /**
  * Motor universal de idempotência/deduplicação do ATM.
@@ -9,8 +10,6 @@ import { createAdminClient } from "../supabase/server";
 export type EventSource = "server" | "browser";
 export type EventStatus = "pending" | "buffered" | "processing" | "sent" | "accepted" | "rejected" | "deduped" | "failed";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rridxhzbkitgcodzyctu.supabase.co";
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyaWR4aHpia2l0Z2NvZHp5Y3R1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzcxNTUzMCwiZXhwIjoyMTAzMjkxNTMwfQ.gGxjPtKXABAYM4r6RsHcebVwwHsdpMD-RyRnxJn3QxE";
 
 /**
  * Reserva (lock) um evento genérico para processamento.
@@ -28,11 +27,11 @@ export async function reserveEvent(
   try {
     // 1. Verificar se evento já existe e está concluído
     const checkRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/events?store_id=eq.${finalStoreId}&event_id=eq.${eventId}&source=eq.${source}&select=status`,
+      `${getSupabaseUrl()}/rest/v1/events?store_id=eq.${finalStoreId}&event_id=eq.${eventId}&source=eq.${source}&select=status`,
       {
         headers: {
-          apikey: SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          apikey: getServiceRoleKey(),
+          Authorization: `Bearer ${getServiceRoleKey()}`,
         },
         cache: "no-store",
       }
@@ -93,11 +92,11 @@ export async function updateEventResult(
       payload.created_at = createdAt;
     }
 
-    await fetch(`${SUPABASE_URL}/rest/v1/events`, {
+    await fetch(`${getSupabaseUrl()}/rest/v1/events`, {
       method: "POST",
       headers: {
-        apikey: SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: getServiceRoleKey(),
+        Authorization: `Bearer ${getServiceRoleKey()}`,
         "Content-Type": "application/json",
         Prefer: "resolution=merge-duplicates,return=minimal",
       },

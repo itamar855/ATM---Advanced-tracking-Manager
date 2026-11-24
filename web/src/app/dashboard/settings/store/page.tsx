@@ -1,10 +1,31 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Store, Globe, Loader2, X, CheckCircle2, Plus, AlertTriangle } from "lucide-react";
+import { Store, Globe, Loader2, X, CheckCircle2, Plus, AlertTriangle, ShoppingBag, GraduationCap, AppWindow } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useStore } from "@/contexts/StoreContext";
 import { useSearchParams } from "next/navigation";
+import { cn } from "@/lib/utils";
+import {
+  PROJECT_TYPES,
+  PROJECT_TYPE_INFO,
+  isMissingProjectTypeColumn,
+  normalizeDomain,
+  projectTypeOf,
+  type ProjectType,
+} from "@/lib/projects/types";
+
+const TYPE_ICONS: Record<ProjectType, React.ElementType> = {
+  ecommerce: ShoppingBag,
+  infoproduct: GraduationCap,
+  app: AppWindow,
+};
+
+function errorMessage(err: unknown): string {
+  const e = err as { code?: string; message?: string } | null;
+  if (e?.code === "23505") return "Esse domínio já está cadastrado em outro projeto.";
+  return e?.message || "erro desconhecido";
+}
 
 export default function StoreSettingsPage() {
   const searchParams = useSearchParams();
@@ -18,6 +39,10 @@ export default function StoreSettingsPage() {
   const [newDomain, setNewDomain] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [projectType, setProjectType] = useState<ProjectType>("ecommerce");
+  const [platform, setPlatform] = useState<string | null>(null);
+  const [warningMsg, setWarningMsg] = useState("");
+  const info = PROJECT_TYPE_INFO[projectType];
   const { activeStore, reload, setActiveStore } = useStore();
 
   useEffect(() => {
@@ -32,6 +57,9 @@ export default function StoreSettingsPage() {
         setDomain("");
         setCheckoutDomain("");
         setCustomDomains([]);
+        setPlatform(null);
+        const typeParam = searchParams.get("type");
+        setProjectType(PROJECT_TYPES.includes(typeParam as ProjectType) ? (typeParam as ProjectType) : "ecommerce");
         setLoading(false);
         return;
       }
@@ -55,6 +83,8 @@ export default function StoreSettingsPage() {
           setDomain(store.shopify_domain || store.shop_domain || "");
           setCheckoutDomain(store.checkout_domain || "");
           setCustomDomains(store.custom_domains || []);
+          setProjectType(projectTypeOf(store));
+          setPlatform(store.platform || null);
         }
       } catch (err) {
         console.error(err);
@@ -66,8 +96,12 @@ export default function StoreSettingsPage() {
   }, [activeStore, searchParams]);
 
   const handleAddDomain = () => {
-    const trimmed = newDomain.trim();
-    if (!trimmed) return;
+    if (!newDomain.trim()) return;
+    const trimmed = normalizeDomain(newDomain);
+    if (!trimmed) {
+      setErrorMsg("Domínio inválido. Use só o endereço, por exemplo tracking.seusite.com.");
+      return;
+    }
     if (customDomains.includes(trimmed)) {
       setErrorMsg("Este domínio já está na lista.");
       return;
@@ -82,13 +116,30 @@ export default function StoreSettingsPage() {
   };
 
   const handleSave = async () => {
-    if (!domain) {
-      setErrorMsg("Informe o domínio da loja (.myshopify.com).");
+    const cleanDomain = normalizeDomain(domain);
+    if (!domain.trim()) {
+      setErrorMsg(`Informe o ${info.domainLabel.toLowerCase()}.`);
       return;
     }
+    if (!cleanDomain) {
+      setErrorMsg(`Domínio inválido. Use só o endereço, por exemplo ${info.domainPlaceholder}.`);
+      return;
+    }
+    const cleanCheckout = checkoutDomain.trim() ? normalizeDomain(checkoutDomain) : "";
+    if (checkoutDomain.trim() && !cleanCheckout) {
+      setErrorMsg("Domínio de checkout inválido. Use só o endereço, por exemplo checkout.seusite.com.");
+      return;
+    }
+    setDomain(cleanDomain);
+    setCheckoutDomain(cleanCheckout);
+
+    // Plataforma: projeto sem loja vira 'custom'; voltar para loja tira o 'custom'.
+    const nextPlatform =
+      projectType === "ecommerce" ? (platform && platform !== "custom" ? platform : "shopify") : "custom";
 
     setSaving(true);
     setErrorMsg("");
+    setWarningMsg("");
     setSuccessMsg("");
 
     try {
@@ -107,33 +158,42 @@ export default function StoreSettingsPage() {
         email: user.email!,
       }, { onConflict: "id", ignoreDuplicates: true });
 
+      const base = {
+        name: storeName.trim() || cleanDomain,
+        shop_domain: cleanDomain,
+        checkout_domain: cleanCheckout || null,
+        custom_domains: customDomains,
+      };
+      const typed = { ...base, project_type: projectType, platform: nextPlatform };
+      // Sem a migration 030, o banco não conhece project_type nem a plataforma 'custom': salva o resto.
+      let typeSaved = true;
+
       if (storeId) {
-        // Atualiza a loja existente
-        const { error } = await supabase
-          .from("stores")
-          .update({
-            name: storeName || domain,
-            shop_domain: domain,
-            checkout_domain: checkoutDomain || null,
-            custom_domains: customDomains,
-          })
-          .eq("id", storeId);
+        // Atualiza o projeto existente
+        let { error } = await supabase.from("stores").update(typed).eq("id", storeId);
+        if (error && isMissingProjectTypeColumn(error)) {
+          typeSaved = false;
+          ({ error } = await supabase.from("stores").update(base).eq("id", storeId));
+        }
 
         if (error) throw error;
+        if (typeSaved) setPlatform(nextPlatform);
       } else {
-        // Cria nova loja para este tenant
-        const { data: newStore, error } = await supabase
+        // Cria um projeto novo para este tenant
+        const id = crypto.randomUUID();
+        let { data: newStore, error } = await supabase
           .from("stores")
-          .insert({
-            id: crypto.randomUUID(),
-            tenant_id: user.id,
-            name: storeName || domain,
-            shop_domain: domain,
-            checkout_domain: checkoutDomain || null,
-            custom_domains: customDomains,
-          })
+          .insert({ id, tenant_id: user.id, ...typed })
           .select()
           .single();
+        if (error && isMissingProjectTypeColumn(error)) {
+          typeSaved = false;
+          ({ data: newStore, error } = await supabase
+            .from("stores")
+            .insert({ id, tenant_id: user.id, ...base })
+            .select()
+            .single());
+        }
 
         if (error) throw error;
         if (newStore) {
@@ -149,11 +209,16 @@ export default function StoreSettingsPage() {
         }
       }
 
-      reload(); // Atualiza o cache global de lojas para destravar a sidebar e layout
+      reload(); // Atualiza o cache global de projetos para destravar a sidebar e layout
       setSuccessMsg("Configurações salvas com sucesso!");
       setTimeout(() => setSuccessMsg(""), 4000);
-    } catch (err: any) {
-      setErrorMsg("Erro ao salvar: " + err.message);
+      if (!typeSaved) {
+        setWarningMsg(
+          "O tipo do projeto não foi salvo: o banco ainda não tem a migration 030. Rode supabase/migrations/030_add_project_type.sql no Supabase e salve de novo."
+        );
+      }
+    } catch (err: unknown) {
+      setErrorMsg("Erro ao salvar: " + errorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -172,10 +237,10 @@ export default function StoreSettingsPage() {
       {/* Page Header */}
       <div>
         <h1 className="text-xl font-bold text-white tracking-tight">
-          Configurações da Loja
+          {storeId ? "Configurações do Projeto" : "Novo Projeto"}
         </h1>
         <p className="text-[13px] text-white/40 mt-1">
-          Configure domínios, CNAME para 1st-party cookies e conectores de checkout
+          Tipo do projeto, domínios e CNAME para cookies de 1ª parte
         </p>
       </div>
 
@@ -186,6 +251,12 @@ export default function StoreSettingsPage() {
           {successMsg}
         </div>
       )}
+      {warningMsg && (
+        <div className="flex items-start gap-2 p-3.5 rounded-2xl bg-[#ff9f0a]/10 border border-[#ff9f0a]/20 text-xs text-[#ff9f0a] font-medium">
+          <AlertTriangle size={14} className="shrink-0 mt-px" />
+          {warningMsg}
+        </div>
+      )}
       {errorMsg && (
         <div className="flex items-center gap-2 p-3.5 rounded-2xl bg-[#ff453a]/10 border border-[#ff453a]/20 text-xs text-[#ff453a] font-medium">
           <AlertTriangle size={14} />
@@ -193,24 +264,59 @@ export default function StoreSettingsPage() {
         </div>
       )}
 
-      {/* Seção 1: Info da Loja */}
+      {/* Seção 0: Tipo do projeto */}
+      <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-6 space-y-4 shadow-[0_8px_24px_rgba(0,0,0,0.3)]">
+        <div>
+          <h3 className="text-sm font-semibold text-white/90">O que você vai rastrear?</h3>
+          <p className="text-[12px] text-white/40 mt-1">O tipo muda o menu e as telas do painel. Dá para trocar depois.</p>
+        </div>
+        <div role="radiogroup" aria-label="Tipo do projeto" className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {PROJECT_TYPES.map((t) => {
+            const Icon = TYPE_ICONS[t];
+            const selected = projectType === t;
+            return (
+              <button
+                key={t}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setProjectType(t)}
+                className={cn(
+                  "text-left p-4 rounded-xl border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2997ff]/60",
+                  selected
+                    ? "bg-[#2997ff]/10 border-[#2997ff]/40"
+                    : "bg-white/[0.02] border-white/[0.07] hover:bg-white/[0.05] hover:border-white/[0.12]"
+                )}
+              >
+                <Icon size={18} className={selected ? "text-[#2997ff]" : "text-white/40"} />
+                <span className={cn("block mt-2.5 text-[13px] font-semibold", selected ? "text-white" : "text-white/80")}>
+                  {PROJECT_TYPE_INFO[t].label}
+                </span>
+                <span className="block mt-1 text-[11.5px] leading-snug text-white/40">{PROJECT_TYPE_INFO[t].description}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Seção 1: Dados do projeto */}
       <div className="bg-[#18181a] border border-white/[0.06] rounded-2xl p-6 space-y-5 shadow-[0_8px_24px_rgba(0,0,0,0.3)]">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#2997ff]/10 border border-[#2997ff]/20 flex items-center justify-center text-[#2997ff]">
             <Store size={18} />
           </div>
-          <h3 className="text-sm font-semibold text-white/90">Dados da Loja</h3>
+          <h3 className="text-sm font-semibold text-white/90">Dados do projeto</h3>
         </div>
 
         <div>
           <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-wider mb-1.5">
-            Nome da Loja
+            Nome do projeto
           </label>
           <input
             type="text"
             value={storeName}
             onChange={(e) => setStoreName(e.target.value)}
-            placeholder="Ex: Minha Loja Principal"
+            placeholder={projectType === "ecommerce" ? "Ex: Minha Loja Principal" : projectType === "app" ? "Ex: Meu App" : "Ex: Curso de Inglês"}
             className="w-full bg-white/[0.04] border border-white/[0.07] rounded-xl px-3.5 py-2.5 text-xs text-white/90 placeholder:text-white/20 focus:outline-none focus:border-[#2997ff]/40 transition-colors"
           />
         </div>
@@ -218,19 +324,25 @@ export default function StoreSettingsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-wider mb-1.5">
-              Domínio da Loja (.myshopify.com) <span className="text-[#ff453a]">*</span>
+              {info.domainLabel} <span className="text-[#ff453a]">*</span>
             </label>
             <input
               type="text"
+              inputMode="url"
+              autoCapitalize="none"
+              spellCheck={false}
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
-              placeholder="Ex: minhaloja.myshopify.com"
+              onBlur={() => normalizeDomain(domain) && setDomain(normalizeDomain(domain))}
+              placeholder={`Ex: ${info.domainPlaceholder}`}
+              aria-describedby="domain-hint"
               className="w-full bg-white/[0.04] border border-white/[0.07] rounded-xl px-3.5 py-2.5 text-xs text-white/90 placeholder:text-white/20 focus:outline-none focus:border-[#2997ff]/40 transition-colors"
             />
+            <p id="domain-hint" className="mt-1.5 text-[11px] text-white/30 leading-snug">{info.domainHint}</p>
           </div>
           <div>
             <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-wider mb-1.5">
-              Domínio Customizado de Checkout
+              Domínio do checkout (opcional)
             </label>
             <input
               type="text"
