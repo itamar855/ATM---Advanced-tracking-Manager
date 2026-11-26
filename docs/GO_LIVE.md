@@ -5,12 +5,18 @@ Nenhuma chave aparece aqui: cada item diz **onde** ela é colada.
 
 ## 1. Banco (Supabase)
 
-O site usa o projeto Supabase que está em `NEXT_PUBLIC_SUPABASE_URL` na Vercel.
-Em 24/11 era o `ntujbzsuesfgdlxfnbtk`.
+**Banco de produção (desde 26/11): `rridxhzbkitgcodzyctu`**, o projeto "ATM - Tracking Manager" na organização Rastreio.io (plano Pro).
 
-Conferência feita em 24/11, só leitura e com a chave pública:
-- **ntujbz:** só tinha as tabelas até a migration 010. `orders`, `sessions` e `events` estavam num formato antigo, sem `value`, `order_paid_at`, `status`… Sem isso, gravar e ler vendas falha.
-- **rridx:** é o banco antigo, cujas chaves ficaram no repositório público. Está num formato ainda mais antigo (`stores.id` em texto). **Não usar.**
+Em 26/11:
+- As 23 tabelas antigas, com os dados das lojas Dose Certa e Atacadão das Gaiolas até 20/10, foram movidas para o esquema `legado`. Nada foi apagado. Para consultar: `SELECT ... FROM legado.events`.
+- O `setup_producao.sql` rodou no esquema `public` e deu "tudo certo": 28 tabelas, todas com RLS, e 37 policies.
+- Os 2 usuários de login que já existiam ganharam tenant. Dá para entrar com a conta antiga.
+- O `ntujbzsuesfgdlxfnbtk` não está na conta do Supabase em uso. Ele deixou de ser o banco do site.
+
+**As chaves do rridx ficaram no repositório público.** Antes de ligar o site nele:
+- Supabase → Project Settings → API Keys: crie chaves novas (publishable e secret).
+- Desative as chaves antigas (legacy `anon`/`service_role`).
+- Cole as novas na Vercel.
 
 **O que fazer:**
 1. Supabase → projeto do site → **SQL Editor** → **New query**.
@@ -32,9 +38,9 @@ Depois de mudar qualquer variável, faça **Redeploy**.
 
 | Variável | Obrigatória? | O que é |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | sim | URL do projeto Supabase (Settings → API) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | sim | chave `anon` (Settings → API) |
-| `SUPABASE_SERVICE_ROLE_KEY` | sim | chave `service_role` do **mesmo** projeto |
+| `NEXT_PUBLIC_SUPABASE_URL` | sim | `https://rridxhzbkitgcodzyctu.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | sim | chave **publishable** nova (Settings → API Keys) |
+| `SUPABASE_SERVICE_ROLE_KEY` | sim | chave **secret** nova do **mesmo** projeto |
 | `ATM_ENCRYPTION_KEY` | sim | 64 caracteres hexadecimais. Gerar com `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Não trocar depois: os tokens salvos deixam de abrir. |
 | `NEXT_PUBLIC_APP_URL` | sim | `https://atmtracking.vercel.app` |
 | `ATM_WEBHOOK_SECRET` | recomendada | gera os `?token=` das URLs de webhook. Sem ela, usa a `ATM_ENCRYPTION_KEY`. Se trocar, as URLs de webhook mudam. |
@@ -52,7 +58,7 @@ Depois de mudar qualquer variável, faça **Redeploy**.
 
 ## 4. Primeiro acesso
 
-1. Abrir `https://atmtracking.vercel.app/register` e criar a conta. As contas do banco antigo não existem no banco novo.
+1. Entrar em `https://atmtracking.vercel.app/login` com a conta que já existia no rridx, ou criar outra em `/register`.
 2. **Configurações → Projeto:** criar cada projeto com o tipo certo (Loja, Infoproduto ou Web app) e o domínio.
 3. **Integrações:**
    - colar o Pixel ID e o token da Meta do projeto;
